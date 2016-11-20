@@ -1,0 +1,18 @@
+[package]
+name = "alumina"
+version = "0.0.1"
+authors = ["J. Millard <millard.jn@gmail.com>"]
+
+[dependencies]
+rand = "0.3"
+byteorder = "0.5"
+#matrixmultiply = "0.1.8"
+matrixmultiply = { path = "D:/Repositories/MatrixMultiply/matrixmultiply" }
+#matrixmultiply = { git = "https://github.com/millardjn/matrixmultiply", branch = "Loop3Multithreading" }
+
+[dev-dependencies]
+image = "*"
+bytevec = "0.2.0"
+
+[lib]
+name = "alumina"
