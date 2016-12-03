@@ -251,64 +251,40 @@ fn dot_vec(xs: &[f32], ys: &[f32], acc_: &mut [f32; SIMD_WIDTH]){
 }
 
 
-fn cosine_similarity(xs: &[f32], ys: &[f32]) -> f32 {
-	let mut xn = 0.;
-	let mut yn = 0.;
-	let mut dn = 0.;
+// fn cosine_similarity(xs: &[f32], ys: &[f32]) -> f32 {
+// 	let mut xn = 0.;
+// 	let mut yn = 0.;
+// 	let mut dn = 0.;
 	
-	let n = xs.len();
-	let ys = &ys[..n];
+// 	let n = xs.len();
+// 	let ys = &ys[..n];
 
-    for i in 0..xs.len() {
-  		xn += xs[i] * xs[i];
-		yn += ys[i] * ys[i];
-		dn += xs[i] * ys[i];
-  	}
+//     for i in 0..xs.len() {
+//   		xn += xs[i] * xs[i];
+// 		yn += ys[i] * ys[i];
+// 		dn += xs[i] * ys[i];
+//   	}
 	
-	if xn*yn == 0.0 {
+// 	if xn*yn == 0.0 {
+// 		0.0
+// 	} else {
+// 		dn/(xn*yn).sqrt()
+// 	}
+	
+// }
+
+
+fn cosine_similarity(xs: &[f32], ys: &[f32]) -> f32 {
+
+	let xn = dot(xs, xs);
+	let yn = dot(ys, ys);
+	let dn = dot(xs, ys);
+	
+	let res = dn/(xn*yn).sqrt();
+	if res.is_nan(){
 		0.0
 	} else {
-		dn/(xn*yn).sqrt()
+		res
 	}
 	
 }
-
-//#[inline(never)]
-//fn cosine_similarity(mut xs: &[f32], ys: &[f32]) -> f32 {
-//	let mut accx = [0.; SIMD_WIDTH];
-//	let mut accy = [0.; SIMD_WIDTH];
-//	let mut accd = [0.; SIMD_WIDTH];
-//	
-//	let n = xs.len();
-//	let mut ys = &ys[..n];
-//
-//	//assert!(v1.len() == v2.len()); Assert doesnt provide enough of a guarantee to enable vectorization?
-//
-//	while xs.len() >= SIMD_WIDTH {
-//	
-//		loop8!(i, accx[i] += xs[i] * xs[i]);
-//		loop8!(i, accy[i] += ys[i] * ys[i]);
-//		loop8!(i, accd[i] += xs[i] * ys[i]);
-//		
-//		xs = &xs[SIMD_WIDTH..];
-//		ys = &ys[SIMD_WIDTH..];
-//	}
-//    
-//    for i in 0..xs.len() {
-//  		accx[i] += xs[i] * xs[i];
-//		accy[i] += ys[i] * ys[i];
-//		accd[i] += xs[i] * ys[i];
-//  	}
-//	
-//	
-//	let xn = sum_acc(&mut accx);
-//	let yn = sum_acc(&mut accy);
-//	let dn = sum_acc(&mut accd);
-//	
-//	if xn*yn == 0.0 {
-//		0.0
-//	} else {
-//		dn/(xn*yn).sqrt()
-//	}
-//	
-//}

@@ -36,14 +36,15 @@ use shape::*;
 use std::cell::RefCell;
 use std::sync::Arc;
 
+#[allow(non_snake_case)]
 pub trait Operation: OperationClone {
 	fn name(&self) -> &str;
 	//fn get_initial_params(&self, params: &mut[f32]);
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]);
 	fn num_params(&self) -> usize;
-	fn input_node_ind(&self) -> Vec<NodeIndex>;
-	fn output_node_ind(&self) -> Vec<NodeIndex>; 
+	fn input_node_IDs(&self) -> Vec<NodeID>;
+	fn output_node_IDs(&self) -> Vec<NodeID>; 
 	fn init_params(&mut self, params: &mut [f32]){
 		if self.num_params() == 0 {
 			if params.len() != 0 {

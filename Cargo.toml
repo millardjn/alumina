@@ -1,18 +1,32 @@
 [package]
 name = "alumina"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["J. Millard <millard.jn@gmail.com>"]
+description = "A Experimental Deep Learning Library"
+repository = "https://github.com/millardjn/alumina"
+keywords = ["Neural Network", "Machine Learning", "Deep Learning"]
+license = "MIT"
+
+
+[features]
+default = ["mnist", "images"]
+mnist = ["byteorder"]
+images = ["image"]
+
+
 
 [dependencies]
 rand = "0.3"
-byteorder = "0.5"
 #matrixmultiply = "0.1.8"
-matrixmultiply = { path = "D:/Repositories/MatrixMultiply/matrixmultiply" }
-#matrixmultiply = { git = "https://github.com/millardjn/matrixmultiply", branch = "Loop3Multithreading" }
+matrixmultiply = { git = "https://github.com/millardjn/matrixmultiply"}
+
+
+byteorder = {version = "0.5", optional = true}
+image = {version = "*", optional = true}
 
 [dev-dependencies]
-image = "*"
 bytevec = "0.2.0"
+image = "*"
 
 [lib]
 name = "alumina"

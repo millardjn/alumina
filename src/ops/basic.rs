@@ -1,4 +1,5 @@
 
+
 /// Operations that ignore shape
 
 
@@ -13,8 +14,8 @@ use std::sync::Arc;
 #[derive(Clone)] 
 pub struct LinearMap {
 	name: String,
-	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+	input_id: NodeID,
+	output_id: NodeID,
 	input_size: usize,
 	output_size: usize,
 	init_func: Arc<Fn(&LinearMap, &mut [f32])>,
@@ -23,19 +24,19 @@ pub struct LinearMap {
 const FC_ERR: &'static str = "Full Connection requires fully determined shapes for both input and output nodes";
 
 impl LinearMap {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), name: &str, init_func: Arc<Fn(&LinearMap, &mut [f32])>) -> Box<LinearMap>{
+	pub fn new(input_id: &NodeID, output_id: &NodeID, name: &str, init_func: Arc<Fn(&LinearMap, &mut [f32])>) -> Box<LinearMap>{
 		Box::new(LinearMap{
 			name: name.to_string(),
-			input_ind: input,
-			output_ind: output,
-			input_size: input_shape.force_flat_size().expect(FC_ERR),
-			output_size: output_shape.force_flat_size().expect(FC_ERR),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			input_size: input_id.shape.force_flat_size().expect(FC_ERR),
+			output_size: output_id.shape.force_flat_size().expect(FC_ERR),
 			init_func: init_func
 		})
 	}
 	
-	pub fn new_default(input: &(NodeIndex, NodeShape), output: &(NodeIndex, NodeShape),) -> Box<LinearMap>{
-		LinearMap::new(input, output, "LinearMap", LinearMap::init_xavier())
+	pub fn new_default(input_id: &NodeID, output_id: &NodeID) -> Box<LinearMap>{
+		LinearMap::new(input_id, output_id, "LinearMap", LinearMap::init_xavier())
 	}
 	
 	pub fn init_xavier() -> Arc<Fn(&LinearMap, &mut [f32])> {
@@ -77,23 +78,23 @@ impl Operation for LinearMap {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
-		let in_err_msg = format!("Error: Operation '{}' error input Node '{}' size has changed since graph construction.", self.name, nodes[self.input_ind].name);
-		let out_err_msg = format!("Error: Operation '{}' error output Node '{}' size has changed since graph construction.", self.name, nodes[self.output_ind].name);
+		let in_err_msg = format!("Error: Operation '{}' error input Node '{}' size has changed since graph construction.", self.name, nodes[self.input_id.ind].name);
+		let out_err_msg = format!("Error: Operation '{}' error output Node '{}' size has changed since graph construction.", self.name, nodes[self.output_id.ind].name);
 		
-		shapes[self.input_ind] = NodeShape::new_flat(self.input_size).merge(&shapes[self.input_ind])
+		shapes[self.input_id.ind] = NodeShape::new_flat(self.input_size).merge(&shapes[self.input_id.ind])
 			.expect(&in_err_msg);
 			
-		shapes[self.output_ind] = NodeShape::new_flat(self.output_size).merge(&shapes[self.output_ind])
+		shapes[self.output_id.ind] = NodeShape::new_flat(self.output_size).merge(&shapes[self.output_id.ind])
 			.expect(&out_err_msg);
 
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 	
 	fn init_params(&mut self, params: &mut [f32]){
 		assert!(self.num_params() == params.len());
@@ -103,8 +104,8 @@ impl Operation for LinearMap {
 	fn num_params(&self) -> usize {self.input_size * self.output_size}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
-		let input = &*{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &*{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
@@ -130,8 +131,8 @@ impl Operation for LinearMap {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32], param_deriv: &mut [f32], _error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
@@ -178,39 +179,39 @@ impl Operation for LinearMap {
 #[derive(Clone)] 
 pub struct Bias {
 	name: String,
-	output_ind: NodeIndex,
+	output_id: NodeID,
 	sharing: ParamSharing,
 	num_params: usize,
 	init_func: Arc<Fn(&Bias, &mut [f32])>,
 }
 
 impl Bias {
-	pub fn new(&(output, ref output_shape): &(NodeIndex, NodeShape), sharing: ParamSharing, name: &str, init_func: Arc<Fn(&Bias, &mut [f32])>) -> Box<Bias>{
+	pub fn new(output_id: &NodeID, sharing: ParamSharing, name: &str, init_func: Arc<Fn(&Bias, &mut [f32])>) -> Box<Bias>{
 		
 		let (sharing, num_params) = match sharing {
 			ParamSharing::Auto => {
-				(if output_shape.rank() == 1 {
+				(if output_id.shape.rank() == 1 {
 					ParamSharing::None
 				} else {
 					ParamSharing::Spatial
-				}, output_shape.channels)
+				}, output_id.shape.channels)
 			},
-			ParamSharing::None => (ParamSharing::None, output_shape.force_flat_size().expect("Bias with 'None' parameter sharing requires a fully determined shape for the input node")),
+			ParamSharing::None => (ParamSharing::None, output_id.shape.force_flat_size().expect("Bias with 'None' parameter sharing requires a fully determined shape for the input node")),
 			ParamSharing::Full => (ParamSharing::Full, 1),
-			ParamSharing::Spatial => (ParamSharing::Spatial, output_shape.channels),
+			ParamSharing::Spatial => (ParamSharing::Spatial, output_id.shape.channels),
 		};
 		
 		Box::new(Bias{
 			name: name.to_string(),
-			output_ind: output,
+			output_id: output_id.clone(),
 			num_params: num_params,
 			sharing: sharing,
 			init_func: init_func,
 		})
 	}
 
-	pub fn new_default(output: &(NodeIndex, NodeShape)) -> Box<Bias>{
-		Bias::new(output, ParamSharing::Auto, "Bias", init_fill(0.0))
+	pub fn new_default(output_id: &NodeID,) -> Box<Bias>{
+		Bias::new(output_id, ParamSharing::Auto, "Bias", init_fill(0.0))
 	}
 
 }
@@ -225,9 +226,9 @@ impl Operation for Bias {
 	
 	fn num_params(&self) -> usize{ self.num_params }
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn input_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![self.output_ind] }
+	fn output_node_IDs(&self) -> Vec<NodeID>{ vec![self.output_id.clone()] }
 	
 	fn init_params(&mut self, params: &mut [f32]){
 		assert!(self.num_params() == params.len());
@@ -236,7 +237,7 @@ impl Operation for Bias {
 	}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 
 		let len = output.shape.flat_size_all();
 
@@ -271,7 +272,7 @@ impl Operation for Bias {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], param_deriv: &mut [f32], _error: &mut f32){
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 
 		let len = output.shape.flat_size_all();
 
@@ -315,17 +316,17 @@ pub struct L2Regularisation {
 }
 
 impl L2Regularisation {
-	pub fn new((_op, num_params): (OpIndex, usize), strength: f32, name: &str) -> Box<L2Regularisation>{
+	pub fn new(op_id: &OpID, strength: f32, name: &str) -> Box<L2Regularisation>{
 		Box::new(L2Regularisation{
 			name: name.to_string(),
-			num_params: num_params,
+			num_params: op_id.num_params,
 			target_values: None,
 			strength: strength,
 		})
 	}
 
-	pub fn new_default(op: (OpIndex, usize)) -> Box<L2Regularisation>{
-		L2Regularisation::new(op, 1.0, "L2Regularisation")
+	pub fn new_default(op_id: &OpID) -> Box<L2Regularisation>{
+		L2Regularisation::new(op_id, 1.0, "L2Regularisation")
 	}
 	
 }
@@ -338,9 +339,9 @@ impl Operation for L2Regularisation {
 	
 	fn num_params(&self) -> usize{self.num_params}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn input_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn output_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 		
 	fn init_params(&mut self, _params: &mut [f32]){
 		panic!("L2Regularisation is not able to initialise parameters, and therefore should only be added to a graph as a secondary operation.");
@@ -365,30 +366,43 @@ impl Operation for L2Regularisation {
 #[derive(Clone)] 
 pub struct Scale {
 	name: String,
-	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+	input_id: NodeID,
+	output_id: NodeID,
+	sharing: ParamSharing,
+	num_params: usize,
 	init_func: Arc<Fn(&Scale, &mut [f32])>,
 }
 
 impl Scale {
-	pub fn new<F:Fn(&Scale, &mut [f32]) + 'static>(_graph: &Graph, input: NodeIndex, output: NodeIndex, name: &str, init_func: F) -> Box<Scale>{
+	pub fn new(input_id: &NodeID, output_id: &NodeID, sharing: ParamSharing, name: &str, init_func: Arc<Fn(&Scale, &mut [f32])>) -> Box<Scale>{
+		let (sharing, num_params) = match sharing {
+			ParamSharing::Auto => {
+				if let Ok(size) = input_id.shape.force_flat_size() {
+					(ParamSharing::None, size)
+				} else {
+					assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+					(ParamSharing::Spatial, input_id.shape.channels)
+				}
+			},
+			ParamSharing::None => (ParamSharing::None, input_id.shape.force_flat_size().expect("Scale Operation with 'None' parameter sharing requires a fully determined shape for the input node")),
+			ParamSharing::Full => (ParamSharing::Full, 1),
+			ParamSharing::Spatial => (ParamSharing::Spatial, input_id.shape.channels),
+		};
+		
 		Box::new(Scale{
 			name: name.to_string(),
-			input_ind: input,
-			output_ind: output,
-			init_func: Arc::new(init_func),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			sharing: sharing,
+			num_params: num_params,
+			init_func: init_func,
 		})
 	}
 	
-	pub fn new_default(_graph: &Graph, input: NodeIndex, output: NodeIndex) -> Box<Scale>{
-		Scale::new(_graph, input, output, "Scale", Scale::init_unit)
+	pub fn new_default(input_id: &NodeID, output_id: &NodeID,) -> Box<Scale>{
+		Scale::new(input_id, output_id, ParamSharing::Auto, "Scale", init_fill(1.0))
 	}
 	
-	pub fn init_unit(_op: &Scale, params: &mut [f32]){
-		for x in params{
-			*x = 1.0;
-		}
-	}
 }
 
 impl Operation for Scale {
@@ -396,18 +410,18 @@ impl Operation for Scale {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
-		shapes[self.output_ind] = shapes[self.input_ind].merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = shapes[self.input_id.ind].merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_id.ind].name));
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 	
-	fn num_params(&self) -> usize {1}
+	fn num_params(&self) -> usize {self.num_params}
 	
 	fn init_params(&mut self, params: &mut [f32]){
 		assert!(self.num_params() == params.len());
@@ -415,35 +429,101 @@ impl Operation for Scale {
 	}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
-		let input_size = data[self.input_ind].borrow().shape.flat_size_all();
-		let output_size = data[self.output_ind].borrow().shape.flat_size_all();
-		assert!(input_size == output_size, format!("Error: Operation '{}' input and output node sizes were not equal during evaluation", self.name));
+		let input = &*{data[self.input_id.ind].borrow()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		
-		let scale = params[0];
-		let input_values  = &data[self.input_ind].borrow().values;      // &input_data.values;
-		let output_values = &mut {data[self.output_ind].borrow_mut()}.values;    //&mut output_data.values;
-		
-		for i in 0..input_size{
-			output_values[i] += input_values[i] * scale;
+		// These checks shouldnt be necessary unless code in the graph/propagate_shapes doesnt correctly resolve compatible shapes.
+		debug_assert_eq!(input.shape.n, output.shape.n);
+		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
+
+		let len = input.shape.flat_size_all();
+
+		let stride = match self.sharing {
+			ParamSharing::None => input.shape.flat_size_single(),
+			ParamSharing::Spatial => input.shape.channels,
+			ParamSharing::Full => 1,
+			_ => unreachable!(),
+		};
+
+		if stride == 1 {
+			debug_assert_eq!(params.len(), 1);
+			let out_n = &mut output.values[..len];
+			let inp_n = &input.values[..len];
+			let scale = &params[0];
+			
+			for i in 0..len {
+				let v = inp_n[i];
+				out_n[i] += v*scale;
+			}				
+		} else {
+
+			for n_ind in 0..len/stride{
+				let out_n = &mut output.values[n_ind*stride..][..stride];
+				let inp_n = &input.values[n_ind*stride..][..stride];
+				let params = &params[..stride];
+				
+				
+				for i in 0..stride {
+					let v = inp_n[i];
+					out_n[i] += v*params[i];
+				}			
+				
+			}
+
 		}
+
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32], param_deriv: &mut [f32], _error: &mut f32){
-		let input_size = data[self.input_ind].borrow().shape.flat_size_all();
-		let output_size = data[self.output_ind].borrow().shape.flat_size_all();
-		assert!(input_size == output_size, format!("Error: Operation '{}' input and output node sizes were not equal during evaluation", self.name));
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow()};
+
+		// These checks shouldnt be necessary unless code in the graph/propagate_shapes doesnt correctly resolve compatible shapes.
+		debug_assert_eq!(input.shape.n, output.shape.n);
+		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
 		
-		let scale = params[0];
-		
-		let input_node = &mut *{data[self.input_ind].borrow_mut()};
-		let input_deriv: &mut [f32] = &mut input_node.derivatives;
-		let input_values: &[f32] = &input_node.values;
-		
-		let output_deriv = &data[self.output_ind].borrow().derivatives;
+
+		let len = input.shape.flat_size_all();
+
+		let stride = match self.sharing {
+			ParamSharing::None => input.shape.flat_size_single(),
+			ParamSharing::Spatial => input.shape.channels,
+			ParamSharing::Full => 1,
+			_ => unreachable!(),
+		};
+
+
+		if stride == 1 {
+			debug_assert_eq!(params.len(), 1);
+			let inp_n = &input.values[..len];
+			let outd_n = &output.derivatives[..len];
+			let inpd_n = &mut input.derivatives[..len];
+			let scale = &params[0];
+			let param_deriv = &mut param_deriv[0];	
+				
+			for i in 0..len {
+				inpd_n[i] += outd_n[i] * scale;
+				*param_deriv += outd_n[i] * inp_n[i];
+			}
 			
-		for i in 0..input_size{
-			input_deriv[i] += output_deriv[i] * scale;
-			param_deriv[0] += output_deriv[i] * input_values[i];
+		} else {
+
+			for n_ind in 0..len/stride{
+
+				let inp_n = &input.values[n_ind*stride..][..stride];
+				let outd_n = &output.derivatives[n_ind*stride..][..stride];
+				let inpd_n = &mut input.derivatives[n_ind*stride..][..stride];
+				let params = &params[..stride];
+				let param_deriv = &mut param_deriv[..stride];	
+					
+				for i in 0..stride {
+					inpd_n[i] += outd_n[i] * params[i];
+					param_deriv[i] += outd_n[i] * inp_n[i];
+				}
+	
+				
+			}
+
 		}
 		
 	}	
@@ -504,8 +584,8 @@ mod tests {
 		for _ in 1..100{
 			let mut graph = Graph::new();
 		
-			let n2 = graph.add_output_node(Node::new_sized(10, vec![15, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(10, vec![15, 17], "nodetrain"));
+			let n2 = graph.add_output_node(Node::new_sized(10, &[15, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(10, &[15, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				Bias::new(&n2, ParamSharing::Spatial, "Bias", init_fill(0.0)),
@@ -518,6 +598,70 @@ mod tests {
 			test_numeric(graph, 1.0, 1e-1);
 		}
 	}
+
+	#[test]
+	fn test_scale_backprop(){
+		for _ in 1..100{
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(10, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(10, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(10, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				Scale::new(&n1, &n2, ParamSharing::None, "ScaleNoSharing", init_fill(1.0)),
+				MseLoss::new_default(&n2, &n3),
+			];
+		
+			graph.add_operations(ops);
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 1e-2);
+		}
+	}
+
+	#[test]
+	fn test_scale_sharing_full_backprop(){
+		for _ in 1..100{
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(10, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(10, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(10, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				Scale::new(&n1, &n2, ParamSharing::Full, "ScaleFullSharing", init_fill(1.0)),
+				MseLoss::new_default(&n2, &n3),
+			];
+		
+			graph.add_operations(ops);
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 1e-2);
+		}
+	}
+
+	#[test]
+	fn test_scale_sharing_spatial_backprop(){
+		for _ in 1..100{
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_sized(10, &[5, 5], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(10, &[5, 5], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(10, &[5, 5], "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				Scale::new(&n1, &n2, ParamSharing::Spatial, "ScaleSpatialSharing", init_fill(1.0)),
+				MseLoss::new_default(&n2, &n3),
+			];
+		
+			graph.add_operations(ops);
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 1e-2);
+		}
+	}
+
 
 //TODO
 	// #[test]

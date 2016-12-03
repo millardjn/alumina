@@ -52,7 +52,7 @@ pub enum ShapeError{
 
 use self::Dimension::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Dimension {
 	Unknown,
 	Fixed(usize),
@@ -117,10 +117,10 @@ impl DataShape{
 		self.spatial_dimensions.len() + 1
 	}
 	
-	pub fn new(channels: usize, higher_dims: Vec<usize>, n: usize) -> DataShape{
+	pub fn new(channels: usize, higher_dims: &[usize], n: usize) -> DataShape{
 		DataShape{
 			channels: channels, 
-			spatial_dimensions: higher_dims, 
+			spatial_dimensions: higher_dims.to_vec(), 
 			n: n
 		}
 	}
@@ -134,12 +134,12 @@ impl DataShape{
 	}
 	
 	pub fn to_node_shape(&self) -> NodeShape {
-		NodeShape::new(self.channels, self.spatial_dimensions.clone())
+		NodeShape::new(self.channels, &self.spatial_dimensions)
 	}
 }
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeShape{
 	pub channels: usize,
 	pub spatial_dimensions: Vec<Dimension>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size
@@ -147,7 +147,7 @@ pub struct NodeShape{
 
 impl NodeShape{
 	
-	pub fn new(channels: usize, higher_dims: Vec<usize>) -> NodeShape{
+	pub fn new(channels: usize, higher_dims: &[usize]) -> NodeShape{
 		NodeShape{
 			channels: channels, 
 			spatial_dimensions: higher_dims.iter().map(|&x| Dimension::Fixed(x)).collect(), 

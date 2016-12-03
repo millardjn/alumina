@@ -21,9 +21,9 @@ pub fn build_circular_graph() {
 	
 	let ops: Vec<Box<Operation>> = vec![
 		LinearMap::new_default(&layer0, &layer1),
-		ReLU::new_default(&layer1, &layer2),
-		ReLU::new_default(&layer2, &layer3),
-		ReLU::new_default(&layer3, &layer1),
+		ReLU::new(&layer1, &layer2, "ReLU"),
+		ReLU::new(&layer2, &layer3, "ReLU"),
+		ReLU::new(&layer3, &layer1, "ReLU"),
 		LinearMap::new_default(&layer3, &layer4),
 	];
 	g.add_operations(ops);
@@ -51,9 +51,9 @@ pub fn build_graph() {
 	
 	let ops: Vec<Box<Operation>> = vec![
 		LinearMap::new_default(&layer0, &layer1),
-		ReLU::new_default(&layer1, &layer2),
+		ReLU::new(&layer1, &layer2, "ReLU"),
 		LinearMap::new_default(&layer2, &layer3),
-		ReLU::new_default(&layer3, &layer4),
+		ReLU::new(&layer3, &layer4, "ReLU"),
 		MseLoss::new_default(&layer4, &layer0),
 	];
 	g.add_operations(ops);

@@ -11,23 +11,23 @@ use std::f32;
 #[derive(Clone)] 
 pub struct MseLoss {
 	name: String,
-	input_ind: NodeIndex,
-	target_ind: NodeIndex,
+	input_id: NodeID,
+	target_id: NodeID,
 	strength: f32,
 }
 
 impl MseLoss {
-	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(target, ref _target_shape): &(NodeIndex, NodeShape), strength: f32, name: &str) -> Box<MseLoss>{
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, name: &str) -> Box<MseLoss>{
 		Box::new(MseLoss{
 			name: name.to_string(),
-			input_ind: input,
-			target_ind: target,
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
 			strength: strength,
 		})
 	}
 	
-	pub fn new_default(input: &(NodeIndex, NodeShape), target: &(NodeIndex, NodeShape)) -> Box<MseLoss>{
-		MseLoss::new(input, target, 1.0, "MseLoss")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID,) -> Box<MseLoss>{
+		MseLoss::new(input_id, target_id, 1.0, "MseLoss")
 	}
 }
 
@@ -36,21 +36,21 @@ impl Operation for MseLoss {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind, self.target_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone(), self.target_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![]}
 	
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}// No Output
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let target = &*{data[self.target_ind].borrow()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let target = &*{data[self.target_id.ind].borrow()};
 		let input_size = input.shape.flat_size_single();
 		let target_size = target.shape.flat_size_single();
 		
@@ -72,23 +72,23 @@ impl Operation for MseLoss {
 #[derive(Clone)] 
 pub struct CrossEntLoss {
 	name: String,
-	input_ind: NodeIndex,
-	target_ind: NodeIndex,
+	input_id: NodeID,
+	target_id: NodeID,
 	strength: f32,
 }
 
 impl CrossEntLoss {
-	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(target, ref _target_shape): &(NodeIndex, NodeShape), strength: f32, name: &str) -> Box<CrossEntLoss>{
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, name: &str) -> Box<CrossEntLoss>{
 		Box::new(CrossEntLoss{
 			name: name.to_string(),
-			input_ind: input,
-			target_ind: target,
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
 			strength: strength,
 		})
 	}
 	
-	pub fn new_default(input: &(NodeIndex, NodeShape), target: &(NodeIndex, NodeShape)) -> Box<CrossEntLoss>{
-		CrossEntLoss::new(input, target, 1.0, "CrossEntError")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID,) -> Box<CrossEntLoss>{
+		CrossEntLoss::new(input_id, target_id, 1.0, "CrossEntError")
 	}
 }
 
@@ -97,27 +97,27 @@ impl Operation for CrossEntLoss {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind, self.target_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone(), self.target_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![]}
 	
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}// No Output
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
-		let input_size = data[self.input_ind].borrow().shape.flat_size_all();
-		let target_size = data[self.target_ind].borrow().shape.flat_size_all();
+		let input_size = data[self.input_id.ind].borrow().shape.flat_size_all();
+		let target_size = data[self.target_id.ind].borrow().shape.flat_size_all();
 		assert!(input_size == target_size, format!("Error: Operation '{}' input and target node sizes were not equal during evaluation", self.name));
 		
-		let input_node = &mut *{data[self.input_ind].borrow_mut()};
+		let input_node = &mut *{data[self.input_id.ind].borrow_mut()};
 		let input_deriv: &mut [f32] = &mut input_node.derivatives;
 		let input_values: &[f32] = &input_node.values;
-		let target_values: &[f32] =  &data[self.target_ind].borrow().values;
+		let target_values: &[f32] =  &data[self.target_id.ind].borrow().values;
 
 		for (i, &t) in target_values.iter().enumerate() {
 			
@@ -136,23 +136,23 @@ impl Operation for CrossEntLoss {
 #[derive(Clone)] 
 pub struct SoftMaxCrossEntLoss {
 	name: String,
-	input_ind: NodeIndex,
-	target_ind: NodeIndex,
+	input_id: NodeID,
+	target_id: NodeID,
 	strength: f32,
 }
 
 impl SoftMaxCrossEntLoss {
-	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(target, ref _target_shape): &(NodeIndex, NodeShape), strength: f32, name: &str) -> Box<SoftMaxCrossEntLoss>{
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, name: &str) -> Box<SoftMaxCrossEntLoss>{
 		Box::new(SoftMaxCrossEntLoss{
 			name: name.to_string(),
-			input_ind: input,
-			target_ind: target,
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
 			strength: strength,
 		})
 	}
 
-	pub fn new_default(input: &(NodeIndex, NodeShape), target: &(NodeIndex, NodeShape)) -> Box<SoftMaxCrossEntLoss>{
-		SoftMaxCrossEntLoss::new(input, target, 1.0, "SoftMaxCrossEntLoss")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID) -> Box<SoftMaxCrossEntLoss>{
+		SoftMaxCrossEntLoss::new(input_id, target_id, 1.0, "SoftMaxCrossEntLoss")
 	}
 	
 }
@@ -162,21 +162,21 @@ impl Operation for SoftMaxCrossEntLoss {
 	fn name(&self) -> &str{ &self.name }
 
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 	}
 	
 	fn num_params(&self) -> usize{0}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind, self.target_ind] }
+	fn input_node_IDs(&self) -> Vec<NodeID>{ vec![self.input_id.clone(), self.target_id.clone()] }
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn output_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 		
 	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let target = &*{data[self.target_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let target = &*{data[self.target_id.ind].borrow_mut()};
 		assert!(input.shape.flat_size_all() == target.shape.flat_size_all(),
 			format!("Error: Operation '{}' input and target node sizes were not equal during evaluation", self.name));
 		
@@ -225,23 +225,23 @@ impl Operation for SoftMaxCrossEntLoss {
 #[derive(Clone)] 
 pub struct SoftMaxDampedCrossEntLoss {
 	name: String,
-	input_ind: NodeIndex,
-	target_ind: NodeIndex,
+	input_id: NodeID,
+	target_id: NodeID,
 	strength: f32,
 }
 
 impl SoftMaxDampedCrossEntLoss {
-	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(target, ref _target_shape): &(NodeIndex, NodeShape), strength: f32, name: &str) -> Box<SoftMaxDampedCrossEntLoss>{
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, name: &str) -> Box<SoftMaxDampedCrossEntLoss>{
 		Box::new(SoftMaxDampedCrossEntLoss{
 			name: name.to_string(),
-			input_ind: input,
-			target_ind: target,
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
 			strength: strength,
 		})
 	}
 
-	pub fn new_default(input: &(NodeIndex, NodeShape), target: &(NodeIndex, NodeShape)) -> Box<SoftMaxDampedCrossEntLoss>{
-		SoftMaxDampedCrossEntLoss::new(input, target, 1.0, "SoftMaxDampedCrossEntLoss")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID) -> Box<SoftMaxDampedCrossEntLoss>{
+		SoftMaxDampedCrossEntLoss::new(input_id, target_id, 1.0, "SoftMaxDampedCrossEntLoss")
 	}
 	
 }
@@ -251,21 +251,21 @@ impl Operation for SoftMaxDampedCrossEntLoss {
 	fn name(&self) -> &str{ &self.name }
 
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 	}
 	
 	fn num_params(&self) -> usize{0}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind, self.target_ind] }
+	fn input_node_IDs(&self) -> Vec<NodeID>{ vec![self.input_id.clone(), self.target_id.clone()] }
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn output_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 		
 	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let target = &*{data[self.target_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let target = &*{data[self.target_id.ind].borrow_mut()};
 		assert!(input.shape.flat_size_all() == target.shape.flat_size_all(),
 			format!("Error: Operation '{}' input and target node sizes were not equal during evaluation", self.name));
 		
@@ -326,23 +326,23 @@ impl Operation for SoftMaxDampedCrossEntLoss {
 #[derive(Clone)] 
 pub struct PredictionLoss {
 	name: String,
-	input_ind: NodeIndex,
-	target_ind: NodeIndex,
+	input_id: NodeID,
+	target_id: NodeID,
 	strength: f32,
 }
 
 impl PredictionLoss {
-	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(target, ref _target_shape): &(NodeIndex, NodeShape), strength: f32, name: &str) -> Box<PredictionLoss>{
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, name: &str) -> Box<PredictionLoss>{
 		Box::new(PredictionLoss{
 			name: name.to_string(),
-			input_ind: input,
-			target_ind: target,
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
 			strength: strength,
 		})
 	}
 
-	pub fn new_default(input: &(NodeIndex, NodeShape), target: &(NodeIndex, NodeShape)) -> Box<PredictionLoss>{
-		PredictionLoss::new(input, target, 1.0, "PredictionLoss")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID) -> Box<PredictionLoss>{
+		PredictionLoss::new(input_id, target_id, 1.0, "PredictionLoss")
 	}
 	
 }
@@ -352,21 +352,21 @@ impl Operation for PredictionLoss {
 	fn name(&self) -> &str{ &self.name }
 
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 	}
 	
 	fn num_params(&self) -> usize{0}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind, self.target_ind] }
+	fn input_node_IDs(&self) -> Vec<NodeID>{ vec![self.input_id.clone(), self.target_id.clone()] }
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![] }
+	fn output_node_IDs(&self) -> Vec<NodeID>{ vec![] }
 		
 	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let target = &*{data[self.target_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let target = &*{data[self.target_id.ind].borrow_mut()};
 		assert!(input.shape.flat_size_all() == target.shape.flat_size_all(),
 			format!("Error: Operation '{}' input and target node sizes were not equal during evaluation", self.name));
 		

@@ -54,21 +54,21 @@ pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	}
 	
 	
-	if graph.input_node_indices().len() > 0{// change inputs in direction of error gradients and check for correct change in error
+	if graph.input_node_IDs().len() > 0{// change inputs in direction of error gradients and check for correct change in error
 		
-		let input_norm_sqr = graph.input_node_indices().iter()
-			.map(|&ind| &node_data[..][ind])
+		let input_norm_sqr = graph.input_node_IDs().iter()
+			.map(|id| &node_data[id.ind])
 			.map(|node| node.derivatives.dot(&node.derivatives))
 			.fold(0.0, |acc, n| acc + n);
 		
 
-		let input_1 = graph.input_node_indices().iter()
-			.map(|&ind| &node_data[..][ind])
+		let input_1 = graph.input_node_IDs().iter()
+			.map(|id| &node_data[id.ind])
 			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, -step_size)))
 			.collect();
 			
-		let input_2 = graph.input_node_indices().iter()
-			.map(|&ind| &node_data[..][ind])
+		let input_2 = graph.input_node_IDs().iter()
+			.map(|id| &node_data[id.ind])
 			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, step_size)))
 			.collect();
 

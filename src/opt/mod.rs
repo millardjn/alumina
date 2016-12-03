@@ -1,11 +1,10 @@
 pub mod sgd;
 pub mod asgd;
-
+pub mod supplier;
 
 use graph::*;
-use rand::*;
-use std::iter;
 
+use self::supplier::Supplier;
 
 
 pub trait Optimiser<'a> {
@@ -28,63 +27,3 @@ pub trait Optimiser<'a> {
 	fn step(&mut self, training_set: &mut Supplier, params: Vec<f32>) -> (f32, Vec<f32>);
 }
 
-pub trait Supplier {
-	fn next_n(&mut self, u: usize) -> (Vec<NodeData>, Vec<NodeData>);
-	fn epoch_size(&self) -> usize;
-	fn samples_taken(&self) -> u64;
-	fn reset(&mut self);
-	fn once(self)-> Vec<(Vec<NodeData>, Vec<NodeData>)> ;
-}
-
-pub struct ShuffleRandomiser {
-	n: usize,
-	order: Box<Iterator<Item=usize>>,
-}
-
-impl ShuffleRandomiser {
-	pub fn new(n: usize) -> ShuffleRandomiser{
-		ShuffleRandomiser{
-			n: n,
-			order: Box::new(iter::empty()),
-			}
-	}
-
-	pub fn next(&mut self) -> usize{
-		match self.order.next() {
-			Some(i) => i,
-			None => {
-				assert!(self.n > 0, "Cant generate indices over a zero size set.");
-				let mut v: Vec<usize> = (0..self.n).collect();
-				let mut rng = thread_rng();
-				rng.shuffle(&mut v);
-				
-				self.order = Box::new(v.into_iter());
-				
-				self.next()
-			},
-		}
-
-	}
-
-	pub fn reset(&mut self){
-		self.order = Box::new(iter::empty());
-	}
-}
-
-pub struct Randomiser {
-	n: usize,
-}
-
-impl Randomiser {
-	pub fn new(n: usize) -> Randomiser{
-		Randomiser{
-			n: n,
-			}
-	}
-
-	pub fn next(&self) -> usize{
-		thread_rng().gen_range(0, self.n)
-	}
-
-	pub fn reset(&mut self){}
-}

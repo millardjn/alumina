@@ -4,7 +4,7 @@ pub mod ops;
 pub mod opt;
 pub mod shape;
 #[cfg(test)]mod test;
-pub mod stats;
+//pub mod stats;
 pub mod vec_math;
 
 extern crate rand;

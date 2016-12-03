@@ -2,7 +2,7 @@ use opt::*;
 use graph::*;
 use vec_math::{VecMath, VecMathMut, VecMathMove};
 use std::f32;
-
+use opt::supplier::Supplier;
 
 
 const NUM_BINS: u32 = 8;
@@ -23,7 +23,6 @@ pub struct Asgd<'a>{
 	previous_derivs: Vec<f32>,
 	previous_change: Vec<f32>,
 	previous_err: f32,
-	//eval_callback: Vec<Box<EvalCallback>>,
 	step_callback: Vec<Box<FnMut(f32, u64, u64, &mut Graph, &[f32])->bool>>,
 }
 
@@ -39,13 +38,12 @@ impl <'a> Asgd<'a> {
 			graph: graph,
 			curvature_est: vec![0.0; num_params],
 			decay_const: 0.9,
-			rate: 0.0001,
+			rate: 0.00001,
 			batch_size: 1.0,
 			min_batch_size: 1.0,
 			previous_derivs: vec![0.0; num_params],
 			previous_change: vec![0.0; num_params],
 			previous_err: 0.,
-			//eval_callback: vec![],
 			step_callback: vec![],
 		}
 	}
@@ -248,7 +246,9 @@ pub struct Asgd2<'a>{
 	batch_size: f32,
 	min_batch_size: usize,
 	averaged_derivs: Vec<f32>,
+	prev_derivs: Vec<f32>,
 	step_callback: Vec<Box<FnMut(f32, u64, u64, &mut Graph, &[f32])->bool>>,
+	cos_sim_var: f32,
 }
 
 impl <'a> Asgd2<'a> {
@@ -263,11 +263,13 @@ impl <'a> Asgd2<'a> {
 			graph: graph,
 			curvature_est: vec![0.0; num_params],
 			decay_const: 0.9,
-			rate: 0.0001,
+			rate: 0.001,
 			batch_size: 1.0,
 			min_batch_size: 1,
 			averaged_derivs: vec![0.0; num_params],
+			prev_derivs: vec![0.0; num_params],
 			step_callback: vec![],
+			cos_sim_var: 0.0
 		}
 	}
 	
@@ -293,6 +295,56 @@ impl <'a> Asgd2<'a> {
 			self.eval_count += batch_size;
 			(err, param_derivs)
 			
+	}
+
+	/// mutably updates batch_size and returns relative error measure
+	fn update_batch_size(&mut self, mean: &[f32], results: &[(f32, Vec<f32>)]) -> f32{
+
+		//-- Vector Dispersion measures
+		let mean_norm = mean.norm2();
+		let (max, avg) = results.iter()
+			.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
+			.fold((0.0f32, 0.0f32), |(max, avg), diff| {
+				let len = diff.norm2()/((NUM_BINS - 1) as f32 * mean_norm);
+				(max.max(len), avg + len/NUM_BINS as f32)
+			} );
+		// max being below 1.0 shows that there isn't one vector that is orders of magnitude larger than the others and is swamping the mean
+		let max_target = 0.66;
+
+		// avg being less than 1.0 shows that the vectors arent just orthogonal vectors of equal length (random vector in high dimensions are likely to be orthogonal), therefore there is some signal in the noise
+		let avg_target = 0.66;
+
+		let rel_err = (max/max_target).max(avg/avg_target).max(0.125);
+		
+		//print!("{} {} ", avg, max);
+				
+		//-- Vector Variance
+		// let var = results.iter()
+		// 	.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
+		// 	.fold(0.0, |acc, diff| acc + diff.dot(&diff))/(NUM_BINS - 1) as f32;
+		// let std_err_var = var/NUM_BINS as f32;
+		// let rel_err = (std_err_var/mean.dot(&mean)).sqrt();			
+		// let target_err = 0.9;
+		
+		
+		//-- Variance when projected onto mean vector
+		// let mean_norm = mean.normalise();
+		// let var2 = results.iter()
+		// 	.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0).dot(&mean_norm))
+		// 	.fold(0.0, |acc, diff| acc + diff*diff)/(NUM_BINS - 1) as f32;
+		// let std_err_var2 = var2/NUM_BINS as f32;
+		// let rel_err = (std_err_var2/mean.dot(&mean)).sqrt();		
+		// let target_err = 0.25;//
+		
+		
+		// Adapt batch size based on derivative relative err vs target relative variance			
+		self.batch_size *= if rel_err > 1.0 {
+				rel_err.powf(0.25) // increase batch size
+			} else {
+				rel_err.powf(0.125) // decrease batch size
+			};
+		self.batch_size = self.batch_size.max(self.min_batch_size as f32);
+		rel_err
 	}
 }
 
@@ -340,110 +392,104 @@ impl<'a> Optimiser<'a> for Asgd2<'a>{
 	
 	fn step(&mut self, training_set: &mut Supplier, params: Vec<f32>) -> (f32, Vec<f32>){
 
-			// Take multiple measurements of error and gradient, then find L2 variance in derivative vectors
-			
-			let batch_ceil = self.batch_size.floor() as u64;
-			let results = (0..NUM_BINS).map(|_| self.part_step(training_set, &params, batch_ceil)).collect::<Vec<_>>();
-			
-			let err: f32 = results.iter().fold(0.0f32, |acc, &(err, _)| acc + err)/NUM_BINS as f32;
-			let mean: Vec<f32> = results.iter().fold(vec![0.0f32;params.len()], |acc, &(_, ref derivs)| acc.add_move(&derivs)).scale_move(1.0/NUM_BINS as f32);
-
-			//-- Vector MAD
-			let mad = results.iter()
-				.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
-				.fold(0.0, |acc, diff| acc + diff.dot(&diff).sqrt())/(NUM_BINS - 1) as f32;
-			//let dev_of_mean = mad/(NUM_BINS as f32).sqrt();
-			let rel_std_err = mad/mean.dot(&mean).sqrt();			
-			let target_err = 2.0;
-			
-			
-			//-- Vector Variance
-			// let var = results.iter()
-			// 	.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
-			// 	.fold(0.0, |acc, diff| acc + diff.dot(&diff))/(NUM_BINS - 1) as f32;
-			// let std_err_var = var/NUM_BINS as f32;
-			// let rel_std_err = (std_err_var/mean.dot(&mean)).sqrt();			
-			//let target_err = 0.9;
-			
-			
-			//-- Variance when projected onto mean vector
-			// let mean_norm = mean.normalise();
-			// let var2 = results.iter()
-			// 	.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0).dot(&mean_norm))
-			// 	.fold(0.0, |acc, diff| acc + diff*diff)/(NUM_BINS - 1) as f32;
-			// let std_err_var2 = var2/NUM_BINS as f32;
-			// let rel_std_err = (std_err_var2/mean.dot(&mean)).sqrt();		
-			// let target_err = 0.25;//0.5f32;//f32.sqrt().sqrt();
-			
-			
-			let curv_decay = self.decay_const.powf(0.5);
-			self.curvature_est.scale_mut(curv_decay);			
-			
-			// New ADAM curvature
-			// for &(_, ref derivs) in results.iter() {
-				// let var = derivs.add_scaled(&self.averaged_derivs, -1.0);
-				// self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay)/NUM_BINS as f32);	
-				// self.curvature_est.add_scaled_mut(&derivs.elementwise_mul(&derivs), (1.0 - curv_decay)/NUM_BINS as f32);				
-			// }
-			let var = mean.add_scaled(&self.averaged_derivs, -1.0);
-			self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay) as f32);
+		// Take multiple measurements of error and gradient, then find L2 variance in derivative vectors
+		
+		let batch_ceil = self.batch_size.floor() as u64;
+		let results = (0..NUM_BINS).map(|_| self.part_step(training_set, &params, batch_ceil)).collect::<Vec<_>>();
+		
+		let err: f32 = results.iter().fold(0.0f32, |acc, &(err, _)| acc + err)/NUM_BINS as f32;
+		let mean: Vec<f32> = results.iter().fold(vec![0.0f32;params.len()], |acc, &(_, ref derivs)| acc.add_move(&derivs)).scale_move(1.0/NUM_BINS as f32);
 
 
-
-			// Normal ADAM curvature		
-			//self.curvature_est.add_scaled_mut(&mean.elementwise_mul(&mean), 1.0 - curv_decay);
-			
-			let corrected_curvature = self.curvature_est.scale(1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1)));
-			
+	// {
+	// 	let avg_norm_sqr = self.averaged_derivs.dot(&self.averaged_derivs);
+	// 	let mean_dot = mean.dot(&self.averaged_derivs)/avg_norm_sqr;
+	// 	let prev_dot = self.prev_derivs.dot(&self.averaged_derivs)/avg_norm_sqr;
 
 
-			//ADAMAX
-			// self.curvature_est = self.curvature_est.iter().zip(mean.iter()).map(|(&c, &m)| m.abs().max(c * curv_decay)).collect();
-			// let cond_derivs: Vec<f32> = mean.iter().zip(self.curvature_est.iter()).map(|(m,c)| m/(c + 1e-6)).collect();
-			
-			//let cond_prev_derivs: Vec<f32> = self.previous_derivs.iter().zip(&corrected_curvature).map(|(m,c)| m/(c.sqrt() + 1e-8).powf(PWR)).collect();
-	
-			//let sim = mean.cos_similarity(&self.previous_derivs);	// Adapt learning rate based on inter-step cosine similarity
-			let sim = if self.step_count == 0 {
-				0.0
-			} else {
-				mean.cos_similarity(&self.averaged_derivs)
-				//(mean.dot(&self.averaged_derivs)/self.averaged_derivs.dot(&self.averaged_derivs)).max(-4.0).min(2.0) // clipping prevents unexpected noise results from blowing up step size adaption.
-			};
-			let new_rate = self.rate*1.5f32.sqrt().powf(sim+0.125);//*1.25; +0.0625
-			
+	// 	let mean_reg = mean.add_scaled(&self.averaged_derivs, -mean_dot);
+	// 	let prev_reg = self.prev_derivs.add_scaled(&self.averaged_derivs, -prev_dot);
+	// 	let mut sim = mean_reg.cos_similarity(&prev_reg);
+	// 	//if sim > 0.0 {(sim = sim/2.0);}
 
-			let mut new_average_derivs = self.averaged_derivs.scale(self.decay_const);
-			new_average_derivs.add_scaled_mut(&mean, 1.0 - self.decay_const);
+	// 	let rate: f32 = 1.05;
+	// 	let mut change = rate.powf(sim-0.25);
+	// 	//if change > 1.0 {change = change.powf(0.25);}
+	// 	self.decay_const = self.decay_const.powf(change).max(0.25).min(0.9999);
+	// 	println!("sim: {} momen: {} chan: {}", sim, self.decay_const, change);
 
-			let cond_derivs: Vec<f32> = new_average_derivs.iter().zip(&corrected_curvature).map(|(m,c)| m/(c.sqrt() + 1e-6).powf(PWR)).collect();
-			let change = cond_derivs.scale(-new_rate);
+	// }
+
+		
+		let curv_decay = self.decay_const.powf(0.09539).max(0.9);
+		self.curvature_est.scale_mut(curv_decay);			
+		
+		// New ADAM curvature
+		for &(_, ref derivs) in results.iter() {
+			let var = derivs.add_scaled(&self.averaged_derivs, -1.0);
+			self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay)/NUM_BINS as f32);	
+			//self.curvature_est.add_scaled_mut(&derivs.elementwise_mul(&derivs), (1.0 - curv_decay)/NUM_BINS as f32);				
+		}
+		// let var = mean.add_scaled(&self.averaged_derivs, -1.0);
+		// self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay) as f32);
 
 
+		let corrected_curvature = self.curvature_est.scale(1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1)));
+		
 
-			// print progress (this should be moved to a callback lambda)
-			if self.step_count == 0 {println!("");println!("count\terr\trel_err\tbatchSize\tcos_sim\trate\tmovement");}
-			println!("{}\t{:.4}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_std_err, NUM_BINS, self.batch_size.floor(), sim, self.rate, change.norm2());
 
-			
-			
-			// Adapt batch size based on derivative relative err vs target relative variance			
-			self.batch_size *= if rel_std_err > target_err {
-					(rel_std_err/target_err).powf(0.25) // increase batch size
-				} else {
-					(rel_std_err/target_err).powf(0.25) // decrease batch size
-				};
-			self.batch_size = self.batch_size.max(self.min_batch_size as f32);			
-	
-			
+		//ADAMAX
+		// self.curvature_est = self.curvature_est.iter().zip(mean.iter()).map(|(&c, &m)| m.abs().max(c * curv_decay)).collect();
+		// let cond_derivs: Vec<f32> = mean.iter().zip(self.curvature_est.iter()).map(|(m,c)| m/(c + 1e-6)).collect();
+		
 
-			let new_params = params.add(&change);
 
-			self.rate = new_rate;
-			self.averaged_derivs = new_average_derivs;
-			self.step_count += 1;
-			
-			(err, new_params)
+		let mut sim = mean.cos_similarity(&self.averaged_derivs); // Adapt learning rate based on inter-step cosine similarity
+		//(mean.dot(&self.averaged_derivs)/self.averaged_derivs.dot(&self.averaged_derivs)).max(-4.0).min(2.0) // clipping prevents unexpected noise results from blowing up step size adaption.
+
+		//if sim < 0.0 {(sim = sim/2.0);}
+		// sim = if sim > 0.0 {
+		// 	sim.min(0.2)
+		// } else {
+		// 	(sim*0.5).max(-0.2)
+		// };
+
+		sim = (sim+0.0625).min(0.5).max(-0.5);
+		let new_rate = self.rate*2.0f32.sqrt().powf(sim);//*1.25; +0.0625
+		
+
+		let mut new_average_derivs = self.averaged_derivs.scale(self.decay_const);
+		new_average_derivs.add_scaled_mut(&mean, 1.0 - self.decay_const);
+
+		let cond_derivs: Vec<f32> = new_average_derivs.iter().zip(&corrected_curvature).map(|(m,c)| m/(c.sqrt() + 1e-8).powf(PWR)).collect();
+		let change = cond_derivs.scale(-new_rate);
+
+
+		let rel_err = self.update_batch_size(&mean, &results);
+
+		// print progress (this should be moved to a callback lambda)
+		if self.step_count == 0 {println!("");println!("count\terr\trel_err\tbatchSize\tcos_sim\trate\tmovement");}
+		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, NUM_BINS, self.batch_size.floor(), sim, self.rate, change.norm2());
+
+		//:.4
+		
+
+
+		
+
+		let new_params = params.add(&change);
+
+		self.rate = new_rate;
+		self.averaged_derivs = new_average_derivs;
+		self.step_count += 1;
+		self.prev_derivs = mean;
+		(err, new_params)
 	}
+
+
+
+
+
+
 		
 }

@@ -35,25 +35,25 @@ use matrixmultiply;
 pub struct LinearInterp {
 	name: String,
 	factors: Vec<usize>,
-	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+	input_id: NodeID,
+	output_id: NodeID,
 	// input_channels: usize,
 	// output_channels: usize,
 	upscale_matrix: Vec<f32>,
 }
 	
 impl LinearInterp {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), factors: Vec<usize>, name: &str) -> Box<LinearInterp>{
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), factors.len() + 1);
-		assert_eq!(input_shape.channels, output_shape.channels);
+	pub fn new(input_id: &NodeID, output_id: &NodeID, factors: &[usize], name: &str) -> Box<LinearInterp>{
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), factors.len() + 1);
+		assert_eq!(input_id.shape.channels, output_id.shape.channels);
 		let matrix = upscale_matrix(&factors);
 		Box::new(LinearInterp{
 			name: name.to_string(),
-			factors: factors,
-			input_ind: input,
-			output_ind: output,
+			factors: factors.to_vec(),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
 			// input_channels: input_shape.channels,
 			// output_channels: output_shape.channels,
 			upscale_matrix: matrix,
@@ -216,36 +216,36 @@ impl Operation for LinearInterp {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v,
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.output_ind].channels,
+				channels: shapes[self.output_id.ind].channels,
 				spatial_dimensions: dims.zip(&self.factors).map(|(dim, f)| Dimension::Range{lower: (dim-1)*f + 1, upper: dim * f}).collect(),
 			}
 		};
 
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_id.ind].name));
 
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 		
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 
@@ -326,20 +326,20 @@ impl Operation for LinearInterp {
 pub struct ShapeConstraint {
  	name: String,
 	rules: Vec<Arc<Fn(usize) -> usize>>,
- 	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+ 	input_id: NodeID,
+	output_id: NodeID,
 }
  	
 impl ShapeConstraint {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), rules: Vec<Arc<Fn(usize) -> usize>>, name: &str) -> Box<ShapeConstraint>{
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), rules.len() + 1);
+	pub fn new(input_id: &NodeID, output_id: &NodeID, rules: &[Arc<Fn(usize) -> usize>], name: &str) -> Box<ShapeConstraint>{
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), rules.len() + 1);
 
 		Box::new(ShapeConstraint{
 			name: name.to_string(),
-			rules: rules,
-			input_ind: input,
-			output_ind: output,
+			rules: rules.to_vec(),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
 		})
 	}
 }
@@ -349,30 +349,30 @@ impl Operation for ShapeConstraint {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be Pooling to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be Pooling to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v,
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.output_ind].channels,
+				channels: shapes[self.output_id.ind].channels,
 				spatial_dimensions: dims.zip(&self.rules).map(|(dim, rule)| Dimension::Fixed(rule(dim)) ).collect(),
 			}
 		};
 		
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_id.ind].name));
 		
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 		
 	fn num_params(&self) -> usize {0}
 	
@@ -388,26 +388,26 @@ impl Operation for ShapeConstraint {
 pub struct Pooling {
  	name: String,
  	factors: Vec<usize>,
- 	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+ 	input_id: NodeID,
+	output_id: NodeID,
 	input_channels: usize,
 	output_channels: usize,
 }
  	
 impl Pooling {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), factors: Vec<usize>, name: &str) -> Box<Pooling>{
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), factors.len() + 1);
-		assert_eq!(output_shape.channels, input_shape.channels,
+	pub fn new(input_id: &NodeID, output_id: &NodeID, factors: &[usize], name: &str) -> Box<Pooling>{
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), factors.len() + 1);
+		assert_eq!(output_id.shape.channels, input_id.shape.channels,
 			"Error: Operation '{}' output node shape channel dimension must be equal to the input node channel dimension", name);
 
 		Box::new(Pooling{
 			name: name.to_string(),
-			factors: factors,
-			input_ind: input,
-			output_ind: output,
-			input_channels: input_shape.channels,
-			output_channels: output_shape.channels,
+			factors: factors.to_vec(),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			input_channels: input_id.shape.channels,
+			output_channels: output_id.shape.channels,
 		})
 	}
 }
@@ -417,36 +417,36 @@ impl Operation for Pooling {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be Pooling to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be Pooling to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v,
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.input_ind].channels,
+				channels: shapes[self.input_id.ind].channels,
 				spatial_dimensions: dims.zip(&self.factors).map(|(dim, f)| Dimension::Fixed((dim + f-1)/f)).collect(),
 			}
 		};
 		
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_id.ind].name));
 		
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 		
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-		let input = &*{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &*{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 
@@ -472,8 +472,8 @@ impl Operation for Pooling {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 				
@@ -501,32 +501,32 @@ impl Operation for Pooling {
 }
 
 
-/// Collapse - NSISOD - Decrease size of higher dimensions by given factors by mapping from each spaxel to chunks of the channel dimension
+/// Collapse - NSISOD - Decrease size of higher dimensions by given factors by mapping from each spaxel to chunks of the channel dimension. Inverse operation of Expand
 /// Cout = Cin.F1.F2.F3
 #[derive(Clone)] 
 pub struct Collapse {
  	name: String,
  	factors: Vec<usize>,
- 	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+ 	input_id: NodeID,
+	output_id: NodeID,
 	input_channels: usize,
 	output_channels: usize,
 }
  	
 impl Collapse {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), factors: Vec<usize>, name: &str) -> Box<Collapse>{
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), factors.len() + 1);
-		assert_eq!(output_shape.channels, factors.iter().fold(input_shape.channels, |p,v| p*v),
+	pub fn new(input_id: &NodeID, output_id: &NodeID, factors: &[usize], name: &str) -> Box<Collapse>{
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), factors.len() + 1);
+		assert_eq!(output_id.shape.channels, factors.iter().fold(input_id.shape.channels, |p,v| p*v),
 			"Error: Operation '{}' output node shape channel dimension must be equal to the product of the input node channel dimensions and each of the factors", name);
 
 		Box::new(Collapse{
 			name: name.to_string(),
-			factors: factors,
-			input_ind: input,
-			output_ind: output,
-			input_channels: input_shape.channels,
-			output_channels: output_shape.channels,
+			factors: factors.to_vec(),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			input_channels: input_id.shape.channels,
+			output_channels: output_id.shape.channels,
 		})
 	}
 }
@@ -537,36 +537,36 @@ impl Operation for Collapse {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v,
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.output_ind].channels,
+				channels: shapes[self.output_id.ind].channels,
 				spatial_dimensions: dims.zip(&self.factors).map(|(dim, f)| Dimension::Fixed((dim + f-1)/f)).collect(),
 			}
 		};
 		
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_id.ind].name));
 		
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 		
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-		let input = &*{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &*{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 
@@ -590,8 +590,8 @@ impl Operation for Collapse {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 				
@@ -624,26 +624,26 @@ impl Operation for Collapse {
 pub struct Expand {
 	name: String,
 	factors: Vec<usize>,
-	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+	input_id: NodeID,
+	output_id: NodeID,
 	input_channels: usize,
 	output_channels: usize,
 }
 	
 impl Expand {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), factors: Vec<usize>, name: &str) -> Box<Expand>{
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), output_shape.rank());
-		assert_eq!(input_shape.rank(), factors.len() + 1);
-		assert_eq!(input_shape.channels, factors.iter().fold(output_shape.channels, |p,v| p*v),
+	pub fn new(input_id: &NodeID, output_id: &NodeID, factors: &[usize], name: &str) -> Box<Expand>{
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), output_id.shape.rank());
+		assert_eq!(input_id.shape.rank(), factors.len() + 1);
+		assert_eq!(input_id.shape.channels, factors.iter().fold(output_id.shape.channels, |p,v| p*v),
 			"Error: Operation '{}' output node shape channel dimensions must be equal to the input node channel dimensions divided by each of the factors without remainder", name);
 		Box::new(Expand{
 			name: name.to_string(),
-			factors: factors,
-			input_ind: input,
-			output_ind: output,
-			input_channels: input_shape.channels,
-			output_channels: output_shape.channels,
+			factors: factors.to_vec(),
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			input_channels: input_id.shape.channels,
+			output_channels: output_id.shape.channels,
 		})
 	}
 }
@@ -653,36 +653,36 @@ impl Operation for Expand {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v,
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.output_ind].channels,
+				channels: shapes[self.output_id.ind].channels,
 				spatial_dimensions: dims.zip(&self.factors).map(|(dim, f)| Dimension::Range{lower: (dim-1)*f + 1, upper: dim * f}).collect(),
 			}
 		};
 		
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_ind].name));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' could not merge required output shape with existing shape for Node '{}'", self.name, nodes[self.output_id.ind].name));
 		
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 		
 	fn num_params(&self) -> usize {0}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-		let input = &*{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &*{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 
@@ -712,8 +712,8 @@ impl Operation for Expand {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 				
@@ -929,12 +929,12 @@ mod test {
 	fn test_linear_interp(){
 		{
 			let mut g = Graph::new();
-			let input =g.add_input_node(Node::new_sized(1, vec![2,2], "input"));
-			let output =g.add_output_node(Node::new_sized(1, vec![4,4], "output"));
-			g.add_operation(LinearInterp::new(&input, &output, vec![2, 2], "linterp"));
+			let input =g.add_input_node(Node::new_sized(1, &[2,2], "input"));
+			let output =g.add_output_node(Node::new_sized(1, &[4,4], "output"));
+			g.add_operation(LinearInterp::new(&input, &output, &[2, 2], "linterp"));
 			//g.add_operation(ShapeConstraint::new(&input, &output, vec![Arc::new(move|d| d*2), Arc::new(move|d| d*2)], "exact size constraint"));	
 
-			let mut data_in = NodeData::new_blank(DataShape::new(1, vec![2,2], 1));
+			let mut data_in = NodeData::new_blank(DataShape::new(1, &[2,2], 1));
 			data_in.values[1] = 1.0;
 			data_in.values[2] = 1.0;
 
@@ -947,7 +947,7 @@ mod test {
 				1.0,  0.75,  0.25,  0.0,
 			];
 
-			let diff = out.values.iter().zip(expected.iter()).fold(0.0, |acc, (&o, &e)| (o-e)*(o-e));
+			let diff = out.values.iter().zip(expected.iter()).fold(0.0, |acc, (&o, &e)| acc + (o-e)*(o-e));
 			assert!(diff < 1e-6, "{:?} {:?}", out.values, expected);
 		}
 
@@ -955,12 +955,12 @@ mod test {
 
 		{
 			let mut g = Graph::new();
-			let input =g.add_input_node(Node::new_sized(1, vec![3,3], "input"));
-			let output =g.add_output_node(Node::new_sized(1, vec![9,9], "output"));
-			g.add_operation(LinearInterp::new(&input, &output, vec![3, 3], "linterp"));
+			let input =g.add_input_node(Node::new_sized(1, &[3,3], "input"));
+			let output =g.add_output_node(Node::new_sized(1, &[9,9], "output"));
+			g.add_operation(LinearInterp::new(&input, &output, &[3, 3], "linterp"));
 			//g.add_operation(ShapeConstraint::new(&input, &output, vec![Arc::new(move|d| d*3), Arc::new(move|d| d*3)], "exact size constraint"));
 
-			let mut data_in = NodeData::new_blank(DataShape::new(1, vec![3,3], 1));
+			let mut data_in = NodeData::new_blank(DataShape::new(1, &[3,3], 1));
 			data_in.values[4] = 1.0;
 
 			let out = g.forward(1, vec![data_in], &vec![]).remove(0);
@@ -1122,12 +1122,12 @@ mod test {
 		for _ in 1..100{
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, vec![13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(5, vec![5, 4], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(5, vec![5, 4], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(5, &[5, 4], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(5, &[5, 4], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Pooling::new(&n1, &n2, vec![3, 5], "Pooling"),
+				Pooling::new(&n1, &n2, &[3, 5], "Pooling"),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);
@@ -1142,12 +1142,12 @@ mod test {
 		for _ in 1..100{
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, vec![13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(5 * 3 * 5, vec![5, 4], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(5 * 3 * 5, vec![5, 4], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(5 * 3 * 5, &[5, 4], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(5 * 3 * 5, &[5, 4], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Collapse::new(&n1, &n2, vec![3, 5], "Collapse"),
+				Collapse::new(&n1, &n2, &[3, 5], "Collapse"),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);
@@ -1162,12 +1162,12 @@ mod test {
 	fn test_collapse_shape_checks(){
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, vec![13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(6, vec![13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(7, vec![13, 17], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(6, &[13, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(7, &[13, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Collapse::new(&n1, &n2, vec![3, 5], "Collapse"),
+				Collapse::new(&n1, &n2, &[3, 5], "Collapse"),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);
@@ -1181,12 +1181,12 @@ mod test {
 		for _ in 1..100{
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5 * 3 * 5, vec![5, 4], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(5, vec![13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(5, vec![13, 17], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5 * 3 * 5, &[5, 4], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(5, &[13, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(5, &[13, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Expand::new(&n1, &n2, vec![3, 5], "Expand"),
+				Expand::new(&n1, &n2, &[3, 5], "Expand"),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);
@@ -1201,12 +1201,12 @@ mod test {
 	fn test_expand_shape_checks(){
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, vec![13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(6, vec![13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(7, vec![13, 17], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(6, &[13, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(7, &[13, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Expand::new(&n1, &n2, vec![3, 5],  "Expand"),
+				Expand::new(&n1, &n2, &[3, 5],  "Expand"),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);

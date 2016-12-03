@@ -5,7 +5,12 @@ use self::indexing::*;
 use shape::*;
 use ops::Operation;
 
+
 #[derive(Debug, Clone)]
+/// A param range indicates which part of the graph parameter vector an operation needs to use
+/// A Primary range indicates that an operation requested new parameters, and 'owns' them and is responsible for initialising them
+/// A Secondary range indicates that a an operation is using the same parameters and an existing operation,
+/// both will use them in forward and backwards passes, gradient contributions will accumulate.
 pub enum ParamRange {
 	Primary(Range<usize>),
 	Secondary(Range<usize>),
@@ -44,14 +49,16 @@ impl ParamRange{
 // 1. add way to specify "locked" parameters, zero out their error gradients in both evalutation and regularisation
 // 2. add way to specify parameter reuse across operations //DONE
 // 3. add way to do regularisation functions, including subgradients
-// 4. add way to add default parameter generaters to ops.
+// 4. add way to add default parameter generaters to ops. //DONE Elsewhere
 // 5. add interface for unrolling into RNN
-// 1. add way to add a subgraph node
+// 6. add a way to extract a subgraph
+// 7. add way to include a subgraph as an operation
 #[derive(Clone)]
+#[allow(non_snake_case)]
 pub struct Graph{
-	input_indices: Vec<NodeIndex>,
-	training_input_indices: Vec<NodeIndex>,
-	output_indices: Vec<NodeIndex>,
+	input_IDs: Vec<NodeID>,
+	training_input_IDs: Vec<NodeID>,
+	output_IDs: Vec<NodeID>,
 	nodes: Vec<Node>,
 	operations: Vec<Box<Operation>>,
 	training_order: Vec<GraphIndex>,
@@ -61,15 +68,15 @@ pub struct Graph{
 	is_ordered: bool,
 }
 
-
+#[allow(non_snake_case)]
 impl Graph{
 	pub fn new() -> Graph{
 		Graph{
-			nodes: vec![Node::new_flat(1, "Unit")],
+			nodes: vec![],
 			operations: vec![],
-			input_indices: vec![],
-			training_input_indices: vec![],
-			output_indices: vec![],
+			input_IDs: vec![],
+			training_input_IDs: vec![],
+			output_IDs: vec![],
 			training_order: vec![],
 			evaluation_order: vec![],
 			is_ordered: true,
@@ -85,20 +92,20 @@ impl Graph{
 		&self.nodes
 	}
 	
-	pub fn input_node_indices(&self) -> &[NodeIndex]{
-		&self.input_indices
+	pub fn input_node_IDs(&self) -> &[NodeID]{
+		&self.input_IDs
 	}
 
 	pub fn input_nodes(&self) -> Vec<Node>{
-		self.input_indices.iter().map(|&i| self.nodes[..][i].clone()).collect()
+		self.input_IDs.iter().map(|i| self.nodes[i.ind].clone()).collect()
 	}
 
-	pub fn training_input_node_indices(&self) -> &[NodeIndex]{
-		&self.training_input_indices
+	pub fn training_input_node_IDs(&self) -> &[NodeID]{
+		&self.training_input_IDs
 	}
 
 	pub fn training_input_nodes(&self) -> Vec<Node>{
-		self.training_input_indices.iter().map(|&i| self.nodes[..][i].clone()).collect()
+		self.training_input_IDs.iter().map(|i| self.nodes[i.ind].clone()).collect()
 	}
 	
 	pub fn ops(&self) -> &[Box<Operation>]{
@@ -113,86 +120,80 @@ impl Graph{
 		self.param_ranges.iter().fold(0, |acc, r| acc + r.get_primary_len()) 
 	}
 	
-
-	pub fn unit_node_index(&self) -> NodeIndex{
-		NodeIndex(0)
-	}
 	
-	pub fn add_input_node(&mut self, node: Node) -> (NodeIndex, NodeShape){
+	pub fn add_input_node(&mut self, node: Node) -> NodeID {
 		self.is_ordered = false;
-		let index = self.nodes.len().into();
-		self.input_indices.push(index);
+		let index = NodeID::new(self.nodes.len(), node.shape.clone());
+		self.input_IDs.push(index.clone());
 		self.nodes.push(node);
-		(index, self.nodes[index.0].shape.clone())
+		index
 	}
 	
-	pub fn add_training_input_node(&mut self, node: Node) -> (NodeIndex, NodeShape){
+	pub fn add_training_input_node(&mut self, node: Node) -> NodeID {
 		self.is_ordered = false;
-		let index = self.nodes.len().into();
-		self.training_input_indices.push(index);
+		let index = NodeID::new(self.nodes.len(), node.shape.clone());
+		self.training_input_IDs.push(index.clone());
 		self.nodes.push(node);
-		(index, self.nodes[index.0].shape.clone())
+		index
 	}
 	
-	pub fn add_output_node(&mut self, node: Node) -> (NodeIndex, NodeShape){
+	pub fn add_output_node(&mut self, node: Node) -> NodeID {
 		self.is_ordered = false;
-		let index: NodeIndex = self.nodes.len().into();
-		self.output_indices.push(index);
+		let index = NodeID::new(self.nodes.len(), node.shape.clone());
+		self.output_IDs.push(index.clone());
 		self.nodes.push(node);
-		(index, self.nodes[index.0].shape.clone())
+		index
 	}
 	
-	pub fn add_node(&mut self, node_in: Node) -> (NodeIndex, NodeShape) {
+	pub fn add_node(&mut self, node: Node) -> NodeID {
 		self.is_ordered = false;
-		let index = self.nodes.len().into();
-		self.nodes.push(node_in);
-		(index, self.nodes[index.0].shape.clone())
+		let index = NodeID::new(self.nodes.len(), node.shape.clone());
+		self.nodes.push(node);
+		index
 	}
 	
 	
-	pub fn add_operation(&mut self, op: Box<Operation>) -> (OpIndex, usize){
+	pub fn add_operation(&mut self, op: Box<Operation>) -> OpID{
 		self.is_ordered = false;
 		
-		if op.output_node_ind().contains(&self.unit_node_index())
-		|| self.input_indices.iter().any(|ind| op.output_node_ind().contains(ind))
-		|| self.training_input_indices.iter().any(|ind| op.output_node_ind().contains(ind)) {
+		if self.input_IDs.iter().any(|ind| op.output_node_IDs().contains(ind))
+		|| self.training_input_IDs.iter().any(|ind| op.output_node_IDs().contains(ind)) {
 			panic!("Operation '{}' attempted to use a graph input as an output node.", op.name());
 		}
 		
 		let size = self.num_params();
-		self.param_ranges.push(ParamRange::Primary(Range{start: size, end: size + op.num_params()}));
-		let index = self.operations.len().into();
 		let num_params = op.num_params();
+		self.param_ranges.push(ParamRange::Primary(Range{start: size, end: size + num_params}));
+		let index = OpID::new(self.operations.len(), num_params);
+		
 		self.operations.push(op);
-		(index, num_params)
+		index
 	}
 
 	
 	/// add new operation between nodes, but share the existing parameters from an existing operation
 	/// must have same number of parameters as primary operation
-	pub fn add_secondary_operation(&mut self, op: Box<Operation>, index: OpIndex) -> (OpIndex, usize){
+	pub fn add_secondary_operation(&mut self, op: Box<Operation>, index: &OpID) -> OpID{
 		self.is_ordered = false;
 		
-		if op.output_node_ind().contains(&self.unit_node_index())
-		|| self.input_indices.iter().any(|ind| op.output_node_ind().contains(ind))
-		|| self.training_input_indices.iter().any(|ind| op.output_node_ind().contains(ind)) {
+		if self.input_IDs.iter().any(|ind| op.output_node_IDs().contains(ind))
+		|| self.training_input_IDs.iter().any(|ind| op.output_node_IDs().contains(ind)) {
 			panic!("Operation '{}' attempted to use a graph input as an output node.", op.name());
 		}
 		
 		
-		let range = self.param_ranges[index.0].get_range();
+		let range = self.param_ranges[index.ind].get_range();
 		
 		assert!(range.end - range.start == op.num_params(), "Incompatible parameter sizes for '{}({})' reusing parameters from '{}({})'", 
-			op.name(), op.num_params(), self.operations[index].name(), self.operations[index].num_params());
+			op.name(), op.num_params(), self.operations[index.ind].name(), self.operations[index.ind].num_params());
 		
+		let index = OpID::new(self.operations.len(), range.end - range.start);
 		self.param_ranges.push(ParamRange::Secondary(range));
-		let index = self.operations.len().into();
-		let num_params = op.num_params();
 		self.operations.push(op);
-		(index, num_params)
+		index
 	}
 	
-	pub fn add_operations(&mut self, ops: Vec<Box<Operation>>) -> Vec<(OpIndex, usize)>{
+	pub fn add_operations(&mut self, ops: Vec<Box<Operation>>) -> Vec<OpID>{
 		let mut indices = Vec::with_capacity(ops.len());
 		for op in ops {
 			indices.push(self.add_operation(op));
@@ -217,48 +218,52 @@ impl Graph{
 		
 		//forward prop each operation
 		for index in self.evaluation_order.iter() {
-			let i = match index {
+			let index = match index {
 				&GraphIndex::O(op_index) => op_index,
 				_ => continue,
 			};
 			
-			self.operations[i].forward(&mut data, &params[self.param_ranges[i.0].get_range()]);
+			self.operations[index].forward(&mut data, &params[self.param_ranges[index].get_range()]);
 		}
 		
-		self.output_indices.iter()
-			.map(|&index| {
-				mem::replace(&mut *data[index].borrow_mut(), NodeData::dummy())
+		self.output_IDs.iter()
+			.map(|index| {
+				mem::replace(&mut *data[index.ind].borrow_mut(), NodeData::dummy())
 			}).collect::<Vec<NodeData>>()
 	}
 	
+	// TODO
+	// Currently regularisation is handled by a secondary operation, however for subgradient regularistion this will have to be broken out into a step after normal graph evaluation
 	// pub fn regularise(params: &[f32]) -> (f32, Vec<f32>) {
-	// 	(0.0, vec![0.0;params.len()]) ///////////////////////////////////////////////////////TODO !!!
+	// 	(0.0, vec![0.0;params.len()])
 	// }
 	
-	//TODO: param_derives passed in from outside but error isnt? could lead to problems if param derives are accumulated by being passed in multiple times.
-	/// Performs the forward and backward passes through the graph, and updates parameters. 
+
+	/// Performs the forward and backward passes through the graph, and accumulates error and parameter gradients. 
+	/// This is useful inplace of backprop() when an evaluation must be broken into smaller passes to fit in memory.
+	/// Returns all NodeData from the graph evaluation to allow inspection of values/derivatives.
 	pub fn backprop_mut(&mut self, n: usize, input: Vec<NodeData>, training_input: Vec<NodeData>, params: &[f32], err: &mut f32, param_derivs: &mut [f32]) -> Vec<NodeData>{
 		let mut data = self.init_data(n, input, Some(training_input), false);
 		let mut data = &mut data[..];
 		
 		//forward prop each operation
 		for index in self.training_order.iter() {
-			let i = match index {
+			let op_index = match index {
 				&GraphIndex::O(op_index) => op_index,
 				_ => continue,
 			};
 			
-			self.operations[i].forward(&mut data, &params[self.param_ranges[i.0].get_range()]);
+			self.operations[op_index].forward(&mut data, &params[self.param_ranges[op_index].get_range()]);
 		}
 		
 		//backprop eash operation in reverse order
 		for index in self.training_order.iter().rev() {
-			let i = match index {
+			let op_index = match index {
 				&GraphIndex::O(op_index) => op_index,
 				_ => continue,
 			};
 			
-			self.operations[i].backward(&mut data, &params[self.param_ranges[i.0].get_range()], &mut param_derivs[self.param_ranges[i.0].get_range()], err);
+			self.operations[op_index].backward(&mut data, &params[self.param_ranges[op_index].get_range()], &mut param_derivs[self.param_ranges[op_index].get_range()], err);
 		}
 		
 
@@ -267,6 +272,7 @@ impl Graph{
 			}).collect::<Vec<NodeData>>()
 	}
 
+	/// Performs the forward and backward passes through the graph, and returns error and parameter gradients.
 	pub fn backprop(&mut self, n: usize, input: Vec<NodeData>, training_input: Vec<NodeData>, params: &[f32]) -> (f32, Vec<f32>, Vec<NodeData>){ // error, error derivatives over parameters, data
 		let mut param_derivs = vec![0.0; params.len()];
 		let mut err = 0.0;
@@ -287,15 +293,14 @@ impl Graph{
 		let mut order = vec![];
 		let mut ready = vec![false; self.nodes.len()];
 		
-		//Unit and start nodes are ready a priori
-		ready[self.unit_node_index()] = true;
-		for &start_ind in self.input_indices.iter() {
-			ready[start_ind] = true;
+		//Start nodes are ready a priori
+		for start_ID in self.input_IDs.iter() {
+			ready[start_ID.ind] = true;
 		}
 		// If generative a training order set those inputs to ready
 		if training_order {
-			for &train_ind in self.training_input_indices.iter(){
-				ready[train_ind] = true;
+			for train_ID in self.training_input_IDs.iter(){
+				ready[train_ID.ind] = true;
 			}
 		}
 
@@ -305,20 +310,20 @@ impl Graph{
 
 			// 1. gather output nodes of operations which currently done have satisfied inputs.
 			let input_ops_not_ready = self.operations.iter()
-				.filter(|&op| !op.input_node_ind().iter().all(|&ind| ready[ind]))
-				.flat_map(|op| op.output_node_ind())
+				.filter(|&op| !op.input_node_IDs().iter().all(|id| ready[id.ind]))
+				.flat_map(|op| op.output_node_IDs())
 				.collect::<Vec<_>>();
 
 			// 2. set output nodes of all operations that have satisfied inputs to true
-			for ind in order.iter()
-			.filter_map(|g| match g {&GraphIndex::O(op_ind) => Some(op_ind), _ => None})
-			.flat_map(|ind| self.operations[ind].output_node_ind()) {
-				ready[ind] = true
+			for id in order.iter()
+			.filter_map(|g| match g {&GraphIndex::O(opID) => Some(opID), _ => None})
+			.flat_map(|op_index| self.operations[op_index].output_node_IDs()) {
+				ready[id.ind] = true
 			}
 
 			// 3. set output nodes of all operations gathered in 1 to false;
-			for ind in input_ops_not_ready {
-				ready[ind] = false;
+			for id in input_ops_not_ready {
+				ready[id.ind] = false;
 			}
 			
 			//add new nodes which now have all incoming operations ready
@@ -332,7 +337,7 @@ impl Graph{
 			//find new operations that have all input nodes available
 			let mut new_satisfied_ops = self.operations.iter().enumerate()
 				.filter(|&(i, _)| !order.contains(&GraphIndex::op(i)))
-				.filter(|&(_, op)| op.input_node_ind().iter().all(|&ind| ready[ind]))
+				.filter(|&(_, op)| op.input_node_IDs().iter().all(|id| ready[id.ind]))
 				.map(|(i, _)| GraphIndex::op(i))
 				.collect::<Vec<_>>();
 			
@@ -348,12 +353,14 @@ impl Graph{
 				println!("Warning: Node #{} '{}' can not be included in the computation order. Graph may be circular, or have a node with no inputs.", i, self.nodes[i].name);
 			}
 			
-			for (i, op) in self.operations.iter().enumerate().filter(|&(_, op)| !op.input_node_ind().iter().all(|&ind| ready[ind])){
+			for (i, op) in self.operations.iter().enumerate().filter(|&(_, op)| !op.input_node_IDs().iter().all(|id| ready[id.ind])){
 				println!("Warning: An input node to Operation #{} '{}' is not available. The operation has been removed.", i, op.name());
 			}
 		} else {
-			for (i, _) in ready.iter().enumerate().filter(|&(_, b)| !b).filter(|&(i, _)| self.output_indices.contains(&i.into())) {
-				println!("Warning: Output Node #{} '{}' can not be included in the computation order. Check warnings for training order to see if other nodes are affected.", i, self.nodes[i].name);
+			for id in &self.output_IDs {
+				if !ready[id.ind] {
+					println!("Warning: Output Node #{} '{}' can not be included in the computation order. Check warnings for training order to see if other nodes are affected.", id.ind, self.nodes[id.ind].name);
+				}
 			}
 		}
 
@@ -363,32 +370,24 @@ impl Graph{
 
 	
 	fn init_data(&mut self, n: usize, inputs: Vec<NodeData>, training_inputs: Option<Vec<NodeData>>, no_derivs: bool) -> Vec<RefCell<NodeData>>{
-		assert!(inputs.len() == self.input_indices.len() && if let Some(t_inputs) = training_inputs.as_ref() {t_inputs.len() == self.training_input_indices.len()}else{true},
-			format!("Input NodeData did not match graph, expected '{}' received '{}'", self.input_indices.len(), inputs.len()));
+		assert!(inputs.len() == self.input_IDs.len() && if let Some(t_inputs) = training_inputs.as_ref() {t_inputs.len() == self.training_input_IDs.len()}else{true},
+			format!("Input NodeData did not match graph, expected '{}' received '{}'", self.input_IDs.len(), inputs.len()));
 		self.check_order();
 		
 
 		let shapes = self.determine_shapes(n, &inputs, training_inputs.as_ref().map(|vec| &vec[..]));
 		
-		// Set up node data, with defined unit value and input values.
+		// Set up node data, with defined input values.
 		let mut opt_data: Vec<Option<NodeData>> = vec![None; shapes.len()];
-		
-		let unit_index = self.unit_node_index().0;
-		
-		let mut unit = NodeData::new_blank(shapes[unit_index].to_data_shape(n).expect("Error: Unit node isnt fixed size?"));
-		for v in unit.values.iter_mut(){
-			*v = 1.0;
-		}
-		opt_data[unit_index] = Some(unit);
 
 		
-		for (i, inp) in self.input_indices.iter().zip(inputs.into_iter()) {
-			opt_data[i.0] = Some(inp);
+		for (id, inp) in self.input_IDs.iter().zip(inputs.into_iter()) {
+			opt_data[id.ind] = Some(inp);
 		}
 		
 		if let Some(t_inputs) = training_inputs {
-			for (i, inp) in self.training_input_indices.iter().zip(t_inputs.into_iter()) {
-				opt_data[i.0] = Some(inp);
+			for (id, inp) in self.training_input_IDs.iter().zip(t_inputs.into_iter()) {
+				opt_data[id.ind] = Some(inp);
 			}
 		}
 		
@@ -410,21 +409,21 @@ impl Graph{
 
 		// 2. Check inputs shapes against node shapes
 		for (i, node_data) in inputs.iter().enumerate() {
-			let index: usize = self.input_indices[i].0;
+			let index = &self.input_IDs[i];
 			
 			assert!(node_data.shape.n == n, "Input NodeData.shape.n did not match n of batch");
 			
-			shapes[index] = shapes[index].merge(&node_data.shape.to_node_shape()).expect("Input data not compatible with input node shape");
+			shapes[index.ind] = shapes[index.ind].merge(&node_data.shape.to_node_shape()).expect("Input data not compatible with input node shape");
 		}
 		
 		// 3. Check training_inputs shapes against node shapes
 		if let Some(t_inputs) = training_inputs.as_ref() {
 			for (i, node_data) in t_inputs.iter().enumerate() {
-				let index: usize = self.training_input_indices[i].0;
+				let index = &self.training_input_IDs[i];
 
 				assert!(node_data.shape.n == n, "Training input NodeData.shape.n did not match n of batch");
 				
-				shapes[index] = shapes[index].merge(&node_data.shape.to_node_shape()).expect("Training input data not compatible with training input node shape")
+				shapes[index.ind] = shapes[index.ind].merge(&node_data.shape.to_node_shape()).expect("Training input data not compatible with training input node shape")
 			}
 		}
 		
@@ -464,7 +463,7 @@ impl Node{
 		}
 	}
 	
-	pub fn new_sized(channels: usize, higher_dimensions: Vec<usize>, name: &str) -> Node {
+	pub fn new_sized(channels: usize, higher_dimensions: &[usize], name: &str) -> Node {
 		Node{	
 			shape: NodeShape::new(channels, higher_dimensions),//(channels, higher_dimensions.iter().map(|&x| Some(x)).collect()),
 			name: name.to_string(),
@@ -541,113 +540,73 @@ impl NodeData{
 	
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub struct OpIndex(pub usize);
+#[derive(Debug, Clone)]
+pub struct OpID{
+	pub ind: usize,
+	pub num_params: usize,
+}
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub struct NodeIndex(pub usize);
+impl OpID{
+	fn new(ind: usize, num_params: usize) -> OpID{
+		OpID{ind: ind, num_params: num_params}
+	}	
+}
+
+impl PartialEq for OpID {
+	fn eq(&self, other: &OpID) -> bool{
+		if self.ind != other.ind {
+			false
+		} else if self.num_params == other.num_params{
+			true
+		} else {
+			panic!("OpIndex had equal index but different number of params, did you mix OpIndex s from multiple graphs?");
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeID{
+	pub ind: usize,
+	pub shape: NodeShape,
+}
+
+impl NodeID{
+	fn new(ind: usize, shape: NodeShape) -> NodeID{
+		NodeID{ind: ind, shape: shape}
+	}
+}
+
+impl PartialEq for NodeID {
+	fn eq(&self, other: &NodeID) -> bool{
+		if self.ind != other.ind {
+			false
+		} else if self.shape == other.shape{
+			true
+		} else {
+			panic!("NodeID had equal index but different shape, did you mix NodeID s from multiple graphs?");
+		}
+	}
+}
 
 pub mod indexing {
-	use std::cell::RefCell;
-	use std::ops::{Index, IndexMut};
-	use graph::*;
-	use ops::Operation;
-	use shape::NodeShape;
-	
 
 	
-	impl From<usize> for NodeIndex{
-		fn from(val: usize) -> NodeIndex {NodeIndex(val)}
-	}
-	
-	impl From<usize> for OpIndex{
-		fn from(val: usize) -> OpIndex {OpIndex(val)}
-	}
-	
-	#[derive(Clone, PartialEq, Debug)]
+	#[derive(Clone, Debug, PartialEq)]
 	pub enum GraphIndex {
-		O(OpIndex),
-		N(NodeIndex),
+		O(usize),
+		N(usize),
 	}
+	
 	
 	impl GraphIndex {
 		pub fn node(val: usize) -> GraphIndex {
-			GraphIndex::N(NodeIndex(val))
+			GraphIndex::N(val)
 		}
 		pub fn op(val: usize) -> GraphIndex {
-			GraphIndex::O(OpIndex(val))
+			GraphIndex::O(val)
 		}
 	}
 	
-	impl Index<NodeIndex> for [NodeShape]{
-		type Output = NodeShape;
-		fn index(&self, index: NodeIndex) -> &NodeShape {
-			&self[index.0]
-		}
-	}
-	
-	impl IndexMut<NodeIndex> for [NodeShape]{
-		fn index_mut(&mut self, index: NodeIndex) -> &mut NodeShape {
-			&mut self[index.0]
-		}
-	}
-	
-	impl Index<NodeIndex> for [Node]{
-		type Output = Node;
-		fn index(&self, index: NodeIndex) -> &Node {
-			&self[index.0]
-		}
-	}
-	
-	impl Index<NodeIndex> for [RefCell<NodeData>]{
-		type Output = RefCell<NodeData>;
-		fn index(&self, index: NodeIndex) -> &RefCell<NodeData> {
-			&self[index.0]
-		}
-	}
-	
-	impl IndexMut<NodeIndex> for [RefCell<NodeData>]{
-		fn index_mut(&mut self, index: NodeIndex) -> &mut RefCell<NodeData> {
-			&mut self[index.0]
-		}
-	}
-	
-	impl Index<NodeIndex> for [NodeData] {
-		type Output = NodeData;
-		fn index(&self, index: NodeIndex) -> &NodeData {
-			&self[index.0]
-		}
-	}
-	
-	impl IndexMut<NodeIndex> for [NodeData] {
-		fn index_mut(&mut self, index: NodeIndex) -> &mut NodeData {
-			&mut self[index.0]
-		}
-	}
-	
-	impl Index<NodeIndex> for Vec<bool>{
-		type Output = bool;
-		fn index(&self, index: NodeIndex) -> &bool {
-			&self[index.0]
-		}
-	}
-	impl IndexMut<NodeIndex> for Vec<bool>{
-		fn index_mut(&mut self, index: NodeIndex) -> &mut bool {
-			&mut self[index.0]
-		}
-	}
-	
-	impl Index<OpIndex> for Vec<Box<Operation>>{
-		type Output = Box<Operation>;
-		fn index(&self, index: OpIndex) -> &Box<Operation> {
-			&self[index.0]
-		}
-	}
 
-	impl IndexMut<OpIndex> for Vec<Box<Operation>>{
-		fn index_mut(&mut self, index: OpIndex) -> &mut Box<Operation> {
-			&mut self[index.0]
-		}
-	}
 }
 

@@ -2,7 +2,7 @@ use opt::*;
 use graph::*;
 use vec_math::{VecMathMut, VecMathMove};
 use std::f32;
-
+use opt::supplier::Supplier;
 
 pub struct Sgd<'a>{
 	max_evals: Option<u64>,
@@ -14,7 +14,6 @@ pub struct Sgd<'a>{
 	batch_size: u32,
 	_momentum: Option<f32>,
 	_momentum_vec: Vec<f32>,
-	//eval_callback: Vec<Box<FnMut()->Result<(),String>>>,
 	step_callback: Vec<Box<FnMut(f32, u64, u64, &mut Graph, &[f32])->bool>>,
 }
 
@@ -31,7 +30,6 @@ impl <'a> Sgd<'a> {
 			batch_size: batch_size,
 			_momentum: None,
 			_momentum_vec: if momentum.is_some() {vec![0.0; num_params]} else {vec![]},
-			//eval_callback: vec![],
 			step_callback: vec![],
 		}
 	}

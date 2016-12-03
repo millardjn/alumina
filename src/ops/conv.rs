@@ -21,8 +21,8 @@ pub struct Convolution {
  	name: String,
  	ks: Vec<usize>, // kernel shape
  	padding: Padding,
- 	input_ind: NodeIndex,
-	output_ind: NodeIndex,
+ 	input_id: NodeID,
+	output_id: NodeID,
 	input_channels: usize,
 	output_channels: usize,
 	num_params: usize,
@@ -36,17 +36,17 @@ pub struct Convolution {
 /// Convolution    - PSISOD - Standard convolution operation, various padding options
 /// parameters are a row major matrix Cin.W.H.Cout
 impl Convolution {
-	pub fn new(&(input, ref input_shape): &(NodeIndex, NodeShape), &(output, ref output_shape): &(NodeIndex, NodeShape), ks: Vec<usize>, padding: Padding, name: &str, init_func: Arc<Fn(&Convolution, &mut [f32])>) -> Box<Convolution>{
-		assert!(input_shape.rank() == output_shape.rank());
-		let num_params = ks.iter().fold(input_shape.channels * output_shape.channels, |p, v| p*v);
+	pub fn new(input_id: &NodeID, output_id: &NodeID, ks: &[usize], padding: Padding, name: &str, init_func: Arc<Fn(&Convolution, &mut [f32])>) -> Box<Convolution>{
+		assert!(input_id.shape.rank() == output_id.shape.rank());
+		let num_params = ks.iter().fold(input_id.shape.channels * output_id.shape.channels, |p, v| p*v);
 		Box::new(Convolution{
 			name: name.to_string(),
-			ks: ks,
+			ks: ks.to_vec(),
 			padding: padding,
-			input_ind: input,
-			output_ind: output,
-			input_channels: input_shape.channels,
-			output_channels: output_shape.channels,
+			input_id: input_id.clone(),
+			output_id: output_id.clone(),
+			input_channels: input_id.shape.channels,
+			output_channels: output_id.shape.channels,
 			num_params: num_params,
 			init_func: init_func,
 			max_sgemm_spaxels: 8192,
@@ -56,8 +56,8 @@ impl Convolution {
 		})
 	}
 	
-	pub fn new_default(input: &(NodeIndex, NodeShape), output: &(NodeIndex, NodeShape), ks: Vec<usize>) -> Box<Convolution>{
-		Convolution::new(input, output, ks, Padding::Same, "Convolution", Convolution::init_xavier())
+	pub fn new_default(input_id: &NodeID, output_id: &NodeID, ks: &[usize]) -> Box<Convolution>{
+		Convolution::new(input_id, output_id, ks, Padding::Same, "Convolution", Convolution::init_xavier())
 	}
 	
 	pub fn init_xavier() -> Arc<Fn(&Convolution, &mut [f32])> {
@@ -82,20 +82,20 @@ impl Operation for Convolution {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 		
 		let required_shape = {
-			let dims = shapes[self.input_ind].spatial_dimensions.iter().map(|dim| match dim {
+			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {
 				&Dimension::Fixed(v) => v, 
 				_ => unreachable!(),
 			});
 			
 			NodeShape{
-				channels: shapes[self.output_ind].channels,
+				channels: shapes[self.output_id.ind].channels,
 				spatial_dimensions: match self.padding {
 						Padding::Full => dims.zip(&self.ks).map(|(dim, k_dim)| Dimension::Fixed(dim + k_dim - 1)).collect(),
-						Padding::Same => shapes[self.input_ind].spatial_dimensions.clone(),
+						Padding::Same => shapes[self.input_id.ind].spatial_dimensions.clone(),
 						Padding::Valid => dims.zip(&self.ks).map(|(dim, k_dim)| Dimension::Fixed(dim - k_dim + 1)).collect(),
 						Padding::Padded(ref size) => dims.map(|dim| Dimension::Fixed(dim +size)).collect(),
 						Padding::PaddedDiff(ref vec) => dims.zip(vec).map(|(dim, vec_dim)| Dimension::Fixed(dim + vec_dim)).collect(),
@@ -103,14 +103,14 @@ impl Operation for Convolution {
 			}
 		};
 
-		shapes[self.output_ind] = required_shape.merge(&shapes[self.output_ind])
-			.expect(&format!("Error: Operation '{}' error could not merge required output shape with existing shape for Node '{}'. old shape: {:?}, new shape: {:?}", self.name, nodes[self.output_ind].name, shapes[self.output_ind], required_shape));
+		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
+			.expect(&format!("Error: Operation '{}' error could not merge required output shape with existing shape for Node '{}'. old shape: {:?}, new shape: {:?}", self.name, nodes[self.output_id.ind].name, shapes[self.output_id.ind], required_shape));
 		
 	}
 	
-	fn input_node_ind(&self) -> Vec<NodeIndex>{vec![self.input_ind]}
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone()]}
 	
-	fn output_node_ind(&self) -> Vec<NodeIndex>{vec![self.output_ind]}
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![self.output_id.clone()]}
 	
 	fn init_params(&mut self, params: &mut [f32]){
 		assert!(self.num_params() == params.len());
@@ -120,8 +120,8 @@ impl Operation for Convolution {
 	fn num_params(&self) -> usize {self.num_params}
 	
 	fn forward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
-		let input = &*{data[self.input_ind].borrow_mut()};
-		let output = &mut *{data[self.output_ind].borrow_mut()};
+		let input = &*{data[self.input_id.ind].borrow_mut()};
+		let output = &mut *{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 		
@@ -188,8 +188,8 @@ impl Operation for Convolution {
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32], param_deriv: &mut [f32], _error: &mut f32){
-		let input = &mut *{data[self.input_ind].borrow_mut()};
-		let output = &*{data[self.output_ind].borrow_mut()};
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let output = &*{data[self.output_id.ind].borrow_mut()};
 		let in_size = input.shape.flat_size_single();
 		let out_size = output.shape.flat_size_single();
 		
@@ -500,12 +500,12 @@ mod test {
 		for _ in 1..20{
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, vec![13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(7, vec![13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(7, vec![13, 17], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(7, &[13, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(7, &[13, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				Convolution::new_default(&n1, &n2, vec![3, 5]),
+				Convolution::new_default(&n1, &n2, &[3, 5]),
 				MseLoss::new_default(&n2, &n3),
 			];
 			graph.add_operations(ops);
