@@ -9,7 +9,7 @@ license = "MIT"
 
 
 [features]
-default = ["mnist", "images"]
+default = ["mnist"]
 mnist = ["byteorder"]
 images = ["image"]
 
@@ -18,8 +18,8 @@ images = ["image"]
 [dependencies]
 rand = "0.3"
 #matrixmultiply = "0.1.8"
-matrixmultiply = { git = "https://github.com/millardjn/matrixmultiply"}
-
+matrixmultiply_mt = { git = "https://github.com/millardjn/matrixmultiply"}
+#matrixmultiply = { path = "D:/Repositories/MatrixMultiply/matrixmultiply"}
 
 byteorder = {version = "0.5", optional = true}
 image = {version = "*", optional = true}

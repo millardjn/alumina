@@ -56,6 +56,7 @@ use self::Dimension::*;
 pub enum Dimension {
 	Unknown,
 	Fixed(usize),
+	/// Inclusive range of possible sizes for a given dimension
 	Range{upper: usize, lower: usize},
 }
 

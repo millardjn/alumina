@@ -8,4 +8,4 @@ pub mod shape;
 pub mod vec_math;
 
 extern crate rand;
-extern crate matrixmultiply;
+extern crate matrixmultiply_mt as matrixmultiply;

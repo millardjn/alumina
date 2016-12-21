@@ -170,8 +170,8 @@ impl<'a> Optimiser<'a> for Asgd<'a>{
 			let sim = if self.step_count == 0 {
 				0.0
 			} else {
-				//mean.cos_similarity(&self.previous_derivs)
-				(mean.dot(&self.previous_derivs)/self.previous_derivs.dot(&self.previous_derivs)).max(-1.0).min(1.0) // clipping prevents unexpected noise results from blowing up step size adaption.
+				mean.cos_similarity(&self.previous_derivs)
+				//(mean.dot(&self.previous_derivs)/self.previous_derivs.dot(&self.previous_derivs)).max(-1.0).min(1.0) // clipping prevents unexpected noise results from blowing up step size adaption.
 			};
 			let new_rate = self.rate*1.33f32.powf(sim+0.0625);//*1.25; +0.0625
 			
@@ -248,7 +248,6 @@ pub struct Asgd2<'a>{
 	averaged_derivs: Vec<f32>,
 	prev_derivs: Vec<f32>,
 	step_callback: Vec<Box<FnMut(f32, u64, u64, &mut Graph, &[f32])->bool>>,
-	cos_sim_var: f32,
 }
 
 impl <'a> Asgd2<'a> {
@@ -262,14 +261,13 @@ impl <'a> Asgd2<'a> {
 			step_count: 0,
 			graph: graph,
 			curvature_est: vec![0.0; num_params],
-			decay_const: 0.9,
-			rate: 0.001,
+			decay_const: 0.75,
+			rate: 0.01,
 			batch_size: 1.0,
 			min_batch_size: 1,
 			averaged_derivs: vec![0.0; num_params],
 			prev_derivs: vec![0.0; num_params],
 			step_callback: vec![],
-			cos_sim_var: 0.0
 		}
 	}
 	
@@ -301,22 +299,46 @@ impl <'a> Asgd2<'a> {
 	fn update_batch_size(&mut self, mean: &[f32], results: &[(f32, Vec<f32>)]) -> f32{
 
 		//-- Vector Dispersion measures
-		let mean_norm = mean.norm2();
-		let (max, avg) = results.iter()
-			.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
-			.fold((0.0f32, 0.0f32), |(max, avg), diff| {
-				let len = diff.norm2()/((NUM_BINS - 1) as f32 * mean_norm);
-				(max.max(len), avg + len/NUM_BINS as f32)
-			} );
-		// max being below 1.0 shows that there isn't one vector that is orders of magnitude larger than the others and is swamping the mean
-		let max_target = 0.66;
+		// let (max, avg) = results.iter()
+		// 	//.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0))
+		// 	.fold((0.0f32, 0.0f32), |(max, avg), &(_, ref derivs)| {
+		// 		let f = NUM_BINS as f32/(NUM_BINS-1) as f32;
+		// 		// hold-one-out mean
+		// 		let hoo_mean: Vec<f32> = mean.iter().zip(derivs).map(|(m,d)| (m - d/NUM_BINS as f32) * f ).collect();
+		// 		let diff = derivs.add_scaled(&hoo_mean, -1.0);
 
-		// avg being less than 1.0 shows that the vectors arent just orthogonal vectors of equal length (random vector in high dimensions are likely to be orthogonal), therefore there is some signal in the noise
-		let avg_target = 0.66;
+		// 		let len = diff.norm2()/(NUM_BINS as f32 * hoo_mean.norm2());
+		// 		(max.max(len), avg + len/NUM_BINS as f32)
+		// 	} );
+		// // max being below 1.0 shows that there isn't one vector that is orders of magnitude larger than the others and is swamping the mean
+		// let max_target = 0.75;
 
-		let rel_err = (max/max_target).max(avg/avg_target).max(0.125);
+		// // avg being less than 1.0 shows that the vectors arent just orthogonal vectors of equal length (random vector in high dimensions are likely to be orthogonal), therefore there is some signal in the noise
+		// let avg_target = 0.75;
+
+		// let rel_err = (max/max_target).max(avg/avg_target);
 		
-		//print!("{} {} ", avg, max);
+
+
+		//-- Hold one out vector variance
+		let rel_var = results.iter()
+			.fold(0.0f32, |sum, &(_, ref derivs)| {
+				let f = NUM_BINS as f32/(NUM_BINS-1) as f32;
+				// hold-one-out mean
+				let hoo_mean: Vec<f32> = mean.iter().zip(derivs).map(|(m,d)| (m - d/NUM_BINS as f32) * f ).collect();
+				let diff = derivs.add_scaled(&hoo_mean, -1.0);
+				sum + diff.dot(&diff) / (hoo_mean.dot(&hoo_mean) * NUM_BINS as f32)
+			});
+
+		// target = 1.0 is equivalent to random (orthogonal) unit length vectors on each sample
+		let target = 0.8;
+		let rel_err = (rel_var/NUM_BINS as f32).sqrt()/target;
+
+		// TODO limit
+
+
+		//println!("{} {}", rel_var, rel_err);
+
 				
 		//-- Vector Variance
 		// let var = results.iter()
@@ -333,15 +355,17 @@ impl <'a> Asgd2<'a> {
 		// 	.map(|&(_, ref derivs)| derivs.add_scaled(&mean, -1.0).dot(&mean_norm))
 		// 	.fold(0.0, |acc, diff| acc + diff*diff)/(NUM_BINS - 1) as f32;
 		// let std_err_var2 = var2/NUM_BINS as f32;
-		// let rel_err = (std_err_var2/mean.dot(&mean)).sqrt();		
-		// let target_err = 0.25;//
+		// let target_err = 0.5;//
+		// let rel_err = (std_err_var2/mean.dot(&mean)).sqrt()/target_err;		
 		
 		
-		// Adapt batch size based on derivative relative err vs target relative variance			
+		
+		// Adapt batch size based on derivative relative err vs target relative variance
+		let rel_err = rel_err.max(0.25).min(1000.0);
 		self.batch_size *= if rel_err > 1.0 {
-				rel_err.powf(0.25) // increase batch size
+				rel_err.powf(0.075) // increase batch size
 			} else {
-				rel_err.powf(0.125) // decrease batch size
+				rel_err.powf(0.075) // decrease batch size
 			};
 		self.batch_size = self.batch_size.max(self.min_batch_size as f32);
 		rel_err
@@ -444,24 +468,21 @@ impl<'a> Optimiser<'a> for Asgd2<'a>{
 		
 
 
-		let mut sim = mean.cos_similarity(&self.averaged_derivs); // Adapt learning rate based on inter-step cosine similarity
+		let sim = mean.cos_similarity(&self.averaged_derivs); // Adapt learning rate based on inter-step cosine similarity
 		//(mean.dot(&self.averaged_derivs)/self.averaged_derivs.dot(&self.averaged_derivs)).max(-4.0).min(2.0) // clipping prevents unexpected noise results from blowing up step size adaption.
 
 		//if sim < 0.0 {(sim = sim/2.0);}
-		// sim = if sim > 0.0 {
-		// 	sim.min(0.2)
-		// } else {
-		// 	(sim*0.5).max(-0.2)
-		// };
 
-		sim = (sim+0.0625).min(0.5).max(-0.5);
-		let new_rate = self.rate*2.0f32.sqrt().powf(sim);//*1.25; +0.0625
+		let new_rate = self.rate*1.5f32.sqrt().powf(sim+0.15);//*1.25; +0.0625
 		
 
 		let mut new_average_derivs = self.averaged_derivs.scale(self.decay_const);
 		new_average_derivs.add_scaled_mut(&mean, 1.0 - self.decay_const);
 
-		let cond_derivs: Vec<f32> = new_average_derivs.iter().zip(&corrected_curvature).map(|(m,c)| m/(c.sqrt() + 1e-8).powf(PWR)).collect();
+		let cond_derivs: Vec<f32> = new_average_derivs.iter().zip(&corrected_curvature).map(|(m,c)| m/(c.sqrt() + 1e-8)).collect();
+		
+		
+		
 		let change = cond_derivs.scale(-new_rate);
 
 
@@ -472,7 +493,7 @@ impl<'a> Optimiser<'a> for Asgd2<'a>{
 		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, NUM_BINS, self.batch_size.floor(), sim, self.rate, change.norm2());
 
 		//:.4
-		
+
 
 
 		

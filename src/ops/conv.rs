@@ -49,7 +49,7 @@ impl Convolution {
 			output_channels: output_id.shape.channels,
 			num_params: num_params,
 			init_func: init_func,
-			max_sgemm_spaxels: 8192,
+			max_sgemm_spaxels: 65536,
 
 			shuffled_kernel: vec![0.0; num_params],
 			shuffled_derivatives: vec![0.0; num_params],			

@@ -53,6 +53,7 @@ Patchy until the library settles down.
    - [x] Adaptive Learning Rate
    - [ ] Adaptive Momentum
  - [x] Basic numerical tests
+ - [ ] Limit Optimiser evaluation batch size to stay within memory limits
  - [ ] Selectively disable calculation of forward values, node derivatives and parameter derivatives
  - [ ] Builder patterns for operation contruction
  - [ ] Split Graph struct into mutable GraphBuilder and immutable Sub-Graphs
