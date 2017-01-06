@@ -417,9 +417,8 @@ impl Operation for Pooling {
 	fn name(&self) -> &str{&self.name}
 	
 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-		shapes[self.input_id.ind].collapse_ranges_to_minimum()
-			.expect(&format!("Error: Input node '{}' could not be Pooling to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
-		
+	shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
 
 		let required_shape = {
 			let dims = shapes[self.input_id.ind].spatial_dimensions.iter().map(|dim| match dim {

@@ -1,5 +1,6 @@
 use std::cmp::*;
-
+use std::iter::{FromIterator, repeat};
+use smallvec::SmallVec;
 // #[derive(Clone, PartialEq, Debug)]
 // pub struct InclusiveRange {
 // 	lower: usize,
@@ -97,7 +98,7 @@ pub struct DataShape{
 	
 	pub channels: usize,
 	
-	pub spatial_dimensions: Vec<usize>,
+	pub spatial_dimensions: SmallVec<[usize;4]>,
 	/// The number of training examples being processed in parallel
 	pub n: usize,
 }
@@ -121,7 +122,7 @@ impl DataShape{
 	pub fn new(channels: usize, higher_dims: &[usize], n: usize) -> DataShape{
 		DataShape{
 			channels: channels, 
-			spatial_dimensions: higher_dims.to_vec(), 
+			spatial_dimensions: SmallVec::from_iter(higher_dims.iter().cloned()), 
 			n: n
 		}
 	}
@@ -129,7 +130,7 @@ impl DataShape{
 	pub fn new_flat(size: usize, n: usize) -> DataShape{
 		DataShape{
 			channels: size, 
-			spatial_dimensions: vec![], 
+			spatial_dimensions: SmallVec::new(), 
 			n: n
 		}
 	}
@@ -143,7 +144,7 @@ impl DataShape{
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeShape{
 	pub channels: usize,
-	pub spatial_dimensions: Vec<Dimension>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size
+	pub spatial_dimensions: SmallVec<[Dimension;4]>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size
 } // depth, dimensions
 
 impl NodeShape{
@@ -159,14 +160,14 @@ impl NodeShape{
 	pub fn new_flex(channels: usize, num_higher_dims: usize) -> NodeShape{
 		NodeShape{
 			channels: channels, 
-			spatial_dimensions: vec![Dimension::Unknown; num_higher_dims], 
+			spatial_dimensions: SmallVec::from_iter(repeat(Dimension::Unknown).take(num_higher_dims)),
 		}
 	}
 	
 	pub fn new_flat(size: usize) -> NodeShape{
 		NodeShape{
 			channels: size, 
-			spatial_dimensions: vec![], 
+			spatial_dimensions: SmallVec::new(), 
 		}
 	}
 	
@@ -211,7 +212,7 @@ impl NodeShape{
 	/// If range upper != lower, lowe will be used.
 	pub fn to_data_shape(&self, n: usize) -> Result<DataShape, ShapeError> {
 
-		let mut dims = vec![];
+		let mut dims = SmallVec::new();
 
 		for dim in self.spatial_dimensions.iter() {
 			match dim {
@@ -220,7 +221,8 @@ impl NodeShape{
 			}
 		}
 
-		Ok(DataShape{
+		Ok(
+			DataShape{
 			channels: self.channels,
 			spatial_dimensions: dims,
 			n: n,
