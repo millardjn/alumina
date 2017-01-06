@@ -28,16 +28,13 @@ pub struct ImageFolderSupplier<S: Selector>{
 
 impl<S: Selector> ImageFolderSupplier<S>{
 		
-	pub fn new(folder_path: &Path, crop: Cropping) -> ImageFolderSupplier<S> {
+	pub fn new(folder_path: &Path, subfolders: bool, crop: Cropping) -> ImageFolderSupplier<S> {
 		
-
 		print!("Loading paths for {:?} ... ", folder_path);
 		stdout().flush().ok();
-		let dir = folder_path.read_dir().expect(&format!("Could not read folder: {:?}", folder_path));
-		let paths = dir.filter_map(|e| e.ok().and_then(|e| if e.path().is_file() {Some(e.path())} else {None}))
-			.collect::<Vec<_>>();
+		let mut paths = vec![];
+		file_paths(&mut paths, folder_path, subfolders);
 		println!("loaded {} paths.", paths.len());
-
 
 		let n = paths.len();
 		ImageFolderSupplier{
@@ -46,6 +43,20 @@ impl<S: Selector> ImageFolderSupplier<S>{
 			paths: paths,
 			order: S::new(n),
 			crop: crop,
+		}
+	}
+}
+
+fn file_paths(mut paths: &mut Vec<PathBuf>, folder_path: &Path, subfolders: bool){
+	let dir = folder_path.read_dir().expect(&format!("Could not read folder: {:?}", folder_path));
+
+	for e in dir.filter_map(|e| e.ok()) {
+
+		let path = e.path();
+		if path.is_file(){
+			paths.push(path);
+		} else if subfolders && path.is_dir(){
+			file_paths(paths, &path, subfolders);
 		}
 	}
 }

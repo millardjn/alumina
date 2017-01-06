@@ -261,8 +261,8 @@ impl <'a> Asgd2<'a> {
 			step_count: 0,
 			graph: graph,
 			curvature_est: vec![0.0; num_params],
-			decay_const: 0.75,
-			rate: 0.01,
+			decay_const: 0.9,
+			rate: 0.001,
 			batch_size: 1.0,
 			min_batch_size: 1,
 			averaged_derivs: vec![0.0; num_params],
@@ -473,7 +473,7 @@ impl<'a> Optimiser<'a> for Asgd2<'a>{
 
 		//if sim < 0.0 {(sim = sim/2.0);}
 
-		let new_rate = self.rate*1.5f32.sqrt().powf(sim+0.15);//*1.25; +0.0625
+		let new_rate = self.rate*1.5f32.sqrt().powf(sim+0.1);//*1.25; +0.0625
 		
 
 		let mut new_average_derivs = self.averaged_derivs.scale(self.decay_const);
@@ -492,11 +492,6 @@ impl<'a> Optimiser<'a> for Asgd2<'a>{
 		if self.step_count == 0 {println!("");println!("count\terr\trel_err\tbatchSize\tcos_sim\trate\tmovement");}
 		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, NUM_BINS, self.batch_size.floor(), sim, self.rate, change.norm2());
 
-		//:.4
-
-
-
-		
 
 		let new_params = params.add(&change);
 
