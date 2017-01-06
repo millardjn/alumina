@@ -16,6 +16,7 @@ images = ["image"]
 
 
 [dependencies]
+smallvec = "0.3"
 rand = "0.3"
 #matrixmultiply = "0.1.8"
 matrixmultiply_mt = { git = "https://github.com/millardjn/matrixmultiply"}
