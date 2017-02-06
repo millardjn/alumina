@@ -1,33 +1,7 @@
 use std::cmp::*;
 use std::iter::{FromIterator, repeat};
 use smallvec::SmallVec;
-// #[derive(Clone, PartialEq, Debug)]
-// pub struct InclusiveRange {
-// 	lower: usize,
-// 	upper: usize,
-// }
 
-// impl InclusiveRange{
-// 	pub fn new(lower: usize, upper: usize)-> InclusiveRange{
-// 		InclusiveRange{
-// 			lower: lower,
-// 			upper: upper,
-// 		}
-// 	}
-	
-// 	pub fn new_fixed(val: usize) -> InclusiveRange{
-// 		InclusiveRange{
-// 			lower: val,
-// 			upper: val,
-// 		}
-// 	}
-	
-// 	/// panics if range if upper != lower, otherwise returns lower
-// 	pub fn get_fixed_val(&self) -> usize{
-// 		assert!(self.upper == self.lower, "Range not collapsed");
-// 		self.lower
-// 	}
-// }
 
 #[derive(Debug)]
 pub enum ShapeError{
@@ -105,6 +79,9 @@ pub struct DataShape{
 
 impl DataShape{
 
+	pub fn spatial_size_single(&self) -> usize {
+		self.spatial_dimensions.iter().fold(1, |prev, &item| prev*item)
+	}
 	
 	pub fn flat_size_single(&self) -> usize {
 		self.spatial_dimensions.iter().fold(self.channels, |prev, &item| prev*item)
@@ -141,7 +118,7 @@ impl DataShape{
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct NodeShape{
 	pub channels: usize,
 	pub spatial_dimensions: SmallVec<[Dimension;4]>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size

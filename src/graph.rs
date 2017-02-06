@@ -526,7 +526,18 @@ impl NodeData{
 			panic!("cant join NodeData with different shapes");
 		}
 	}
-	
+
+	pub fn join_mut(&mut self, mut other: NodeData){
+		if self.shape.channels == other.shape.channels
+		&& self.shape.spatial_dimensions == other.shape.spatial_dimensions{
+			self.values.append(&mut other.values);
+			self.derivatives.append(&mut other.derivatives);
+			self.shape.n += other.shape.n;
+		} else {
+			panic!("cant join NodeData with different shapes");
+		}
+	}
+
 	pub fn split(mut self, n: usize) -> (NodeData, NodeData){
 		if n < self.shape.n {
 			(
@@ -537,7 +548,26 @@ impl NodeData{
 			panic!("cant split NodeData at {}, shape.n is only {}", n, self.shape.n);
 		}
 	}
-	
+
+	/// Reserves the minimum capacity for exactly `additional` more elements
+	pub fn reserve_exact(&mut self, additional: usize){
+		let size = self.shape.flat_size_single();
+		self.values.reserve_exact(additional*size);
+		self.derivatives.reserve_exact(additional*size);
+	}
+
+	/// Reserves the minimum capacity for at least `additional` more elements
+	pub fn reserve(&mut self, additional: usize){
+		let size = self.shape.flat_size_single();
+		self.values.reserve(additional*size);
+		self.derivatives.reserve(additional*size);
+	}
+
+	pub fn shrink_to_fit(&mut self){
+		self.values.shrink_to_fit();
+		self.derivatives.shrink_to_fit();
+	}
+
 }
 
 #[derive(Debug, Clone)]
@@ -564,7 +594,7 @@ impl PartialEq for OpID {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NodeID{
 	pub ind: usize,
 	pub shape: NodeShape,

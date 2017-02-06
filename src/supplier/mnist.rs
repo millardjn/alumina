@@ -9,8 +9,8 @@ use std::io::Read;
 
 use shape::*;
 use graph::*;
-use opt::supplier::Supplier;
-use opt::supplier::Selector;
+use supplier::Supplier;
+use supplier::Selector;
 
 pub struct MnistSupplier<S: Selector>{
 	count: u64,
@@ -23,7 +23,7 @@ pub struct MnistSupplier<S: Selector>{
 impl<S: Selector> Supplier for MnistSupplier<S>{
 	
 	fn next_n(&mut self, n: usize) -> (Vec<NodeData>, Vec<NodeData>){
-		if n < 1 {panic!("")}
+		assert!(n > 0, "n must be larger than 0");
 		
 		let (mut input, mut train) = self.get();
 		

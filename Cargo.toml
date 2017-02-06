@@ -18,11 +18,9 @@ images = ["image"]
 [dependencies]
 smallvec = "0.3"
 rand = "0.3"
-#matrixmultiply = "0.1.8"
-matrixmultiply_mt = { git = "https://github.com/millardjn/matrixmultiply"}
-#matrixmultiply = { path = "D:/Repositories/MatrixMultiply/matrixmultiply"}
+matrixmultiply_mt = "0.1.0"
 
-byteorder = {version = "0.5", optional = true}
+byteorder = {version = "1.0", optional = true}
 image = {version = "*", optional = true}
 
 [dev-dependencies]

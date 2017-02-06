@@ -32,7 +32,7 @@ pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	let (_loss_0, grad_0, node_data) = graph.backprop(n, input_0.clone(), training.clone(), &params_0);
 	
 	
-	let tolerance = 0.01; //should be near zero but some functions are less stable.
+	let tolerance = 0.001; //should be near zero but some functions are less stable.
 	
 	
 	// A small step along along the returned gradient should produce a correspending change in error.

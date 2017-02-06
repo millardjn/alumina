@@ -1,10 +1,10 @@
 extern crate image;
 
-use opt::supplier::*;
+use supplier::*;
 use std::path::{PathBuf, Path};
 use graph::*;	
 use shape::*;
-use opt::supplier::imagefolder::{Cropping, load_crop, load_full, CHANNELS};
+use supplier::imagefolder::{Cropping, load_crop, load_full, CHANNELS};
 
 use std::io::*;
 
@@ -20,7 +20,8 @@ pub struct ImagenetSupplier<S: Selector>{
 impl<S: Selector> Supplier for ImagenetSupplier<S>{
 	
 	fn next_n(&mut self, n: usize) -> (Vec<NodeData>, Vec<NodeData>){
-		
+		assert!(n > 0, "n must be larger than 0");
+
 		match self.crop {
 			Cropping::None =>{
 				assert_eq!(n, 1, "If cropping isnt specified images but be loaded one at a time. Specifiy cropping for this supplier, or restrict evaluation batching to 1");

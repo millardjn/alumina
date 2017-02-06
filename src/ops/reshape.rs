@@ -457,7 +457,7 @@ impl Operation for Pooling {
 		assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
 		assert_eq!(input.shape.spatial_dimensions.len(), self.factors.len());
 
-		let scale = 1.0/self.factors.iter().fold(1,|p, v| p* v) as f32;
+		let scale = 1.0;///self.factors.iter().fold(1,|p, v| p* v) as f32;
 
 		for n_ind in  0..input.shape.n{
 			let out_n = &mut output.values[n_ind*out_size..][..out_size];
@@ -484,7 +484,7 @@ impl Operation for Pooling {
 		assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
 		assert_eq!(input.shape.spatial_dimensions.len(), self.factors.len());
 
-		let scale = 1.0/self.factors.iter().fold(1,|p, v| p* v) as f32;
+		let scale = 1.0;///self.factors.iter().fold(1,|p, v| p* v) as f32;
 
 		for n_ind in  0..input.shape.n{
 			let outd_n = &output.derivatives[n_ind*out_size..][..out_size];
@@ -745,7 +745,8 @@ impl Operation for Expand {
 
 #[allow(dead_code)]
 fn pool_recurse_forward(patch: &mut [f32], input: &[f32], factors:&[usize], in_channels: usize, input_shape: &[usize], output_shape: &[usize], axis: usize, output_ind: usize, old_out_stride: usize, scale: f32){
-	debug_assert_eq!(scale, 1.0/factors.iter().fold(1,|p, v| p* v) as f32);
+	//debug_assert_eq!(scale, 1.0/factors.iter().fold(1,|p, v| p* v) as f32);
+	
 
 	// stride in array index, not spaxel index
 	let out_stride = old_out_stride/output_shape[axis];
@@ -757,7 +758,8 @@ fn pool_recurse_forward(patch: &mut [f32], input: &[f32], factors:&[usize], in_c
 	// valid range of input coordinates the current axis for the current patch
 	let start = ox * factors[axis];
 	let end = min(start + factors[axis], input_shape[axis]);
-		
+
+	let scale = scale/(end-start) as f32;
 	if axis > 0 {
 		
 		for i in start..end{
@@ -785,8 +787,9 @@ fn pool_recurse_forward(patch: &mut [f32], input: &[f32], factors:&[usize], in_c
 
 #[allow(dead_code)]
 fn pool_recurse_backward(patch: &[f32], output: &mut [f32], factors:&[usize], out_channels: usize, output_shape: &[usize], input_shape: &[usize], axis: usize, input_ind: usize, old_in_stride: usize, scale: f32){
-	debug_assert_eq!(scale, 1.0/factors.iter().fold(1,|p, v| p* v) as f32);
+	//debug_assert_eq!(scale, 1.0/factors.iter().fold(1,|p, v| p* v) as f32);
 	
+
 	// stride in array index, not spaxel index
 	let in_stride = old_in_stride/input_shape[axis];
 	let out_stride = output.len()/output_shape[axis];
@@ -800,7 +803,7 @@ fn pool_recurse_backward(patch: &[f32], output: &mut [f32], factors:&[usize], ou
 	let end = min(start + factors[axis], output_shape[axis]);
 
 
-	
+	let scale = scale/(end-start) as f32;
 	if axis > 0 {
 		
 		for i in start..end{
@@ -918,7 +921,6 @@ fn expand_recurse(patch: &[f32], output: &mut [f32], factors:&[usize], out_chann
 #[cfg(test)]
 mod test {
 	use super::*; 	
-	use graph::*;
 	use ops::loss::MseLoss;
 	use ops::math::*;
 	use ops::*;
@@ -1152,7 +1154,7 @@ mod test {
 			graph.add_operations(ops);
 			graph.init_params();
 			
-			test_numeric(graph, 1.0, 1e-1);
+			test_numeric(graph, 1.0, 1.0);
 		}
 	}
 	

@@ -2,6 +2,7 @@
 pub mod graph;
 pub mod ops;
 pub mod opt;
+pub mod supplier;
 pub mod shape;
 #[cfg(test)]mod test;
 //pub mod stats;

@@ -533,10 +533,8 @@ impl Operation for Scale {
 
 #[cfg(test)]
 mod tests {
-	use graph::*;
 	use ops::loss::MseLoss;
 	use super::*;
-	use ops::*;
 	
 	#[test]
 	fn test_linear_map_backprop(){
@@ -575,7 +573,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-1);
+			test_numeric(graph, 1.0, 1e-3);
 		}
 	}
 
@@ -584,8 +582,8 @@ mod tests {
 		for _ in 1..100{
 			let mut graph = Graph::new();
 		
-			let n2 = graph.add_output_node(Node::new_sized(10, &[15, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(10, &[15, 17], "nodetrain"));
+			let n2 = graph.add_output_node(Node::new_sized(10, &[5, 7], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(10, &[5, 7], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				Bias::new(&n2, ParamSharing::Spatial, "Bias", init_fill(0.0)),
@@ -637,7 +635,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-2);
+			test_numeric(graph, 1.0, 1e-1);
 		}
 	}
 
@@ -658,7 +656,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-2);
+			test_numeric(graph, 1.0, 1e-1);
 		}
 	}
 

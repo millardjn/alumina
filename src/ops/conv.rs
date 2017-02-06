@@ -104,7 +104,8 @@ impl Operation for Convolution {
 		};
 
 		shapes[self.output_id.ind] = required_shape.merge(&shapes[self.output_id.ind])
-			.expect(&format!("Error: Operation '{}' error could not merge required output shape with existing shape for Node '{}'. old shape: {:?}, new shape: {:?}", self.name, nodes[self.output_id.ind].name, shapes[self.output_id.ind], required_shape));
+			.expect(&format!("Error: Operation '{}' error could not merge required output shape with existing shape for Node '{}'.", self.name, nodes[self.output_id.ind].name));
+			//.expect(&format!("Error: Operation '{}' error could not merge required output shape with existing shape for Node '{}'. old shape: {:?}, new shape: {:?}", self.name, nodes[self.output_id.ind].name, shapes[self.output_id.ind], required_shape));
 		
 	}
 	
@@ -140,6 +141,8 @@ impl Operation for Convolution {
 		
 		let patch_size = params.len()/self.output_channels;
 
+
+		//let max_spaxels = min(max(1, 3*1024*1024/(4*patch_size)), out_spaxels*n);
 		let max_spaxels = min(max(1, self.max_sgemm_spaxels), out_spaxels*n); // number of spaxels to combine in one sgemm
 		let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
 
@@ -208,7 +211,7 @@ impl Operation for Convolution {
 		
 		let patch_size = params.len()/self.input_channels;
 
-		let max_batch_size = min(output.shape.n, max(1, self.max_sgemm_spaxels/in_spaxels)); // number of n to combine in one sgemm
+		let max_batch_size = output.shape.n;//min(output.shape.n, max(1, self.max_sgemm_spaxels/in_spaxels)); // number of n to combine in one sgemm
 		let n_batches = (output.shape.n + max_batch_size - 1)/max_batch_size;
 
 		//let mut patches = vec![0.0; patch_size * out_spaxels * max_batch_size];
@@ -491,9 +494,7 @@ fn rev_col_flip_transpose_kernel_overwrite(kernel: &[f32], in_channels: usize, o
 #[cfg(test)]
 mod test {
 	use super::*; 	
-	use graph::*;
 	use ops::loss::MseLoss;
-	use ops::*;
 	
 	#[test]
 	fn test_conv_backprop(){
@@ -501,8 +502,8 @@ mod test {
 			let mut graph = Graph::new();
 		
 			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(7, &[13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(7, &[13, 17], "nodetrain"));
+			let n2 = graph.add_output_node(Node::new_sized(11, &[13, 17], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(11, &[13, 17], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				Convolution::new_default(&n1, &n2, &[3, 5]),

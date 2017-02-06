@@ -17,86 +17,9 @@ impl ActivationFunc for IdentityFunc {
 		(x, 1.0)
 	}
 }
+
+/// Identity - NSISOF - output equals input
 pub type Identity = GenericActivation<IdentityFunc>;
-
-
-/// Identity - NSISOF
-// #[derive(Clone)] 
-// pub struct Identity {
-// 	name: String,
-// 	input_id: NodeID,
-// 	output_id: NodeID,
-// }
-
-// impl Identity {
-// 	pub fn new(input_id: &NodeID, output_id: &NodeID, name: &str) -> Box<Identity>{
-// 		Box::new(Identity{
-// 			name: name.to_string(),
-// 			input_id: input_id.clone(),
-// 			output_id: output_id.clone(),
-// 		})
-// 	}
-	
-// 	pub fn new_default(input_id: &NodeID, output_id: &NodeID) -> Box<Identity>{
-// 		Identity::new(input_id, output_id, "Identity")
-// 	}
-// }
-
-// impl Operation for Identity {
-
-// 	fn name(&self) -> &str{&self.name}
-	
-// 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-// 		shapes[self.input_id.ind].collapse_ranges_to_minimum()
-// 			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
-		
-// 		shapes[self.output_id.ind] = shapes[self.input_id.ind].merge(&shapes[self.output_id.ind])
-// 			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_id.ind].name));
-// 	}
-	
-// 	fn input_node_ind(&self) -> Vec<NodeID>{vec![self.input_id]}
-	
-// 	fn output_node_ind(&self) -> Vec<NodeID>{vec![self.output_id]}
-	
-// 	fn num_params(&self) -> usize {0}
-	
-// 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-// 		let input = &*{data[self.input_id.ind].borrow()};
-// 		let output = &mut*{data[self.output_id.ind].borrow_mut()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let out = &mut output.values[..len];
-
-// 		for i in 0..len{
-// 			out[i] += inp[i];
-// 		}
-// 	}
-	
-// 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-// 		let input = &mut *{data[self.input_id.ind].borrow_mut()};
-// 		let output = &*{data[self.output_id.ind].borrow()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let outd = &output.derivatives[..len];
-// 		let inpd = &mut input.derivatives[..len];
-
-// 		for i in 0..len{
-// 			inpd[i] += outd[i];
-// 		}
-		
-// 	}	
-// }
 
 
 #[derive(Clone)]
@@ -107,89 +30,9 @@ impl ActivationFunc for LogisticFunc {
 		(1.0/(1.0 + (-x).exp()), exp/((exp+1.0)*(exp+1.0)))
 	}
 }
+
+/// Logistic - NSISOF - sigmoid that compresses input and outputs between 0 and 1
 pub type Logistic = GenericActivation<LogisticFunc>;
-
-
-/// Logistic   - NSISOF - sigmoid between 0 and 1
-// #[derive(Clone)] 
-// pub struct Logistic {
-// 	name: String,
-// 	input_ind: NodeID,
-// 	output_ind: NodeID,
-// }
-
-// impl Logistic {
-// 	pub fn new(input_id: &NodeID, output_id: &NodeID, name: &str) -> Box<Logistic>{
-// 		Box::new(Logistic{
-// 			name: name.to_string(),
-// 			input_ind: input_id.clone(),
-// 			output_ind: output_id.clone(),
-// 		})
-// 	}
-// 	pub fn new_default(input_id: &NodeID, output_id: &NodeID,) -> Box<Logistic>{
-// 		Logistic::new(input_id, output_id, "Logistic")
-// 	}
-// }
-
-// impl Operation for Logistic {
-	
-// 	fn name(&self) -> &str{ &self.name }
-
-// 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-// 		shapes[self.input_ind].collapse_ranges_to_minimum()
-// 			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
-		
-// 		shapes[self.output_ind] = shapes[self.input_ind].merge(&shapes[self.output_ind])
-// 			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_ind].name));
-// 	}
-	
-// 	fn num_params(&self) -> usize{ 0 }
-	
-// 	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind] }
-	
-// 	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![self.output_ind] }
-	
-// 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-// 		let input = &*{data[self.input_ind].borrow()};
-// 		let output = &mut*{data[self.output_ind].borrow_mut()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let out = &mut output.values[..len];
-
-// 		for i in 0..len{
-// 			out[i] += 1.0/(1.0 + (-inp[i]).exp());
-// 		}
-		
-// 	}
-	
-// 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-// 		let input = &mut *{data[self.input_ind].borrow_mut()};
-// 		let output = &*{data[self.output_ind].borrow()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let outd = &output.derivatives[..len];
-// 		let inpd = &mut input.derivatives[..len];
-
-// 		for i in 0..len{
-// 			let exp = inp[i].exp();
-// 			let do_di = exp/((exp+1.0)*(exp+1.0));
-// 			inpd[i] += outd[i] * do_di;
-// 		}
-
-// 	}
-// }
 
 
 #[derive(Clone)]
@@ -200,90 +43,9 @@ impl ActivationFunc for TanhFunc {
 		(x.tanh(), 1.0/(s*s))
 	}
 }
+
+/// Tanh - NSISOF - sigmoid that compresses input and outputs between -1 and 1
 pub type Tanh = GenericActivation<TanhFunc>;
-
-
-
-/// Tanh       - NSISOF - sigmoid between -1 and 1
-// #[derive(Clone)] 
-// pub struct Tanh {
-// 	name: String,
-// 	input_ind: NodeIndex,
-// 	output_ind: NodeIndex,
-// }
-
-// impl Tanh {
-// 	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(output, ref _output_shape): &(NodeIndex, NodeShape), name: &str) -> Box<Tanh>{
-// 		Box::new(Tanh{
-// 			name: name.to_string(),
-// 			input_ind: input,
-// 			output_ind: output,
-// 		})
-// 	}
-// 	pub fn new_default(input: &(NodeIndex, NodeShape), output: &(NodeIndex, NodeShape)) -> Box<Tanh>{
-// 		Tanh::new(input, output, "Tanh")
-// 	}
-// }
-
-// impl Operation for Tanh {
-	
-// 	fn name(&self) -> &str{ &self.name }
-
-// 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-// 		shapes[self.input_ind].collapse_ranges_to_minimum()
-// 			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
-		
-// 		shapes[self.output_ind] = shapes[self.input_ind].merge(&shapes[self.output_ind])
-// 			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_ind].name));
-// 	}
-	
-// 	fn num_params(&self) -> usize{ 0 }
-	
-// 	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind] }
-	
-// 	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![self.output_ind] }
-	
-// 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-// 		let input = &*{data[self.input_ind].borrow()};
-// 		let output = &mut*{data[self.output_ind].borrow_mut()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let out = &mut output.values[..len];
-
-// 		for i in 0..len{
-// 			out[i] += inp[i].tanh();
-// 		}
-		
-// 	}
-	
-// 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-// 		let input = &mut *{data[self.input_ind].borrow_mut()};
-// 		let output = &*{data[self.output_ind].borrow()};
-		
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let outd = &output.derivatives[..len];
-// 		let inpd = &mut input.derivatives[..len];
-
-// 		for i in 0..len{
-// 			let s = inp[i].cosh();
-// 			let do_di = 1.0/(s*s);
-// 			inpd[i] += outd[i] * do_di;
-// 		}
-
-// 	}
-// }
 
 
 #[derive(Clone)]
@@ -293,110 +55,14 @@ impl ActivationFunc for ReLUFunc {
 		let sign = x.signum();
 		(
 			(x.abs() + x)*0.5, // vectorises, but pretty questionable
-			(sign+sign.abs())*0.5 //x.signum().max(0.0); <- this should be better but doesnt compile to maxps
+			(sign+sign.abs())*0.5 //x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
 		)
 	}
 }
+
+/// `ReLU` - NSISOF - above 0 grad is 1, below 0 grad is 0
 pub type ReLU = GenericActivation<ReLUFunc>;
 
-
-
-/// `ReLU`       - NSISOF - above 0 grad is 1, below 0 grad is 0
-// #[derive(Clone)] 
-// pub struct ReLU {
-// 	name: String,
-// 	input_ind: NodeIndex,
-// 	output_ind: NodeIndex,
-// }
-
-// impl ReLU {
-// 	pub fn new(&(input, ref _input_shape): &(NodeIndex, NodeShape), &(output, ref _output_shape): &(NodeIndex, NodeShape), name: &str) -> Box<ReLU>{
-// 		Box::new(ReLU{
-// 			name: name.to_string(),
-// 			input_ind: input,
-// 			output_ind: output,
-// 		})
-// 	}
-// 	pub fn new_default(input: &(NodeIndex, NodeShape), output: &(NodeIndex, NodeShape)) -> Box<ReLU>{
-// 		ReLU::new(input, output, "ReLU")
-// 	}
-// }
-
-// impl Operation for ReLU {
-	
-// 	fn name(&self) -> &str{ &self.name }
-
-// 	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
-// 		shapes[self.input_ind].collapse_ranges_to_minimum()
-// 			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_ind].name, self.name));
-		
-// 		shapes[self.output_ind] = shapes[self.input_ind].merge(&shapes[self.output_ind])
-// 			.expect(&format!("Error: Operation '{}' error could not merge input shape with existing shape for output Node '{}'", self.name, nodes[self.output_ind].name));
-// 	}
-	
-// 	fn num_params(&self) -> usize{ 0 }
-	
-// 	fn input_node_ind(&self) -> Vec<NodeIndex>{ vec![self.input_ind] }
-	
-// 	fn output_node_ind(&self) -> Vec<NodeIndex>{ vec![self.output_ind] }
-	
-// 	fn forward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32]){
-// 		let input = &*{data[self.input_ind].borrow()};
-// 		let output = &mut*{data[self.output_ind].borrow_mut()};
-			
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let out = &mut output.values[..len];
-
-// 		// for i in 0..len{
-// 		// 	if inp[i] > 0.0 {
-// 		// 		out[i] += inp[i];
-// 		// 	}
-// 		// }
-
-// 		// Hopefully vectorise better?
-// 		for i in 0..len{
-// 			let v = (inp[i].abs() + inp[i])*0.5;
-// 			//let v = inp[i].max(0.0);
-// 			out[i] += v;
-// 		}		
-				
-// 	}
-	
-// 	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], _error: &mut f32){
-// 		let input = &mut *{data[self.input_ind].borrow_mut()};
-// 		let output = &*{data[self.output_ind].borrow()};
-		
-// 		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-// 		debug_assert_eq!(input.shape.n, output.shape.n);
-// 		debug_assert_eq!(input.shape.flat_size_single(), output.shape.flat_size_single());
-
-// 		let len = input.shape.flat_size_all();
-		
-// 		let inp = &input.values[..len];
-// 		let outd = &output.derivatives[..len];
-// 		let inpd = &mut input.derivatives[..len];
-
-// 		// for i in 0..len{
-// 		// 	if inp[i] > 0.0 {
-// 		// 		inpd[i] += outd[i];
-// 		// 	}
-// 		// }		
-
-// 		for i in 0..len{
-// 			let sign = inp[i].signum();
-// 			let switch = (sign+sign.abs())*0.5;
-// 			//let switch = inp[i].signum().max(0.0); // doesnt compile to maxps
-// 			inpd[i] += outd[i] * switch;
-// 		}
-
-// 	}
-// }
 
 /// `LeakyReLU` - NSISOF - left side slope is a fixed small number, default 0.01
 #[derive(Clone)] 
@@ -1276,10 +942,8 @@ impl Operation for SoftMax {
 
 #[cfg(test)]
 mod tests {
-	use graph::*;
 	use ops::loss::MseLoss;
 	use super::*;
-	use ops::*;
 
 	#[test]
 	fn test_srgb2lin_backprop(){
@@ -1371,9 +1035,9 @@ mod tests {
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
-			let n2 = graph.add_output_node(Node::new_flat(100, "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_flat(1000, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(1000, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(1000, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				ReLU::new(&n1, &n2, "ReLU"),
@@ -1383,7 +1047,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-2);
+			test_numeric(graph, 1.0, 1e-1);
 		}
 	}
 
@@ -1393,9 +1057,9 @@ mod tests {
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
-			let n2 = graph.add_output_node(Node::new_flat(100, "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_flat(1000, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(1000, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(1000, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				LeakyReLU::new_default(&n1, &n2),
@@ -1405,7 +1069,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-2);
+			test_numeric(graph, 1.0, 1e-1);
 		}
 	}
 	

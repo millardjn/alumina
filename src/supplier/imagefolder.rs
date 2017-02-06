@@ -1,7 +1,7 @@
 extern crate image;
 
 use self::image::{GenericImage, DynamicImage, Pixel};
-use opt::supplier::*;
+use supplier::*;
 use std::path::{PathBuf, Path};
 use graph::*;	
 use shape::*;
@@ -30,7 +30,7 @@ impl<S: Selector> ImageFolderSupplier<S>{
 		
 	pub fn new(folder_path: &Path, subfolders: bool, crop: Cropping) -> ImageFolderSupplier<S> {
 		
-		print!("Loading paths for {:?} ... ", folder_path);
+		print!("Loading paths for {} ... ", folder_path.to_string_lossy());
 		stdout().flush().ok();
 		let mut paths = vec![];
 		file_paths(&mut paths, folder_path, subfolders);
@@ -48,7 +48,7 @@ impl<S: Selector> ImageFolderSupplier<S>{
 }
 
 fn file_paths(mut paths: &mut Vec<PathBuf>, folder_path: &Path, subfolders: bool){
-	let dir = folder_path.read_dir().expect(&format!("Could not read folder: {:?}", folder_path));
+	let dir = folder_path.read_dir().expect(&format!("Could not read folder: {}", folder_path.to_string_lossy()));
 
 	for e in dir.filter_map(|e| e.ok()) {
 
@@ -65,6 +65,7 @@ impl<S: Selector> Supplier for ImageFolderSupplier<S>{
 
 	
 	fn next_n(&mut self, n: usize) -> (Vec<NodeData>, Vec<NodeData>){
+		assert!(n > 0, "n must be larger than 0");
 		match self.crop {
 			Cropping::None =>{
 				assert_eq!(n, 1, "If cropping isnt specified images but be loaded one at a time. Specifiy cropping for this supplier, or restrict evaluation batching to 1");
@@ -128,7 +129,7 @@ pub fn load_crop<S: Selector>(order: &mut S, paths: &[PathBuf], data: &mut [f32]
 		iter += 1;
 	}
 
-	let image = result.expect(&format!("100 consecutive attempts at opening images failed. Last path was: {:?}", last_path));
+	let image = result.expect(&format!("100 consecutive attempts at opening images failed. Last path was: {}", last_path.to_string_lossy()));
 
 	let (out_width, img_x_off, data_x_off) = range(&cropping, image.dimensions().0, width);
 	let (out_height, img_y_off, data_y_off) = range(&cropping, image.dimensions().1, height);
@@ -159,7 +160,7 @@ pub fn data_to_img(image_node: NodeData) -> DynamicImage {
 		for y in 0..height {
 			for x in 0..width {
 				let data = &data[(x + y*width) as usize*CHANNELS..][..CHANNELS];
-				img.put_pixel(x, y, image::Rgba::from_channels((data[0]*255.0).min(255.0).max(0.0) as u8, (data[1]*255.0).min(255.0).max(0.0) as u8, (data[2]*255.0).min(255.0).max(0.0) as u8, 255u8));	
+				img.put_pixel(x, y, image::Rgba::from_channels((data[0]*255.0 + 0.5).min(255.0).max(0.0) as u8, (data[1]*255.0 + 0.5).min(255.0).max(0.0) as u8, (data[2]*255.0 + 0.5).min(255.0).max(0.0) as u8, 255u8));	
 			}
 		}
 		// for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
@@ -193,11 +194,14 @@ fn open_randomised_img<S: Selector>(order: &mut S, paths: &[PathBuf]) -> Dynamic
 	while iter < 100 && result.is_none() {
 		let path_index = order.next();
 		last_path = paths[path_index].as_path();
-		result = image::open(last_path).ok();
+		match image::open(last_path) {
+			Ok(val) => result = Some(val),
+			Err(err) => println!("Image load error '{}' {}", last_path.to_string_lossy(), err),
+		}
 		iter += 1;
 	}
 
-	let image = result.expect(&format!("100 consecutive attempts at opening images failed. Last path was: {:?}", last_path));
+	let image = result.expect(&format!("100 consecutive attempts at opening images failed. Last path was: {}", last_path.to_string_lossy()));
 	image
 }
 
