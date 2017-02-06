@@ -21,11 +21,11 @@ rand = "0.3"
 matrixmultiply_mt = "0.1.0"
 
 byteorder = {version = "1.0", optional = true}
-image = {version = "*", optional = true}
+image = {version = "0.12", optional = true}
 
 [dev-dependencies]
 bytevec = "0.2.0"
-image = "*"
+image = "0.12"
 
 [lib]
 name = "alumina"

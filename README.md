@@ -1,5 +1,6 @@
 # Alumina
 An experimental deep learning library written in pure rust.
+See mnist.rs in examples or [Rusty_SR](https://github.com/millardjn/rusty_sr) for usage samples.
 
 ## Contributions
 Issues are a great place for discussion, problems, requests, and coordinating future work.
@@ -37,8 +38,8 @@ Patchy until the library settles down, particularly until the graph abstraction 
    - [x] N-dimensional AvgPooling
    - [x] N-dimensional spaxel shuffling for "Sub-pixel Convolution"
    - [ ] N-dimensional Linear-Interpolation (backprop not finished)
-   - [ ] Global Pooling
-   - [ ] Broadcasting
+   - [x] Global Pooling
+   - [x] Broadcasting
  - [x] Data Loading
    - [x] Mnist
    - [ ] Cifar
@@ -61,7 +62,7 @@ Patchy until the library settles down, particularly until the graph abstraction 
  - [ ] Overhaul data ingestion, particularly buffering input processing/reads.
  - [ ] Move to bluss' ndarray where possible (long overdue)
  - [ ] Improve naming inter/intra-library consistancy
- - [ ] Documentation
+ - [ ] Complete Documentation
  - [ ] Reduce ability to express illegal states in API
  - [ ] Move from panics to error-chain
  - [ ] Guard unsafe code rigourously
@@ -71,7 +72,7 @@ Patchy until the library settles down, particularly until the graph abstraction 
 ### Distant
  - [ ] RNNs
  - [ ] Efficient probablistic structures (e.g. generative RNNs)
- - [ ] Graph optimisation passes
+ - [ ] Graph optimisation passes and inplace operations
  - [ ] Support for both dynamic and static graphs
 
 
