@@ -1,5 +1,5 @@
 # Alumina
-An experimental deep learning library written in pure rust.
+An experimental deep learning library written in pure rust. Breakage expected on each release in the short term.
 See mnist.rs in examples or [Rusty_SR](https://github.com/millardjn/rusty_sr) for usage samples.
 
 ## Contributions

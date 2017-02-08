@@ -2,7 +2,7 @@
 name = "alumina"
 version = "0.1.0"
 authors = ["J. Millard <millard.jn@gmail.com>"]
-description = "A Experimental Deep Learning Library"
+description = "An Experimental Deep Learning Library"
 repository = "https://github.com/millardjn/alumina"
 keywords = ["Neural Network", "Machine Learning", "Deep Learning"]
 license = "MIT"
@@ -12,7 +12,6 @@ license = "MIT"
 default = ["mnist"]
 mnist = ["byteorder"]
 images = ["image"]
-
 
 
 [dependencies]
