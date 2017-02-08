@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["J. Millard <millard.jn@gmail.com>"]
 description = "An Experimental Deep Learning Library"
 repository = "https://github.com/millardjn/alumina"
-keywords = ["Neural Network", "Machine Learning", "Deep Learning"]
+keywords = ["Neural", "Network", "Machine", "Deep", "Learning"]
 license = "MIT"
 
 
