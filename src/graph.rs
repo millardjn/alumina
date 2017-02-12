@@ -308,7 +308,7 @@ impl Graph{
 		let mut finished = false;
 		while !finished {
 
-			// 1. gather output nodes of operations which currently done have satisfied inputs.
+			// 1. gather output nodes of operations which currently dont have satisfied inputs.
 			let input_ops_not_ready = self.operations.iter()
 				.filter(|&op| !op.input_node_IDs().iter().all(|id| ready[id.ind]))
 				.flat_map(|op| op.output_node_IDs())

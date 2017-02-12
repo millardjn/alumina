@@ -27,13 +27,13 @@ pub struct ImageFolderSupplier<S: Selector>{
 }
 
 impl<S: Selector> ImageFolderSupplier<S>{
+	
+	pub fn new(root_path: &Path, subfolders: bool, crop: Cropping) -> ImageFolderSupplier<S> {
 		
-	pub fn new(folder_path: &Path, subfolders: bool, crop: Cropping) -> ImageFolderSupplier<S> {
-		
-		print!("Loading paths for {} ... ", folder_path.to_string_lossy());
+		print!("Loading paths for {} ... ", root_path.to_string_lossy());
 		stdout().flush().ok();
 		let mut paths = vec![];
-		file_paths(&mut paths, folder_path, subfolders);
+		file_paths(&mut paths, root_path, subfolders);
 		println!("loaded {} paths.", paths.len());
 
 		let n = paths.len();
@@ -47,8 +47,13 @@ impl<S: Selector> ImageFolderSupplier<S>{
 	}
 }
 
-fn file_paths(mut paths: &mut Vec<PathBuf>, folder_path: &Path, subfolders: bool){
-	let dir = folder_path.read_dir().expect(&format!("Could not read folder: {}", folder_path.to_string_lossy()));
+fn file_paths(mut paths: &mut Vec<PathBuf>, root_path: &Path, subfolders: bool){
+	if root_path.is_file(){
+		paths.push(root_path.to_path_buf());
+		return;
+	}
+
+	let dir = root_path.read_dir().expect(&format!("Could not read folder: {}", root_path.to_string_lossy()));
 
 	for e in dir.filter_map(|e| e.ok()) {
 
