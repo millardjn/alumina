@@ -86,7 +86,7 @@ impl<'a> CainBuilder<'a> {
 			
 			curvature_est: vec![0.0; num_params],
 			learning_rate: self.initial_learning_rate,
-			batch_size: self.initial_subbatch_size,
+			subbatch_size: self.initial_subbatch_size,
 
 			momentum_derivs: vec![0.0; num_params],
 			prev_derivs: vec![0.0; num_params],
@@ -117,16 +117,16 @@ pub struct Cain<'a>{
 	graph: &'a mut Graph,
 	config: CainConfig,
 
-	eval_count: u64,
-	step_count: u64,
+	eval_count: usize,
+	step_count: usize,
 	
 	curvature_est: Vec<f32>,
 	learning_rate: f32,
-	batch_size: f32,
+	subbatch_size: f32,
 
 	momentum_derivs: Vec<f32>,
 	prev_derivs: Vec<f32>,
-	step_callback: Vec<Box<FnMut(CallbackData)->CallbackSignal>>,
+	step_callback: Vec<Box<FnMut(&CallbackData)->CallbackSignal>>,
 }
 
 impl <'a> Cain<'a> {
@@ -138,8 +138,8 @@ impl <'a> Cain<'a> {
 			config: CainConfig{
 				num_subbatches: 8.0,
 				momentum: 0.9,
-				aggression: 0.75,
-				target_err: 0.75,
+				aggression: 0.5,
+				target_err: 0.9,
 				subbatch_increase_damping: 0.15,
 				subbatch_decrease_damping: 0.15,
 				rate_adapt_coefficient: 1.05,
@@ -150,35 +150,8 @@ impl <'a> Cain<'a> {
 	}
 	
 
-	// pub fn new(graph: &'a mut Graph) -> Cain<'a>{
-	// 	let num_params = graph.num_params();
-	// 	Cain{
-	// 		config: CainConfig,
-	// 		eval_count: 0,
-	// 		step_count: 0,
-	// 		graph: graph,
-	// 		curvature_est: vec![0.0; num_params],
-	// 		rate: 0.001,
-	// 		batch_size: 2.0,
-	// 		min_batch_size: 1,
-	// 		averaged_derivs: vec![0.0; num_params],
-	// 		prev_derivs: vec![0.0; num_params],
-	// 		step_callback: vec![],
-	// 	}
-	// }
-	
-	// pub fn set_min_batch_size(&mut self, min: usize){
-	// 	self.min_batch_size = min;
-	// 	self.batch_size = min as f32;
-	// }
-	
-	// pub fn reset_eval_steps(&mut self){
-	// 	self.eval_count = 0;
-	// 	self.step_count = 0;
-	// }
-
 	/// Returns error and error derivatives
-	fn part_step(&mut self, training_set: &mut Supplier, params: &[f32], batch_size: u64) -> (f32, Vec<f32>){
+	fn part_step(&mut self, training_set: &mut Supplier, params: &[f32], batch_size: usize) -> (f32, Vec<f32>){
 
 			let (input, training_input) = training_set.next_n(batch_size as usize);
 			let (mut err, mut param_derivs, _data) = self.graph.backprop(batch_size as usize, input, training_input, &params);
@@ -195,31 +168,36 @@ impl <'a> Cain<'a> {
 	fn update_batch_size(&mut self, mean: &[f32], results: &[(f32, Vec<f32>)]) -> f32{
 
 
-		//-- Hold one out vector variance
+		//-- Hold one out vector len F-distribution
+
+		// Note: prepare for handwaving
+		// Consider the degenerate case where each "result" gradient vector is dominated by noise.
+		// Assuming noise in the vector is normally distributed, and isnt dominated by a single variable with high variance,
+		// then (diff_dot/num_subbatches) and mean_dot are both chi^2 distributed with some equal 'high' degree of freedom
+		// and the ratio of these is an F-distribution with a mean > 1
+
+		// in the case that signal dominates noise, the ratio will be < 1, and approach zero.
+		// this statistic can be used to continuously tune the subbatch_size
+
 		let num_subbatches = self.config.num_subbatches;
 		let rel_var = results.iter()
 			.fold(0.0f32, |sum, &(_, ref derivs)| {
-				// let f = num_subbatches/(num_subbatches-1.0);
-				// // hold-one-out mean
-				// let hoo_mean: Vec<f32> = mean.iter().zip(derivs).map(|(m,d)| (m - d/num_subbatches) * f ).collect();
-				// let diff = derivs.add_scaled(&hoo_mean, -1.0);
-				// sum + diff.dot(&diff) / (hoo_mean.dot(&hoo_mean) * num_subbatches)
 
 				let mut diff_dot = 0.0;
 				let mut mean_dot = 0.0;
-				for (m, d) in mean.iter().zip(derivs){
-					let h = (m - d/num_subbatches) * num_subbatches/(num_subbatches-1.0);
-					let diff = d-h;
+				for ((m, d), &c) in mean.iter().zip(derivs).zip(&self.curvature_est){
+					let curv = c.sqrt() + 1e-8;
+					let h = (m - d/num_subbatches) * num_subbatches/(num_subbatches-1.0)/curv;
+					let diff = d/curv-h;
+
 					diff_dot += diff*diff;
 					mean_dot += h*h;
 				}
 				sum + diff_dot/(mean_dot * num_subbatches)
-			});
+			})/num_subbatches;
 
 		// target = 1.0 is equivalent to random (orthogonal) unit length vectors on each sample
-		let rel_err = (rel_var/num_subbatches).sqrt()/self.config.target_err;
-
-
+		let rel_err = rel_var.sqrt()/self.config.target_err;
 
 
 		// //-- Variance when projected onto hold one out mean vector
@@ -250,16 +228,16 @@ impl <'a> Cain<'a> {
 		
 		// Adapt batch size based on derivative relative err vs target relative variance
 		let rel_err = rel_err.max(0.125).min(1000.0);
-		self.batch_size *= if rel_err > 1.0 {
+		self.subbatch_size *= if rel_err > 1.0 {
 				rel_err.powf(self.config.subbatch_increase_damping) // increase batch size 0.075
 			} else {
 				rel_err.powf(self.config.subbatch_decrease_damping) // decrease batch size
 			};
-		self.batch_size = self.batch_size.max(self.config.min_subbatch_size as f32);
+		self.subbatch_size = self.subbatch_size.max(self.config.min_subbatch_size as f32);
 		rel_err
 	}
 
-	fn update_curvature(&mut self, mean: &[f32]){ //, results: &[(f32, Vec<f32>)]
+	fn update_curvature(&mut self, mean: &[f32], _results: &[(f32, Vec<f32>)]){
 				
 		//let curv_decay = self.config.momentum.powf(0.09539).max(0.9);
 		let curv_decay = self.config.momentum.powf(1.0/4.0).max(0.9);
@@ -291,7 +269,7 @@ impl <'a> Cain<'a> {
 
 impl<'a> Optimiser<'a> for Cain<'a>{
 
-	fn add_boxed_step_callback(&mut self, func: Box<FnMut(CallbackData)->CallbackSignal>){ // err, step, evaluations, graph, params
+	fn add_boxed_step_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>){
 		self.step_callback.push(func);
 	}
 
@@ -299,38 +277,31 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 		&mut self.graph
 	}
 
-	fn optimise_from(&mut self, training_set: &mut Supplier,  mut params: Vec<f32>) -> Vec<f32>{
-
-		'outer: loop {
-			let (err, new_params) = self.step(training_set, params);
-			params = new_params;
-
-			
-			for func in self.step_callback.iter_mut(){
-				let data = CallbackData{err: err, step_count: self.step_count, eval_count: self.eval_count, graph: &self.graph, params: &params};
-				match func(data){
-					CallbackSignal::Stop => {break 'outer},
-					CallbackSignal::Continue =>{},
-				}
-			}
-		}
-		
-		params
+	fn get_step_callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{
+		&mut self.step_callback[..]
 	}
 
+	fn get_step_count(&self) -> usize{
+		self.step_count
+	}
 
+	fn get_eval_count(&self) -> usize{
+		self.eval_count
+	}
 	
 	fn step(&mut self, training_set: &mut Supplier, params: Vec<f32>) -> (f32, Vec<f32>){
 
 		// Take multiple measurements of error and gradient, then find L2 variance in derivative vectors
 		
-		let batch_ceil = self.batch_size.floor() as u64;
-		let results = (0..self.config.num_subbatches as usize).map(|_| self.part_step(training_set, &params, batch_ceil)).collect::<Vec<_>>();
+		let batch_floor = self.subbatch_size.floor() as usize;
+		let results = (0..self.config.num_subbatches as usize).map(|_| self.part_step(training_set, &params, batch_floor)).collect::<Vec<_>>();
 		
 		let err: f32 = results.iter().fold(0.0f32, |acc, &(err, _)| acc + err)/self.config.num_subbatches;
 		let mean: Vec<f32> = results.iter().fold(vec![0.0f32;params.len()], |acc, &(_, ref derivs)| acc.add_move(&derivs)).scale_move(1.0/self.config.num_subbatches);
 
+		self.update_curvature(&mean, &results);
 		let rel_err = self.update_batch_size(&mean, &results);
+
 	// {
 	// 	let avg_norm_sqr = self.momentum_derivs.dot(&self.momentum_derivs);
 	// 	let mean_dot = mean.dot(&self.momentum_derivs)/avg_norm_sqr;
@@ -350,8 +321,6 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 	// }
 
 
-		self.update_curvature(&mean);
-
 		//let sim = mean.add_scaled(&self.prev_derivs, self.config.aggression).cos_similarity(&self.prev_derivs);
 
 		//let sim = mean.add_scaled(&self.momentum_derivs, self.config.aggression).cos_similarity(&self.momentum_derivs);
@@ -360,6 +329,7 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 			0.0
 		} else {
 			(self.config.aggression + mean.dot(&self.momentum_derivs)/self.momentum_derivs.dot(&self.momentum_derivs)).max(-8.0).min(4.0)
+			//mean.add_scaled(&self.prev_derivs, self.config.aggression).cos_similarity(&self.prev_derivs)
 		};
 
 		let new_rate = self.learning_rate*self.config.rate_adapt_coefficient.powf(sim);//+self.config.aggression
@@ -373,16 +343,12 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 		let curvature_step_correction = if self.step_count < 1_000_000{1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1))} else {1.0};
 		let momentum_step_correction = 1.0;//if self.step_count < 1_000_000{1.0/(1.0 - self.config.momentum.powi(self.step_count as i32 + 1))} else {1.0};
 		let cond_derivs: Vec<f32> = self.momentum_derivs.iter().zip(&self.curvature_est).map(|(m,c)| m*momentum_step_correction/((c*curvature_step_correction).sqrt() + 1e-8)).collect();
-
-		
 		
 		let change = cond_derivs.scale_move(-new_rate);
-
-
-
+		
 		// print progress (this should be moved to a callback lambda)
 		if self.step_count == 0 {println!("");println!("count\terr\trel_err\tbatchSize\tcos_sim\trate\tmovement");}
-		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, self.config.num_subbatches, self.batch_size.floor(), sim, new_rate, change.norm2());
+		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, self.config.num_subbatches, self.subbatch_size.floor(), sim, new_rate, change.norm2());
 
 
 		let new_params = change.add_move(&params);

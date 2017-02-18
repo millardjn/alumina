@@ -7,14 +7,14 @@ use supplier::Supplier;
 
 
 pub struct Sgd<'a>{
-	eval_count: u64,
-	step_count: u64,
+	eval_count: usize,
+	step_count: usize,
 	graph: &'a mut Graph,
 	rate: f32,
 	batch_size: u32,
 	_momentum: Option<f32>,
 	_momentum_vec: Vec<f32>,
-	step_callback: Vec<Box<FnMut(CallbackData)->CallbackSignal>>,
+	step_callback: Vec<Box<FnMut(&CallbackData)->CallbackSignal>>,
 }
 
 impl <'a> Sgd<'a> {
@@ -39,31 +39,22 @@ impl<'a> Optimiser<'a> for Sgd<'a>{
 		&mut self.graph
 	}
 	
-	fn add_boxed_step_callback(&mut self, func: Box<FnMut(CallbackData)->CallbackSignal>){ // err, step, evaluations, graph, params
+	fn add_boxed_step_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>){ // err, step, evaluations, graph, params
 		self.step_callback.push(func);
-
-	}
-
-	
-	fn optimise_from(&mut self, training_set: &mut Supplier,  mut params: Vec<f32>) -> Vec<f32>{ 
-		'outer: loop {
-			let (err, new_params) = self.step(training_set, params);
-			params = new_params;
-
-			
-			for func in self.step_callback.iter_mut(){
-				let data = CallbackData{err: err, step_count: self.step_count, eval_count: self.eval_count, graph: &self.graph, params: &params};
-				match func(data){
-					CallbackSignal::Stop => {break 'outer},
-					CallbackSignal::Continue =>{},
-				}
-			}
-		}
-		
-		params
-		
 	}
 	
+	fn get_step_callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{
+		&mut self.step_callback[..]
+	}
+	
+	fn get_step_count(&self) -> usize{
+		self.step_count
+	}
+
+	fn get_eval_count(&self) -> usize{
+		self.eval_count
+	}
+
 	fn step(&mut self, training_set: &mut Supplier, params: Vec<f32>) -> (f32, Vec<f32>){
 			
 			
@@ -75,7 +66,7 @@ impl<'a> Optimiser<'a> for Sgd<'a>{
 			param_derivs.scale_mut(1.0/self.batch_size as f32);
 			self.step_count +=1;
 
-			self.eval_count += self.batch_size as u64;
+			self.eval_count += self.batch_size as usize;
 			(err, params.add_scaled_move(&param_derivs, -self.rate))
 			
 	}

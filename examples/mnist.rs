@@ -35,61 +35,55 @@ fn main(){
 	let mut solver = opt::cain::Cain::new(&mut g)
 		.num_subbatches(8)
 		//.target_err(0.75)
-		.target_err(0.85)
+		.target_err(0.9)
 		.subbatch_increase_damping(0.15)
 		.subbatch_decrease_damping(0.15)
-		.aggression(0.5)
+		.aggression(0.75)
 		.momentum(0.9)
 		.initial_learning_rate(3e-3)
 		.finish();
 
 	println!("Total num params: {}", start_params.len());
 
-	solver.add_boxed_step_callback(validation(&start_params, training_set.epoch_size() as u64));
-	solver.add_boxed_step_callback(max_evals(50 * training_set.epoch_size() as u64));
-
+	solver.add_boxed_step_callback(validation(&start_params, training_set.epoch_size()));
+	solver.add_boxed_step_callback(max_evals(50 * training_set.epoch_size()));
+	
 	let _opt_params = solver.optimise_from(&mut training_set, start_params);
 
 
 }
 
 
-fn validation(start_params: &[f32], training_set_size: u64) -> Box<FnMut(CallbackData)->CallbackSignal>{
+fn validation(start_params: &[f32], training_set_size: usize) -> Box<FnMut(&CallbackData)->CallbackSignal>{
 	let mut val_set = MnistSupplier::<Sequential>::testing(Path::new(MNIST_PATH)); // I mean, who doesnt validate on the test set /s
 	let (mut g2, pred2, label2) = mnist_lenet(0.0);
 	let val_loss = loss::PredictionLoss::new_default(&pred2, &label2);
 	g2.add_operation(val_loss);
 
 	let start_params = start_params.to_vec();
-	let mut prev_evals = 0;
-	
 
-	Box::new(move |data|{
+	opt::every_n_evals(training_set_size, Box::new(move |data: &CallbackData|{
+		println!("Params moved:{}", data.params.add_scaled(&start_params, -1.0).norm2());
 		
-		if data.eval_count/training_set_size > prev_evals/training_set_size {
-			prev_evals = data.eval_count;
-			println!("Params moved:{}", data.params.add_scaled(&start_params, -1.0).norm2());
-			
-			let mut n = val_set.epoch_size();
-			let count = n/256;
-			let mut err = 0.0;
-			
-			for i in 0..count {
-				let batch_size = n/(count - i);
+		let mut n = val_set.epoch_size();
+		let count = n/256;
+		let mut err = 0.0;
+		
+		for i in 0..count {
+			let batch_size = n/(count - i);
 
-				let (input, training_input) = val_set.next_n(batch_size);
-				let (batch_err, _, _) = g2.backprop(batch_size, input, training_input, data.params);
-				err += batch_err;
-				n -= batch_size;
-			}
-
-			println!("Validation error is: {}%", 100.0*err/val_set.epoch_size() as f32);
+			let (input, training_input) = val_set.next_n(batch_size);
+			let (batch_err, _, _) = g2.backprop(batch_size, input, training_input, data.params);
+			err += batch_err;
+			n -= batch_size;
 		}
 
-
+		println!("Validation error is: {}%", 100.0*err/val_set.epoch_size() as f32);
 		CallbackSignal::Continue
-	})
+	}))
+
 }
+
 
 /// Based on LeNet variant as descripted at http://luizgh.github.io/libraries/2015/12/08/getting-started-with-lasagne/
 /// Activation not specified so using BeLU
