@@ -99,7 +99,7 @@ fn train(){
 	// }
 
 	//solver.set_min_batch_size(2.);
-	solver.add_boxed_step_callback(max_evals(10 * training_set.epoch_size() as u64));
+	solver.add_boxed_step_callback(max_evals(10 * training_set.epoch_size()));
 	opt_params = solver.optimise_from(&mut training_set, opt_params.clone());	
 
 	println!("Params moved:{}", opt_params.add_scaled(&start_params, -1.0).norm2());
