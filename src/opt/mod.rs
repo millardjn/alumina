@@ -57,10 +57,8 @@ pub fn min_err(min: f32) -> Box<FnMut(&CallbackData)->CallbackSignal>{
 
 pub fn every_n_steps(n: usize, mut func: Box<FnMut(&CallbackData)->CallbackSignal>) -> Box<FnMut(&CallbackData)->CallbackSignal>{
 
-	let mut prev_steps = 0;
 	Box::new(move |data|{
-		if data.step_count/n > prev_steps/n {
-			prev_steps = data.step_count;
+		if data.step_count % n == 0 {
 			func(data)
 		} else {
 			CallbackSignal::Continue
