@@ -380,6 +380,7 @@ pub struct BeLU {
 	sharing: ParamSharing,
 	num_params: usize,
 	init_func: Arc<Fn(&BeLU, &mut [f32])>,
+	offset: f32,
 }
 
 impl BeLU {
@@ -406,6 +407,7 @@ impl BeLU {
 			num_params: num_params,
 			sharing: sharing,
 			init_func: init_func,
+			offset: 0.0,
 		})
 	}
 
@@ -490,7 +492,7 @@ impl Operation for BeLU {
 			debug_assert_eq!(params.len(), 1);
 			let out_n = &mut output.values[..len];
 			let inp_n = &input.values[..len];
-			let param = &params[0];
+			let param = &params[0]+self.offset;
 			
 			for i in 0..len {
 				let v = inp_n[i];
@@ -506,7 +508,7 @@ impl Operation for BeLU {
 				
 				for i in 0..stride {
 					let v = inp_n[i];
-					out_n[i] += (v*v+1.0).sqrt() - 1.0 + v*params[i];
+					out_n[i] += (v*v+1.0).sqrt() - 1.0 + v*(params[i]+self.offset);
 				}			
 				
 				// Leaving this hear as an example of what not to do. Huge vectorisation improvement not using enumerate.
@@ -545,7 +547,7 @@ impl Operation for BeLU {
 			let inp_n = &input.values[..len];
 			let outd_n = &output.derivatives[..len];
 			let inpd_n = &mut input.derivatives[..len];
-			let param = &params[0];
+			let param = &params[0]+self.offset;
 			let param_deriv = &mut param_deriv[0];	
 				
 			for i in 0..len {
@@ -568,7 +570,7 @@ impl Operation for BeLU {
 				for i in 0..stride {
 					let od = outd_n[i];
 					let iv = inp_n[i];
-					inpd_n[i] += od * (params[i] + iv/ (iv*iv + 1.0).sqrt());
+					inpd_n[i] += od * (params[i]+ self.offset + iv/ (iv*iv + 1.0).sqrt());
 					param_deriv[i] += od * inp_n[i];
 				}
 	
