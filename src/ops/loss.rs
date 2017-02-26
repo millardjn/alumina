@@ -130,6 +130,73 @@ impl Operation for MaeLoss {
 			input_deriv[i] += (input_values[i]-target_values[i]).signum()*scale;
 		}
 
+	}
+}
+
+///`ClpLoss` - Cauchy negative log probability as a loss distance squared of each element from the target node values.
+#[derive(Clone)] 
+pub struct ClpLoss {
+	name: String,
+	input_id: NodeID,
+	target_id: NodeID,
+	scale: f32,
+	strength: f32,
+}
+
+impl ClpLoss {
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, scale: f32, name: &str) -> Box<ClpLoss>{
+		Box::new(ClpLoss{
+			name: name.to_string(),
+			input_id: input_id.clone(),
+			target_id: target_id.clone(),
+			scale: scale,
+			strength: strength,
+		})
+	}
+	
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID,) -> Box<ClpLoss>{
+		ClpLoss::new(input_id, target_id, 1.0, 1.0, "ClpLoss")
+	}
+}
+
+impl Operation for ClpLoss {
+
+	fn name(&self) -> &str{&self.name}
+	
+	fn propagate_shape_constraints(&self, nodes: &[Node], shapes: &mut [NodeShape]){
+		shapes[self.input_id.ind].collapse_ranges_to_minimum()
+			.expect(&format!("Error: Input node '{}' could not be collapsed to a fixed shape prior to being used by Operation '{}'. Provide dimensions or stronger constraints.", nodes[self.input_id.ind].name, self.name));
+	}
+	
+	fn input_node_IDs(&self) -> Vec<NodeID>{vec![self.input_id.clone(), self.target_id.clone()]}
+	
+	fn output_node_IDs(&self) -> Vec<NodeID>{vec![]}
+	
+	fn num_params(&self) -> usize {0}
+	
+	fn forward (&mut self, _data: &mut [RefCell<NodeData>], _params: &[f32]){}// No Output
+	
+	fn backward (&mut self, data: &mut [RefCell<NodeData>], _params: &[f32], _param_deriv: &mut [f32], error: &mut f32){
+		let input = &mut *{data[self.input_id.ind].borrow_mut()};
+		let target = &*{data[self.target_id.ind].borrow()};
+		let input_size = input.shape.flat_size_single();
+		let target_size = target.shape.flat_size_single();
+		
+				
+		assert_eq!(input_size, target_size, "Error: Operation '{}' input and target node sizes were not equal during evaluation", self.name);
+		assert_eq!(input.shape.n, target.shape.n, "Error: Operation '{}' input and target node 'n' were not equal during evaluation", self.name);
+
+		let n = input.shape.flat_size_all();
+		let input_deriv: &mut [f32] = &mut input.derivatives[..n];
+		let input_values: &[f32] = &input.values[..n];
+		let target_values: &[f32] =  &target.values[..n];
+		
+		let strength = self.strength/input_size as f32;
+		for i in 0..n{
+			let diff = input_values[i]-target_values[i];
+			*error += -strength * (1.0/(1.0 + diff*diff/(self.scale*self.scale))).ln();
+			input_deriv[i] += strength * 2.0 * diff / (self.scale*self.scale + diff*diff);
+		}
 	}	
 }
 
@@ -480,7 +547,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_MaeLoss_backprop(){
+	fn test_mae_loss_backprop(){
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
@@ -489,6 +556,25 @@ mod tests {
 			
 			let ops: Vec<Box<Operation>> = vec![
 				MaeLoss::new_default(&n1, &n3),
+			];
+			graph.add_operations(ops);
+			graph.init_params();
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 1e-3);
+		}
+	}
+
+	#[test]
+	fn test_clp_loss_backprop(){
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				ClpLoss::new_default(&n1, &n3),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
