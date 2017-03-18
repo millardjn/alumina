@@ -1,5 +1,5 @@
 
-#[macro_use]pub mod math;
+pub mod math;
 
 pub mod activ;
 pub mod conv;

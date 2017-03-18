@@ -5,8 +5,10 @@ use std::cmp::{min, max};
 use shape::*;
 use ops::Operation;
 use std::sync::Arc;
+use std::iter;
 use matrixmultiply;
- 	
+use odds;
+
 #[derive(Clone)]
 pub enum Padding {
 	Full,
@@ -27,7 +29,7 @@ pub struct Convolution {
 	output_channels: usize,
 	num_params: usize,
 	init_func: Arc<Fn(&Convolution, &mut [f32])>,
-	max_sgemm_spaxels: usize, // attempt not to exceed this number, for combined spaxels in one batch.
+	lowering_memory: usize, // attempt not to exceed this number, for combined spaxels in one batch.
 
 	shuffled_kernel:  Vec<f32>, // scratch space backprop kernel shuffles
 	shuffled_derivatives: Vec<f32>,
@@ -49,7 +51,7 @@ impl Convolution {
 			output_channels: output_id.shape.channels,
 			num_params: num_params,
 			init_func: init_func,
-			max_sgemm_spaxels: 65536,
+			lowering_memory: 1024*1024*2,
 
 			shuffled_kernel: vec![0.0; num_params],
 			shuffled_derivatives: vec![0.0; num_params],			
@@ -74,7 +76,6 @@ impl Convolution {
 	}
 
 }
-
 
 
 impl Operation for Convolution {
@@ -141,15 +142,17 @@ impl Operation for Convolution {
 		
 		let patch_size = params.len()/self.output_channels;
 
-
-		//let max_spaxels = min(max(1, 3*1024*1024/(4*patch_size)), out_spaxels*n);
-		let max_spaxels = min(max(1, self.max_sgemm_spaxels), out_spaxels*n); // number of spaxels to combine in one sgemm
+		let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), out_spaxels*n); // number of spaxels to combine in one sgemm
 		let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
 
 		let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
 		unsafe{
 			patches.set_len(patch_size * max_spaxels);
 		}
+
+		let kernel_strides = stride_vec(self.input_channels, &self.ks);
+		let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
+		let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
 
 		for batch in 0..n_batches {
 			let spaxel_ind = batch*max_spaxels;
@@ -166,7 +169,8 @@ impl Operation for Convolution {
 				let in_n = &input.values[n_ind*in_size..][..in_size];	
 
 				let output_ind = (spaxel_ind+i)%out_spaxels*self.output_channels;
-				pack_patch_recurse(patch, in_n, &self.ks, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.ks.len()-1, output_ind, out_size);
+				unsafe_pack_patch_outer(patch, in_n, self.input_channels, output_ind, &self.ks, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, &kernel_strides, &input_strides, &output_strides);
+				//pack_patch_recurse(patch, in_n, &self.ks, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.ks.len()-1, output_ind, out_size);
 			}
 
 
@@ -227,6 +231,10 @@ impl Operation for Convolution {
 		col_flip_transpose_kernel_overwrite(&params, self.input_channels, self.output_channels, &mut self.shuffled_kernel);
 		col_flip_transpose_kernel_overwrite(&param_deriv, self.input_channels, self.output_channels, &mut self.shuffled_derivatives);
 
+		let kernel_strides = stride_vec(self.output_channels, &self.ks);
+		let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
+		let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
+
 		for b in 0..n_batches {
 			let batch_size = min(output.shape.n - b*max_batch_size, max_batch_size);
 
@@ -240,7 +248,8 @@ impl Operation for Convolution {
 				for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
 					debug_assert_eq!(patch_size, patch.len());
 					let input_ind = i*self.input_channels;
-					pack_patch_recurse(patch, outd_n, &self.ks, self.output_channels, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, self.ks.len()-1, input_ind, in_size);
+					//pack_patch_recurse(patch, outd_n, &self.ks, self.output_channels, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, self.ks.len()-1, input_ind, in_size);
+					unsafe_pack_patch_outer(patch, outd_n, self.output_channels, input_ind, &self.ks, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, &kernel_strides, &output_strides, &input_strides);
 				}
 			}
 
@@ -297,6 +306,7 @@ impl Operation for Convolution {
 /// * `axis` - current axis being iterated over. This should be ks.len() - 1 for root call. Reduces by 1 each recursion.
 /// * `output_ind` - Index of output spaxel on which the patch is centred. Note: index is the slice index not spaxel index (factor of Cin difference)
 /// * `old_out_stride` - Slice stride of output for the layer bove the current iteration. used for interpreting `output_ind`. Root call should be output.len()
+#[inline(never)]
 fn pack_patch_recurse(patch: &mut [f32], input: &[f32], patch_shape:&[usize], n_channels: usize,
 	input_shape: &[usize], output_shape: &[usize], axis: usize, output_ind: usize, old_out_stride: usize){
 	
@@ -340,6 +350,92 @@ fn pack_patch_recurse(patch: &mut [f32], input: &[f32], patch_shape:&[usize], n_
 	}
 
 	for i in (end*ks_stride)..(patch_shape[axis]*ks_stride){
+		patch[i] = 0.0;// fill zero
+	}		
+}
+
+
+/// returns a vector with the array stride of each dimension. output[0] == channel.
+fn stride_vec(channels: usize, shape: &[usize]) -> Vec<usize>{
+	iter::once(&channels).chain(shape.iter()).scan(1, |state, &i| {*state *= i; Some(*state)}).collect::<Vec<usize>>()
+}
+
+#[inline(never)]
+fn unsafe_pack_patch_outer(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
+	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
+	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
+	let axis = kernel_shape.len() - 1;
+	let o_stride = output_strides[axis];
+
+	let ox = output_ind/o_stride;
+	let ix = ox as isize + (input_shape[axis] as isize - output_shape[axis] as isize)/2;
+	let (start, end) = kernel_range(ix, input_shape[axis], kernel_shape[axis]);
+
+	unsafe {unsafe_pack_patch_recurse(patch, input, channels, axis, output_ind, ox, ix, start, end,
+	kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)};
+}
+
+#[inline(never)]
+unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: usize, axis: usize, output_ind: usize,
+	ox: usize, ix: isize,
+	start: usize, end: usize, // valid range of the kernels in the current axis
+	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
+	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
+	
+	let i_stride = input_strides[axis];
+	let o_stride = output_strides[axis];
+	let k_stride = kernel_strides[axis];
+	
+	// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
+
+	
+	
+	
+	for i in 0..start*k_stride{
+		patch[i] = 0.0;// fill zeros
+	}
+				
+	if axis > 0 {
+		
+		for i in start..end{
+			let temp_ix = (ix + i as isize - (kernel_shape[axis]/2) as isize) as  usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
+			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
+			
+			//let new_input = &input[i_stride*temp_ix..i_stride*(temp_ix+1)];
+			let new_input = odds::slice_unchecked(input, i_stride*temp_ix, i_stride*(temp_ix+1));
+
+			//let new_patch = &mut patch[i*k_stride..(i+1)*k_stride];
+			let new_patch = odds::slice_unchecked_mut(patch, i*k_stride, (i+1)*k_stride);
+
+			let new_axis = axis-1;
+			let new_output_ind = output_ind - ox*o_stride;
+			let new_ox = new_output_ind/output_strides[new_axis];
+			let new_ix = new_ox as isize + (input_shape[new_axis] as isize - output_shape[new_axis] as isize)/2;
+			let (new_start, new_end) = kernel_range(new_ix, input_shape[new_axis], kernel_shape[new_axis]);
+
+			unsafe_pack_patch_recurse(new_patch, new_input, channels, axis - 1, new_output_ind, new_ox, new_ix,
+			new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
+		}
+
+	} else {	
+
+		let offset = ((ix-kernel_shape[axis] as isize/2)*channels as isize + (start*channels) as isize) as usize;
+		let len = (end - start)*channels;
+
+		//let input_crop = &input[offset..][..len];
+		let input_crop = odds::slice_unchecked(input, offset, offset + len);
+		
+		//let mut patch_crop = &mut patch[(start*channels)..][..len];
+		let mut patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
+		
+		//patch_crop.copy_from_slice(input_crop);
+		for i in 0..len{
+			*(patch_crop.get_unchecked_mut(i)) = *input_crop.get_unchecked(i);
+		}
+		
+	}
+
+	for i in (end*k_stride)..(kernel_shape[axis]*k_stride){
 		patch[i] = 0.0;// fill zero
 	}		
 }
