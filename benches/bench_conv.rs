@@ -11,13 +11,33 @@ use alumina::ops::math;
 use alumina::ops::Operation;
 
 #[bench]
-fn conv_bench_forward(bench: &mut Bencher){
-	conv2D_bench(bench, 32, (128, 128), (3,3), 16, 16, true);
+fn conv_bench_128x128_5x5_3_3_forward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, true);
 }
 
 #[bench]
-fn conv_bench_backward(bench: &mut Bencher){
-	conv2D_bench(bench, 32, (128, 128), (3,3), 16, 16, false);
+fn conv_bench_128x128_5x5_3_3_backward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, false);
+}
+
+#[bench]
+fn conv_bench_64x64_3x3_16_16_forward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, true);
+}
+
+#[bench]
+fn conv_bench_64x64_3x3_16_16_backward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, false);
+}
+
+#[bench]
+fn conv_bench_64x64_3x3_64_64_forward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, true);
+}
+
+#[bench]
+fn conv_bench_64x64_3x3_64_64_backward(bench: &mut Bencher){
+	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, false);
 }
 
 fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usize, usize), ch_in: usize, ch_out: usize, forward: bool){
@@ -31,6 +51,10 @@ fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usi
 	];
 	graph.add_operations(ops);
 
+	graph_bench(graph, bench, n, forward);
+}
+
+fn graph_bench(mut graph: Graph, bench: &mut Bencher, n: usize, forward: bool){
 	let input_0 = graph.input_nodes().iter().map(|node| {
 		let data_shape = node.shape.to_data_shape(n).unwrap();
 		let size = data_shape.flat_size_all();
@@ -52,5 +76,4 @@ fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usi
 		});
 	}
 }
-
 
