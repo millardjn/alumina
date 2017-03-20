@@ -5,9 +5,7 @@ extern crate alumina;
 
 use test::Bencher;
 use alumina::graph::*;
-use alumina::ops::loss::*;
 use alumina::ops::conv::Convolution;
-use alumina::ops::math;
 use alumina::ops::Operation;
 
 #[bench]
@@ -47,7 +45,7 @@ fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usi
 	let n2 = graph.add_output_node(Node::new_sized(ch_out, &[img.0, img.1], "nodeout"));
 
 	let ops: Vec<Box<Operation>> = vec![
-		Convolution::new_default(&n1, &n2, &[3, 5]),
+		Convolution::new_default(&n1, &n2, &[filter.0, filter.1]),
 	];
 	graph.add_operations(ops);
 
@@ -68,11 +66,11 @@ fn graph_bench(mut graph: Graph, bench: &mut Bencher, n: usize, forward: bool){
 	
 	if forward {
 		bench.iter(|| {
-			let node_data = graph.forward(n, input_0.clone(), &params_0);
+			let _node_data = graph.forward(n, input_0.clone(), &params_0);
 		});
 	} else {
 		bench.iter(|| {
-			let (_loss, grad_0, node_data) = graph.backprop(n, input_0.clone(), vec![], &params_0);
+			let (_loss, _grad_0, _node_data) = graph.backprop(n, input_0.clone(), vec![], &params_0);
 		});
 	}
 }
