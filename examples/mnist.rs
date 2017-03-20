@@ -245,32 +245,35 @@ fn mnist_lenet(regularise: f32) -> (Graph, NodeID, NodeID){
 	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
 	
 
-	let ops: Vec<Box<Operation>> = vec![
-		
-		conv::Convolution::new(&input, &layer1, &[7, 7], conv::Padding::Same, "conv1", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer1, ops::ParamSharing::Spatial, "bias1", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer1_activ, &layer1_pool, &[2, 2], "pooling1"),
+	let mut ops: Vec<Box<Operation>> = vec![];
+	let mut bias_ops: Vec<Box<Operation>> = vec![];
+	ops.push(conv::Convolution::new(&input, &layer1, &[7, 7], conv::Padding::Same, "conv1", conv::Convolution::init_msra(2.0)));
+	bias_ops.push(basic::Bias::new(&layer1, ops::ParamSharing::Spatial, "bias1", ops::init_fill(0.0)));
+	ops.push(activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()));
+	ops.push(reshape::Pooling::new(&layer1_activ, &layer1_pool, &[2, 2], "pooling1"));
 
-		conv::Convolution::new(&layer1_pool, &layer2, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer2, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer2_activ, &layer2_pool, &[2, 2], "pooling2"),
+	ops.push(conv::Convolution::new(&layer1_pool, &layer2, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(2.0)));
+	bias_ops.push(basic::Bias::new(&layer2, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)));
+	ops.push(activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()));
+	ops.push(reshape::Pooling::new(&layer2_activ, &layer2_pool, &[2, 2], "pooling2"));
 
-		conv::Convolution::new(&layer2_pool, &layer3, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer3, ops::ParamSharing::Spatial, "bias3", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer3, &layer3_activ, ops::ParamSharing::Spatial, "activation3", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer3_activ, &layer3_pool, &[2, 2], "pooling3"),
+	ops.push(conv::Convolution::new(&layer2_pool, &layer3, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(2.0)));
+	bias_ops.push(basic::Bias::new(&layer3, ops::ParamSharing::Spatial, "bias3", ops::init_fill(0.0)));
+	ops.push(activ::BeLU::new(&layer3, &layer3_activ, ops::ParamSharing::Spatial, "activation3", activ::BeLU::init_porque_no_los_dos()));
+	ops.push(reshape::Pooling::new(&layer3_activ, &layer3_pool, &[2, 2], "pooling3"));
 
-		
-		basic::LinearMap::new(&layer3_pool, &pred, "dense2", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&pred, ops::ParamSharing::None, "bias_dense2", ops::init_fill(0.0)),
-	];
+	ops.push(basic::LinearMap::new(&layer3_pool, &pred, "dense2", basic::LinearMap::init_msra(1.0)));
+	bias_ops.push(basic::Bias::new(&pred, ops::ParamSharing::None, "bias_dense2", ops::init_fill(0.0)));
+	
 	let op_inds = g.add_operations(ops);
+	let bias_op_inds = g.add_operations(bias_ops);
 
 	if regularise != 0.0 {
 		for op_ind in &op_inds {
 			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
+		}
+		for op_ind in &bias_op_inds {
+			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise*0.001, "L2"), op_ind);
 		}
 	}
 
@@ -358,3 +361,58 @@ fn mnist_tanh_800(regularise: f32) -> (Graph, NodeID, NodeID){
 	(g, pred, label) 
 }
 
+
+/// A non convolutional densenet like graph, but rather than connecting to all previous layers only connecting each layer to layers that are a power of 2 away.
+#[allow(unused)]
+fn mnist_lognet(regularise: f32) -> (Graph, NodeID, NodeID){
+	let mut g = Graph::new();
+	
+	let mut linear_nodes = vec![];
+	let mut active_nodes = vec![];
+	let mut ops: Vec<Box<Operation>> = vec![];
+
+	active_nodes.push(g.add_input_node(Node::new_flat(28*28, "input")));
+	
+	let hidden_layers = 6; // 2^x-1 if the prediction layer should connect directly to the input
+	let hidden_layer_size = 64;
+
+	
+	for i in 0..hidden_layers+1{
+
+		let layer_size = if i < hidden_layers {hidden_layer_size} else {10};
+
+		let new_linear_node = g.add_node(Node::new_flat(layer_size, "base_node"));
+
+		// connect each layer (hidden and output) to previous layers which are a power of 2 from it.
+		let mut jump = 1;
+		while jump <= active_nodes.len(){
+			ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(0.5/jump as f32)));
+			jump *= 2;
+		}
+		g.add_operation(basic::Bias::new(&new_linear_node, ops::ParamSharing::Auto, "bias", ops::init_fill(0.0)));
+		//ops.push(basic::Bias::new(&new_linear_node, ops::ParamSharing::Auto, "bias", ops::init_fill(0.0)));
+		
+		// add activation only for hidden layers
+		if i < hidden_layers{
+			let new_active_node = g.add_node(Node::new_flat(layer_size, "active_node"));
+			//ops.push(activ::Tanh::new(&new_linear_node, &new_active_node, "activation"));
+			ops.push(activ::BeLU::new(&new_linear_node, &new_active_node, ops::ParamSharing::None, "activation", activ::BeLU::init_porque_no_los_dos()));
+			active_nodes.push(new_active_node);
+		}
+
+		linear_nodes.push(new_linear_node);
+		
+	}
+
+	let op_inds = g.add_operations(ops);
+
+	if regularise != 0.0 {
+		for op_ind in &op_inds {
+			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
+		}
+	}
+
+	let pred = linear_nodes[linear_nodes.len()-1].clone();
+	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
+	(g, pred, label) 
+}
