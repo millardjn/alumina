@@ -194,7 +194,7 @@ impl Operation for ClpLoss {
 		let strength = self.strength/input_size as f32;
 		for i in 0..n{
 			let diff = input_values[i]-target_values[i];
-			*error += -strength * (1.0/(1.0 + diff*diff/(self.scale*self.scale))).ln();
+			*error += strength * ((diff/self.scale)*(diff/self.scale)).ln_1p();
 			input_deriv[i] += strength * 2.0 * diff / (self.scale*self.scale + diff*diff);
 		}
 	}	
@@ -574,13 +574,13 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				ClpLoss::new_default(&n1, &n3),
+				ClpLoss::new(&n1, &n3, 1.0, 0.1, "clploss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 
