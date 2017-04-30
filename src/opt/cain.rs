@@ -89,7 +89,7 @@ impl<'a> CainBuilder<'a> {
 			subbatch_size: self.initial_subbatch_size,
 
 			momentum_derivs: vec![0.0; num_params],
-			prev_derivs: vec![0.0; num_params],
+			//prev_derivs: vec![0.0; num_params],
 			step_callback: vec![],
 		}
 	}
@@ -125,7 +125,7 @@ pub struct Cain<'a>{
 	subbatch_size: f32,
 
 	momentum_derivs: Vec<f32>,
-	prev_derivs: Vec<f32>,
+	//prev_derivs: Vec<f32>,
 	step_callback: Vec<Box<FnMut(&CallbackData)->CallbackSignal>>,
 }
 
@@ -175,7 +175,7 @@ impl <'a> Cain<'a> {
 		// Consider the degenerate case where each "result" gradient vector is dominated by noise.
 		// Assuming noise in the vector is normally distributed, and isnt dominated by a single variable with high variance,
 		// then (diff_dot/num_subbatches) and mean_dot are both chi^2 distributed with some equal 'high' degree of freedom
-		// and the ratio of these is an F-distribution with a mean > 1
+		// and the ratio of these is an F-distribution with a mean >= 1
 
 		// in the case that signal dominates noise, the ratio will be < 1, and approach zero.
 		// this statistic can be used to continuously tune the subbatch_size
@@ -187,8 +187,8 @@ impl <'a> Cain<'a> {
 				let mut diff_dot = 0.0;
 				let mut mean_dot = 0.0;
 				for ((m, d), &c) in mean.iter().zip(derivs).zip(&self.curvature_est){
-					let curv = c.sqrt() + 1e-8;
-					let h = (m - d/num_subbatches) * num_subbatches/(num_subbatches-1.0)/curv;
+					let curv = c.sqrt() + 1e-7;
+					let h = (m * num_subbatches - d) / (num_subbatches-1.0) / curv;
 					let diff = d/curv-h;
 
 					diff_dot += diff*diff;
@@ -244,6 +244,7 @@ impl <'a> Cain<'a> {
 		let curv_decay = self.config.momentum.powf(1.0/4.0).max(0.9);
 		self.curvature_est.scale_mut(curv_decay);			
 		
+
 		//-- Also incorperate randomness
 		// for &(_, ref derivs) in results.iter() {
 		// 	let var = derivs.add_scaled(&self.momentum_derivs, -1.0);
@@ -262,8 +263,6 @@ impl <'a> Cain<'a> {
 
 		// let var = mean.add_scaled(&self.momentum_derivs, -1.0);
 		// self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay) as f32);
-
-
 
 	}
 }
@@ -304,67 +303,30 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 		let rel_err = self.calc_rel_err(&mean, &results);
 		self.update_batch_size(&rel_err);
 
-		// {
-		// 	let avg_norm_sqr = self.momentum_derivs.dot(&self.momentum_derivs);
-		// 	let mean_dot = mean.dot(&self.momentum_derivs)/avg_norm_sqr;
-		// 	let prev_dot = self.prev_derivs.dot(&self.momentum_derivs)/avg_norm_sqr;
-
-
-		// 	let mean_reg = mean.add_scaled(&self.momentum_derivs, -mean_dot);
-		// 	let prev_reg = self.prev_derivs.add_scaled(&self.momentum_derivs, -prev_dot);
-		// 	let mut sim = mean_reg.cos_similarity(&prev_reg);
-		// 	//if sim > 0.0 {(sim = sim/2.0);}
-
-		// 	let rate: f32 = 1.05;
-		// 	let mut change = rate.powf(sim);
-		// 	//if change > 1.0 {change = change.powf(0.25);}
-		// 	self.config.momentum = self.config.momentum.powf(change).max(0.5).min(0.9999);
-		// 	println!("sim: {} momen: {} chan: {}", sim, self.config.momentum, change);
-		// }
-		
 		let curv_decay = self.config.momentum.powf(1.0/4.0).max(0.9);
 		let curvature_step_correction = if self.step_count < 1_000_000{1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1))} else {1.0};
-		//let sim = mean.add_scaled(&self.prev_derivs, self.config.aggression).cos_similarity(&self.prev_derivs);
-
-		//let sim = mean.add_scaled(&self.momentum_derivs, self.config.aggression).cos_similarity(&self.momentum_derivs);
-		// let sim = (mean.add_scaled(&self.momentum_derivs, self.config.aggression).dot(&self.momentum_derivs)/self.momentum_derivs.dot(&self.momentum_derivs)).max(-4.0).min(2.0); // clipping prevents unexpected noise results from blowing up step size adaption.
+		
 		let sim = if self.step_count == 0 {
 			0.0
 		} else {
-			//mean.add_scaled(&self.prev_derivs, self.config.aggression).cos_similarity(&self.prev_derivs)
-
-
-			// projection of mean onto momentum_derivs, divided by momentum norm.
-			(self.config.aggression + mean.dot(&self.momentum_derivs)/self.momentum_derivs.dot(&self.momentum_derivs)).max(-8.0).min(4.0)
-			
-			// let mut numer = 0.0;
-			// let mut denom = 0.0;
-			// let n = mean.len();
-			// let mean = &mean[0..n];
-			// let ewma = &self.momentum_derivs[0..n];
-			// let curv = &self.curvature_est[0..n];
-			// for i in 0..n {
-			// 	denom += ewma[i]*ewma[i]/(curv[i]+1e-8);
-			// 	numer += mean[i]*ewma[i]/(curv[i]+1e-8);
-			// }
-			// (self.config.aggression + numer/denom).max(-8.0).min(4.0)
+			let aggression = self.config.aggression/(1.0-self.config.momentum).exp();
+			mean.add_scaled(&self.momentum_derivs, aggression).cos_similarity(&self.momentum_derivs)
 		};
+		
 
 		let new_rate = self.learning_rate*self.config.rate_adapt_coefficient.powf(sim);//+self.config.aggression
 		
 
+
 		self.momentum_derivs.scale_mut(self.config.momentum);
 		self.momentum_derivs.add_scaled_mut(&mean, 1.0 - self.config.momentum);
-
-		// let corrected_curvature = self.curvature_est.scale(1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1)));
-		
 		
 		let momentum_step_correction = 1.0;//if self.step_count < 1_000_000{1.0/(1.0 - self.config.momentum.powi(self.step_count as i32 + 1))} else {1.0};
-		let cond_derivs: Vec<f32> = self.momentum_derivs.iter().zip(&self.curvature_est).map(|(m,c)| m*momentum_step_correction/((c*curvature_step_correction).sqrt() + 1e-8)).collect();
+		let cond_derivs: Vec<f32> = self.momentum_derivs.iter().zip(&self.curvature_est).map(|(m,c)| m*momentum_step_correction/((c*curvature_step_correction).sqrt() + 1e-7)).collect();
 		
 		let change = cond_derivs.scale_move(-new_rate);
 		
-		// print progress (this should be moved to a callback lambda)
+		// print progress (TODO: this should be moved to a callback lambda)
 		if self.step_count == 0 {println!("");println!("count\terr\trel_err\tbatchSize\tcos_sim\trate\tmovement");}
 		println!("{}\t{}\t{:.4}\t{}x{}\t{:.4}\t{:.4e}\t{:.4e}", training_set.samples_taken(), err, rel_err, self.config.num_subbatches, self.subbatch_size.floor(), sim, new_rate, change.norm2());
 
@@ -373,7 +335,6 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 
 		self.learning_rate = new_rate;
 		self.step_count += 1;
-		self.prev_derivs = mean;
 		(err, new_params)
 	}
 
