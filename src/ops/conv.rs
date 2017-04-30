@@ -170,7 +170,7 @@ impl Operation for Convolution {
 
 				let output_ind = (spaxel_ind+i)%out_spaxels*self.output_channels;
 				unsafe_pack_patch_outer(patch, in_n, self.input_channels, output_ind, &self.kernel_shape, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, &kernel_strides, &input_strides, &output_strides);
-				//pack_patch_recurse(patch, in_n, &self.ks, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.ks.len()-1, output_ind, out_size);
+				//pack_patch_recurse(patch, in_n, &self.kernel_shape, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.kernel_shape.len()-1, output_ind, out_size);
 			}
 
 
@@ -276,8 +276,7 @@ impl Operation for Convolution {
 
 				let input_ind = (spaxel_ind+i)%in_spaxels*self.input_channels;
 				unsafe_pack_patch_outer(patch, outd_n, self.output_channels, input_ind, &self.kernel_shape, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, &kernel_strides, &output_strides, &input_strides);
-				//unsafe_pack_patch_outer(patch, in_n, self.input_channels, output_ind, &self.ks, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, &kernel_strides, &input_strides, &output_strides);
-				//pack_patch_recurse(patch, in_n, &self.ks, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.ks.len()-1, output_ind, out_size);
+				//pack_patch_recurse(patch, outd_n, &self.kernel_shape, self.output_channels, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, self.kernel_shape.len()-1, input_ind, in_size);
 			}
 
 
@@ -337,7 +336,7 @@ impl Operation for Convolution {
 /// * `axis` - current axis being iterated over. This should be ks.len() - 1 for root call. Reduces by 1 each recursion.
 /// * `output_ind` - Index of output spaxel on which the patch is centred. Note: index is the slice index not spaxel index (factor of Cin difference)
 /// * `old_out_stride` - Slice stride of output for the layer bove the current iteration. used for interpreting `output_ind`. Root call should be output.len()
-#[inline(never)]
+#[allow(unused)]
 fn pack_patch_recurse(patch: &mut [f32], input: &[f32], patch_shape:&[usize], n_channels: usize,
 	input_shape: &[usize], output_shape: &[usize], axis: usize, output_ind: usize, old_out_stride: usize){
 	
@@ -427,7 +426,6 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 	}
 				
 	if axis > 0 {
-		
 		for i in start..end{
 			let temp_ix = (ix + i as isize - (kernel_shape[axis]/2) as isize) as  usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
 			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
@@ -449,7 +447,6 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 		}
 
 	} else {	
-
 		let offset = ((ix-kernel_shape[axis] as isize/2)*channels as isize + (start*channels) as isize) as usize;
 		let len = (end - start)*channels;
 
@@ -463,12 +460,11 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 		for i in 0..len{
 			*(patch_crop.get_unchecked_mut(i)) = *input_crop.get_unchecked(i);
 		}
-		
 	}
 
 	for i in (end*k_stride)..(kernel_shape[axis]*k_stride){
 		patch[i] = 0.0;// fill zero
-	}		
+	}
 }
 
 /// returns the [start, end) range indicies of the kernel which overlap with the 'image'
