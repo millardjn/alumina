@@ -1,8 +1,10 @@
 extern crate image;
 
+use walkdir::WalkDir;
 use self::image::{GenericImage, DynamicImage, Pixel};
 use supplier::*;
 use std::path::{PathBuf, Path};
+use std::usize;
 use graph::*;	
 use shape::*;
 use rand::*;
@@ -32,8 +34,17 @@ impl<S: Selector> ImageFolderSupplier<S>{
 		
 		print!("Loading paths for {} ... ", root_path.to_string_lossy());
 		stdout().flush().ok();
-		let mut paths = vec![];
-		file_paths(&mut paths, root_path, subfolders);
+		//let mut paths = vec![];
+		//file_paths(&mut paths, root_path, subfolders);
+		let walker = WalkDir::new(root_path).max_depth(if subfolders {usize::MAX} else {1}).into_iter();
+		let paths = walker.filter_map(|e| e.ok()).filter_map(|e| {
+			let path = e.path();
+			if path.is_file() {
+				Some(path.to_path_buf())
+			} else {
+				None
+			}
+		}).collect::<Vec<_>>();
 		println!("loaded {} paths.", paths.len());
 
 		let n = paths.len();
@@ -47,6 +58,7 @@ impl<S: Selector> ImageFolderSupplier<S>{
 	}
 }
 
+#[allow(unused)]
 fn file_paths(mut paths: &mut Vec<PathBuf>, root_path: &Path, subfolders: bool){
 	if root_path.is_file(){
 		paths.push(root_path.to_path_buf());

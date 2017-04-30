@@ -15,6 +15,7 @@ images = ["image"]
 
 
 [dependencies]
+walkdir = "1"
 odds = "0.2.25"
 smallvec = "0.3"
 rand = "0.3"
