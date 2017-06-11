@@ -173,30 +173,50 @@ impl VecMath for [f32] {
 
 
 
-pub const SIMD_WIDTH: usize = 8;
+pub const SIMD_WIDTH: usize = 16;
 
 macro_rules! loop4 {
-    ($i:ident, $e:expr) => {{
-        let $i = 0; $e;
-        let $i = 1; $e;
-        let $i = 2; $e;
-        let $i = 3; $e;
-    }}
+	($i:ident, $e:expr) => {{
+		let $i = 0; $e;
+		let $i = 1; $e;
+		let $i = 2; $e;
+		let $i = 3; $e;
+	}}
 }
 
 macro_rules! loop8 {
-    ($i:ident, $e:expr) => {{
-        let $i = 0; $e;
-        let $i = 1; $e;
-        let $i = 2; $e;
-        let $i = 3; $e;
-        let $i = 4; $e;
-        let $i = 5; $e;
-        let $i = 6; $e;
-        let $i = 7; $e;
-    }}
+	($i:ident, $e:expr) => {{
+		let $i = 0; $e;
+		let $i = 1; $e;
+		let $i = 2; $e;
+		let $i = 3; $e;
+		let $i = 4; $e;
+		let $i = 5; $e;
+		let $i = 6; $e;
+		let $i = 7; $e;
+	}}
 }
 
+macro_rules! loop16 {
+	($i:ident, $e:expr) => {{
+		let $i = 0; $e;
+		let $i = 1; $e;
+		let $i = 2; $e;
+		let $i = 3; $e;
+		let $i = 4; $e;
+		let $i = 5; $e;
+		let $i = 6; $e;
+		let $i = 7; $e;
+		let $i = 8; $e;
+		let $i = 9; $e;
+		let $i = 10; $e;
+		let $i = 11; $e;
+		let $i = 12; $e;
+		let $i = 13; $e;
+		let $i = 14; $e;
+		let $i = 15; $e;
+	}}
+}
 
 //#[inline(never)]
 pub fn sum_acc(acc: &mut [f32; SIMD_WIDTH]) -> f32 {
@@ -211,43 +231,38 @@ pub fn sum_acc(acc: &mut [f32; SIMD_WIDTH]) -> f32 {
 }
 
 pub fn dot(xs: &[f32], ys: &[f32]) -> f32 {
-	let mut acc = [0.; SIMD_WIDTH];
+	;
 	//dot_acc(xs, ys, &mut acc);
-	dot_vec(xs, ys, &mut acc);
-	sum_acc(&mut acc)
+	let acc = dot_vec(xs, ys);
+	//sum_acc(&mut acc)
+	acc.iter().sum()
 }
 
 use std::cmp;
 //#[inline(never)]
-fn dot_vec(xs: &[f32], ys: &[f32], acc_: &mut [f32; SIMD_WIDTH]){
-    let n = cmp::min(ys.len(), xs.len());
+fn dot_vec(xs: &[f32], ys: &[f32]) -> [f32; SIMD_WIDTH]{
+	let mut acc = [0.; SIMD_WIDTH];
+	let n = cmp::min(ys.len(), xs.len());
 	let mut v1 = &xs[..n];
 	let mut v2 = &ys[..n];
-	let mut acc = *acc_;
+	//let mut acc = *acc_;
 
 	//assert!(v1.len() == v2.len()); Assert doesnt provide enough of a guarantee to enable vectorization?
 
 	while v1.len() >= SIMD_WIDTH {
 	
-		loop8!(i, acc[i] += v1[i] * v2[i]);
-//		acc[0] += v1[0] * v2[0];
-//		acc[1] += v1[1] * v2[1];
-//		acc[2] += v1[2] * v2[2];
-//		acc[3] += v1[3] * v2[3];
-//		acc[4] += v1[4] * v2[4];
-//		acc[5] += v1[5] * v2[5];
-//		acc[6] += v1[6] * v2[6];
-//		acc[7] += v1[7] * v2[7];
-		
+		loop16!(i, acc[i] += v1[i] * v2[i]);
+
 		v1 = &v1[SIMD_WIDTH..];
 		v2 = &v2[SIMD_WIDTH..];
 	}
 
-    *acc_ = acc;
-    
-    for i in 0..v1.len() {
-  		acc_[i] += v1[i]*v2[i];
-  	}
+	//*acc_ = acc;
+	
+	for i in 0..v1.len() {
+		acc[i] += v1[i]*v2[i];
+	}
+	acc
 }
 
 

@@ -5,6 +5,7 @@ use std::num::FpCategory;
 use shape::*;
 use ops::Operation;
 use std::f32;
+use std::num;
 //evaluation operations. no output
 
 ///`MseLoss` - imposes an error on the input node values proportional to the average distance squared of each element from the target node values.
@@ -133,33 +134,43 @@ impl Operation for MaeLoss {
 	}
 }
 
-///`ClpLoss` - Cauchy negative log probability as a loss distance squared of each element from the target node values.
+
+///`GeneralLoss` - A general implementation of a range of robust loss functions.
+/// A More General Robust Loss Function https://arxiv.org/pdf/1701.03077.pdf Eq.13 & Eq.14
+/// when power == 2, this is the L2 loss
+/// when power == 1, this is the charbonnier loss (smooth L1 loss)
+/// when power == 0, this is the Cauchy/Lorentzian loss
+/// the scale is the range of values either size of zero for which the loss will closely approximate the L2 loss
+/// a small scale value means small errors get treated as large errors.
+/// see paper for futher losses
 #[derive(Clone)] 
-pub struct ClpLoss {
+pub struct GeneralLoss {
 	name: String,
 	input_id: NodeID,
 	target_id: NodeID,
 	scale: f32,
+	power: f32,
 	strength: f32,
 }
 
-impl ClpLoss {
-	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, scale: f32, name: &str) -> Box<ClpLoss>{
-		Box::new(ClpLoss{
+impl GeneralLoss {
+	pub fn new(input_id: &NodeID, target_id: &NodeID, strength: f32, scale: f32, power: f32, name: &str) -> Box<GeneralLoss>{
+		Box::new(GeneralLoss{
 			name: name.to_string(),
 			input_id: input_id.clone(),
 			target_id: target_id.clone(),
 			scale: scale,
+			power: power,
 			strength: strength,
 		})
 	}
 	
-	pub fn new_default(input_id: &NodeID, target_id: &NodeID,) -> Box<ClpLoss>{
-		ClpLoss::new(input_id, target_id, 1.0, 1.0, "ClpLoss")
+	pub fn new_default(input_id: &NodeID, target_id: &NodeID,) -> Box<GeneralLoss>{
+		GeneralLoss::new(input_id, target_id, 1.0, 1.0, 1.0, "GeneralLoss")
 	}
 }
 
-impl Operation for ClpLoss {
+impl Operation for GeneralLoss {
 
 	fn name(&self) -> &str{&self.name}
 	
@@ -192,12 +203,41 @@ impl Operation for ClpLoss {
 		let target_values: &[f32] =  &target.values[..n];
 		
 		let strength = self.strength/input_size as f32;
-		for i in 0..n{
-			let diff = input_values[i]-target_values[i];
-			*error += strength * ((diff/self.scale)*(diff/self.scale)).ln_1p();
-			input_deriv[i] += strength * 2.0 * diff / (self.scale*self.scale + diff*diff);
+		let c = self.scale; // use notation from paper
+		let a = self.power;
+		if a.classify() == num::FpCategory::Zero {
+			for i in 0..n{
+				let x = input_values[i]-target_values[i];
+				*error += strength * (0.5*(x/c)*(x/c)).ln_1p();
+				input_deriv[i] += strength * 2.0 * x / (x*x + 2.0*c*c);
+			}
+		} else if a == f32::NEG_INFINITY {
+			for i in 0..n{
+				let x = input_values[i]-target_values[i];
+				*error += -strength * (-0.5*(x/c)*(x/c)).exp_m1();
+				input_deriv[i] += strength * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+			}
+		} else if a == 1.0 {
+			for i in 0..n{
+				let x = input_values[i]-target_values[i];
+				*error += strength *(((x/c)*(x/c) + 1.0).sqrt() - 1.0);
+				input_deriv[i] += strength * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
+			}
+		} else if a == 2.0 {
+			for i in 0..n{
+				let x = input_values[i]-target_values[i];
+				*error += strength * (((x/c)*(x/c) + 1.0) - 1.0)/a;
+				input_deriv[i] += strength * x/(c*c);
+			}
+		} else {
+			let za = 1.0f32.max(2.0-a);
+			for i in 0..n{
+				let x = input_values[i]-target_values[i];
+				*error += strength * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
+				input_deriv[i] += strength * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
+			}
 		}
-	}	
+	}
 }
 
 
@@ -551,8 +591,8 @@ mod tests {
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
-			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_flat(1000, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(1000, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				MaeLoss::new_default(&n1, &n3),
@@ -561,12 +601,17 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 
 	#[test]
-	fn test_clp_loss_backprop(){
+	fn test_general_loss_zero_backprop(){
+		use rand;
+		use rand::distributions::*;
+		let power = 0.0;
+		let mut rng = rand::thread_rng();
+		let range = Range::new(0.1, 1.0);
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
@@ -574,13 +619,109 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				ClpLoss::new(&n1, &n3, 1.0, 0.1, "clploss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-2);
+			test_numeric(graph, 1.0, 0.1);
+		}
+	}
+
+	#[test]
+	fn test_general_loss_one_backprop(){
+		use rand;
+		use rand::distributions::*;
+		let power = 1.0;
+		let mut rng = rand::thread_rng();
+		let range = Range::new(0.1, 1.0);
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+			];
+			graph.add_operations(ops);
+			graph.init_params();
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 0.01);
+		}
+	}
+
+	#[test]
+	fn test_general_loss_two_backprop(){
+		use rand;
+		use rand::distributions::*;
+		let power = 2.0;
+		let mut rng = rand::thread_rng();
+		let range = Range::new(0.1, 1.0);
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+			];
+			graph.add_operations(ops);
+			graph.init_params();
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 0.01);
+		}
+	}
+
+	#[test]
+	fn test_general_loss_neg_inf_backprop(){
+		use rand;
+		use rand::distributions::*;
+		let power = f32::NEG_INFINITY;
+		let mut rng = rand::thread_rng();
+		let range = Range::new(0.1, 1.0);
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+			];
+			graph.add_operations(ops);
+			graph.init_params();
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 0.01);
+		}
+	}
+
+	#[test]
+	fn test_general_loss_rand_backprop(){
+		use rand;
+		use rand::distributions::*;
+		let mut rng = rand::thread_rng();
+		let range = Range::new(0.1, 1.0);
+		let power_range = Range::new(-2.0, 2.0);
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(100, "nodein"));
+			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power_range.ind_sample(&mut rng), "generalloss"),
+			];
+			graph.add_operations(ops);
+			graph.init_params();
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 0.1);
 		}
 	}
 

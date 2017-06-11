@@ -1,13 +1,28 @@
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
+#![recursion_limit = "1024"]
+
+#[macro_use]
+extern crate error_chain;
+extern crate ndarray;
+extern crate odds;
+extern crate walkdir;
+extern crate smallvec;
+extern crate rand;
+extern crate matrixmultiply_mt as matrixmultiply;
 
 pub mod graph;
 pub mod ops;
 pub mod opt;
 pub mod supplier;
 pub mod shape;
-#[cfg(test)]mod test;
 pub mod vec_math;
-extern crate odds;
-extern crate walkdir;
-extern crate smallvec;
-extern crate rand;
-extern crate matrixmultiply_mt as matrixmultiply;
+pub mod new;
+#[cfg(test)]mod test;
+
+
+/// error_chain 
+mod errors {
+	// Create the Error, ErrorKind, ResultExt, and Result types
+	error_chain!{}
+}

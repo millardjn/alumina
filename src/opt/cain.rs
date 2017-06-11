@@ -5,7 +5,9 @@ use vec_math::{VecMath, VecMathMut, VecMathMove};
 use supplier::Supplier;
 use std::f32;
 use std::usize;
+use std::collections::vec_deque::VecDeque;
 
+const DEQUE_SIZE: usize = 15;
 
 pub struct CainBuilder<'a>{
 	graph: &'a mut Graph,
@@ -43,7 +45,7 @@ impl<'a> CainBuilder<'a> {
 	}
 
 	pub fn subbatch_decrease_damping(mut self, val: f32) -> Self{
-		self.config.subbatch_increase_damping = val;
+		self.config.subbatch_decrease_damping = val;
 		self
 	}
 
@@ -52,8 +54,8 @@ impl<'a> CainBuilder<'a> {
 		self
 	}
 
-	pub fn max_eval_batch_size(mut self, val: usize) -> Self{
-		self.config.max_eval_batch_size = val;
+	pub fn max_subbatch_size(mut self, val: usize) -> Self{
+		self.config.max_subbatch_size = val;
 		self
 	}
 
@@ -87,6 +89,7 @@ impl<'a> CainBuilder<'a> {
 			curvature_est: vec![0.0; num_params],
 			learning_rate: self.initial_learning_rate,
 			subbatch_size: self.initial_subbatch_size,
+			rel_err_queue: VecDeque::with_capacity(DEQUE_SIZE),
 
 			momentum_derivs: vec![0.0; num_params],
 			//prev_derivs: vec![0.0; num_params],
@@ -105,7 +108,7 @@ struct CainConfig{
 	subbatch_increase_damping: f32,
 	subbatch_decrease_damping: f32,
 	rate_adapt_coefficient: f32,
-	max_eval_batch_size: usize,
+	max_subbatch_size: usize,
 	min_subbatch_size: usize,
 }
 
@@ -123,6 +126,7 @@ pub struct Cain<'a>{
 	curvature_est: Vec<f32>,
 	learning_rate: f32,
 	subbatch_size: f32,
+	rel_err_queue: VecDeque<f32>,
 
 	momentum_derivs: Vec<f32>,
 	//prev_derivs: Vec<f32>,
@@ -143,7 +147,7 @@ impl <'a> Cain<'a> {
 				subbatch_increase_damping: 0.15,
 				subbatch_decrease_damping: 0.15,
 				rate_adapt_coefficient: 1.05,
-				max_eval_batch_size: usize::MAX,
+				max_subbatch_size: usize::MAX,
 				min_subbatch_size: 1,
 			}
 		}
@@ -166,7 +170,7 @@ impl <'a> Cain<'a> {
 
 
 	/// Calculates a vector dispersion measure in the range of 0-1, and returns 
-	fn calc_rel_err(&self, mean: &[f32], results: &[(f32, Vec<f32>)]) -> f32{
+	fn calc_rel_err(&mut self, mean: &[f32], results: &[(f32, Vec<f32>)]) -> (f32, f32){
 
 
 		//-- Hold one out vector len F-distribution
@@ -186,13 +190,14 @@ impl <'a> Cain<'a> {
 
 				let mut diff_dot = 0.0;
 				let mut mean_dot = 0.0;
-				for ((m, d), &c) in mean.iter().zip(derivs).zip(&self.curvature_est){
-					let curv = c.sqrt() + 1e-7;
-					let h = (m * num_subbatches - d) / (num_subbatches-1.0) / curv;
-					let diff = d/curv-h;
+				for ((m, d), &curv) in mean.iter().zip(derivs).zip(&self.curvature_est){
+					//let curv = c.sqrt() + 1e-7;
+					let h = (m * num_subbatches - d) / (num_subbatches-1.0);
+					let diff = d - h;
 
-					diff_dot += diff*diff;
-					mean_dot += h*h;
+					diff_dot += diff*diff/(curv+1e-8);
+					mean_dot += h*h/(curv+1e-8);
+					
 				}
 				sum + diff_dot/(mean_dot * num_subbatches)
 			})/num_subbatches;
@@ -222,23 +227,31 @@ impl <'a> Cain<'a> {
 		// let var = projections.iter().fold(0.0, |sum, proj| sum + (proj-mean)*(proj-mean))/(num_subbatches-1.0);
 		// let rel_err = (1.0-mean*self.config.target_err/(var/num_subbatches).sqrt()).exp();
 
-		rel_err
+		if self.rel_err_queue.len() >= DEQUE_SIZE {self.rel_err_queue.pop_front();}
+		self.rel_err_queue.push_back(rel_err);
+
+		let mut sorted_errs = self.rel_err_queue.iter().cloned().collect::<Vec<f32>>();
+		sorted_errs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+		let median_rel_err = sorted_errs[sorted_errs.len()/2];
+
+		(rel_err, median_rel_err)
 	}
 
 	/// mutably updates batch_size and returns relative error measure
-	fn update_batch_size(&mut self, rel_err: &f32){
-		
+	fn update_batch_size(&mut self, rel_err: f32){
+
+
 		// Adapt batch size based on derivative relative err vs target relative variance
 		let rel_err = rel_err.max(0.125).min(1000.0);
 		self.subbatch_size *= if rel_err > 1.0 {
-				rel_err.powf(self.config.subbatch_increase_damping) // increase batch size 0.075
+				rel_err.powf(self.config.subbatch_increase_damping) // increase batch size
 			} else {
 				rel_err.powf(self.config.subbatch_decrease_damping) // decrease batch size
 			};
-		self.subbatch_size = self.subbatch_size.max(self.config.min_subbatch_size as f32);
+		self.subbatch_size = self.subbatch_size.max(self.config.min_subbatch_size as f32).min(self.config.max_subbatch_size as f32);
 	}
 
-	fn update_curvature(&mut self, mean: &[f32], _results: &[(f32, Vec<f32>)]){
+	fn update_curvature(&mut self, _mean: &[f32], results: &[(f32, Vec<f32>)]){
 				
 		//let curv_decay = self.config.momentum.powf(0.09539).max(0.9);
 		let curv_decay = self.config.momentum.powf(1.0/4.0).max(0.9);
@@ -246,20 +259,19 @@ impl <'a> Cain<'a> {
 		
 
 		//-- Also incorperate randomness
-		// for &(_, ref derivs) in results.iter() {
-		// 	let var = derivs.add_scaled(&self.momentum_derivs, -1.0);
-		// 	self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay)/self.config.num_subbatches);	
-		// 	//self.curvature_est.add_scaled_mut(&derivs.elementwise_mul(&derivs), (1.0 - curv_decay)/NUM_BINS as f32);				
-		// }
-
-		let n = mean.len();
-		let curv = &mut self.curvature_est[0..n];
-		let momen = &self.momentum_derivs[0..n];
-		let mean = &mean[0..n];
-		for i in 0..n{
-			let diff = mean[i] - momen[i];
-			curv[i] += diff*diff*(1.0-curv_decay)
+		for &(_, ref derivs) in results.iter() {
+			let diff = derivs.add_scaled(&self.momentum_derivs, -1.0);
+			self.curvature_est.add_scaled_mut(&diff.elementwise_mul(&diff), (1.0 - curv_decay)/self.config.num_subbatches);	
 		}
+
+		// let n = mean.len();
+		// let curv = &mut self.curvature_est[0..n];
+		// let momen = &self.momentum_derivs[0..n];
+		// let mean = &mean[0..n];
+		// for i in 0..n{
+		// 	let diff = mean[i] - momen[i];
+		// 	curv[i] += diff*diff*(1.0-curv_decay)
+		// }
 
 		// let var = mean.add_scaled(&self.momentum_derivs, -1.0);
 		// self.curvature_est.add_scaled_mut(&var.elementwise_mul(&var), (1.0 - curv_decay) as f32);
@@ -300,8 +312,8 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 		let mean: Vec<f32> = results.iter().fold(vec![0.0f32;params.len()], |acc, &(_, ref derivs)| acc.add_move(&derivs)).scale_move(1.0/self.config.num_subbatches);
 
 		self.update_curvature(&mean, &results);
-		let rel_err = self.calc_rel_err(&mean, &results);
-		self.update_batch_size(&rel_err);
+		let (rel_err, median_rel_err) = self.calc_rel_err(&mean, &results);
+		self.update_batch_size(median_rel_err);
 
 		let curv_decay = self.config.momentum.powf(1.0/4.0).max(0.9);
 		let curvature_step_correction = if self.step_count < 1_000_000{1.0/(1.0 - curv_decay.powi(self.step_count as i32 + 1))} else {1.0};
@@ -310,13 +322,16 @@ impl<'a> Optimiser<'a> for Cain<'a>{
 			0.0
 		} else {
 			let aggression = self.config.aggression/(1.0-self.config.momentum).exp();
-			mean.add_scaled(&self.momentum_derivs, aggression).cos_similarity(&self.momentum_derivs)
+			//mean.add_scaled(&self.momentum_derivs, aggression).cos_similarity(&self.momentum_derivs)
+			aggression + mean.dot(&self.momentum_derivs)/self.momentum_derivs.dot(&self.momentum_derivs)
 		};
 		
-
-		let new_rate = self.learning_rate*self.config.rate_adapt_coefficient.powf(sim);//+self.config.aggression
-		
-
+		//let new_rate = self.learning_rate*self.config.rate_adapt_coefficient.powf(sim);
+		let new_rate = self.learning_rate*if sim > 0.0 {
+			self.config.rate_adapt_coefficient
+		} else {
+			1.0/self.config.rate_adapt_coefficient
+		};
 
 		self.momentum_derivs.scale_mut(self.config.momentum);
 		self.momentum_derivs.add_scaled_mut(&mean, 1.0 - self.config.momentum);

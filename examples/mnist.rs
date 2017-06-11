@@ -25,7 +25,7 @@ const MNIST_PATH: &'static str = "D:/ML/Mnist"; // This folder should have the m
 
 fn main(){
 
-	let (mut g, pred, label) = mnist_lenet(1.0e-3);
+	let (mut g, pred, label) = mnist_adam(1.0e-3);
 	let train_loss = loss::SoftMaxCrossEntLoss::new_default(&pred, &label);
 	g.add_operation(train_loss);
 
@@ -34,29 +34,29 @@ fn main(){
 	let start_params = g.init_params();
 	let mut solver = opt::cain::Cain::new(&mut g)
 		.num_subbatches(8)
-		//.target_err(0.75)
-		.target_err(0.9)
-		.subbatch_increase_damping(0.15)
-		.subbatch_decrease_damping(0.15)
-		.aggression(0.75)
+		.target_err(0.95)
+		.rate_adapt_coefficient(1.05)
+		.subbatch_increase_damping(0.25)
+		.subbatch_decrease_damping(0.25)
+		.aggression(0.5)
 		.momentum(0.9)
-		.initial_learning_rate(3e-3)
+		.initial_learning_rate(1e-2)
 		.finish();
+
 
 	println!("Total num params: {}", start_params.len());
 
 	solver.add_boxed_step_callback(validation(&start_params, training_set.epoch_size()));
-	solver.add_boxed_step_callback(max_evals(50 * training_set.epoch_size()));
+	solver.add_boxed_step_callback(max_evals(100 * training_set.epoch_size()));
 	
 	let _opt_params = solver.optimise_from(&mut training_set, start_params);
-
 
 }
 
 
 fn validation(start_params: &[f32], training_set_size: usize) -> Box<FnMut(&CallbackData)->CallbackSignal>{
 	let mut val_set = MnistSupplier::<Sequential>::testing(Path::new(MNIST_PATH)); // I mean, who doesnt validate on the test set /s
-	let (mut g2, pred2, label2) = mnist_lenet(0.0);
+	let (mut g2, pred2, label2) = mnist_adam(0.0);
 	let val_loss = loss::PredictionLoss::new_default(&pred2, &label2);
 	g2.add_operation(val_loss);
 
@@ -286,11 +286,11 @@ fn mnist_adam(regularise: f32) -> (Graph, NodeID, NodeID){
 
 	let input = g.add_input_node(Node::new_sized(1, &[28,28], "input"));
 
-	let layer1 = g.add_node(Node::new_flat(1000, "layer1"));
-	let layer1_activ = g.add_node(Node::new_flat(1000, "layer1_activ"));
+	let layer1 = g.add_node(Node::new_flat(512, "layer1"));
+	let layer1_activ = g.add_node(Node::new_flat(512, "layer1_activ"));
 
-	let layer2 = g.add_node(Node::new_flat(1000, "layer2"));
-	let layer2_activ = g.add_node(Node::new_flat(1000, "layer2_activ"));
+	let layer2 = g.add_node(Node::new_flat(512, "layer2"));
+	let layer2_activ = g.add_node(Node::new_flat(512, "layer2_activ"));
 
 	let pred = g.add_node(Node::new_flat(10, "prediction"));
 	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
@@ -301,13 +301,13 @@ fn mnist_adam(regularise: f32) -> (Graph, NodeID, NodeID){
 
 		basic::LinearMap::new(&input, &layer1, "dense1", basic::LinearMap::init_msra(0.1)),
 		basic::Bias::new(&layer1, ops::ParamSharing::None, "bias1", ops::init_fill(0.0)),
-		//activ::LeakyReLU::new(&layer1, &layer1_activ, 0.01, "activation1"),
-		activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
+		activ::LeakyReLU::new(&layer1, &layer1_activ, 0.01, "activation1"),
+		//activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
 
 		basic::LinearMap::new(&layer1_activ, &layer2, "dense2", basic::LinearMap::init_msra(0.1)),
 		basic::Bias::new(&layer2, ops::ParamSharing::None, "bias2", ops::init_fill(0.0)),
-		//activ::LeakyReLU::new(&layer2, &layer2_activ, 0.01, "activation2"),
-		activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
+		activ::LeakyReLU::new(&layer2, &layer2_activ, 0.01, "activation2"),
+		//activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
 
 		basic::LinearMap::new(&layer2_activ, &pred, "dense3", basic::LinearMap::init_msra(0.1)),
 		basic::Bias::new(&pred, ops::ParamSharing::None, "bias3", ops::init_fill(0.0)),
@@ -373,8 +373,8 @@ fn mnist_lognet(regularise: f32) -> (Graph, NodeID, NodeID){
 
 	active_nodes.push(g.add_input_node(Node::new_flat(28*28, "input")));
 	
-	let hidden_layers = 6; // 2^x-1 if the prediction layer should connect directly to the input
-	let hidden_layer_size = 64;
+	let hidden_layers = 6usize; // 2^x-1 if the prediction layer should connect directly to the input
+	let hidden_layer_size = 32;
 
 	
 	for i in 0..hidden_layers+1{
@@ -383,10 +383,13 @@ fn mnist_lognet(regularise: f32) -> (Graph, NodeID, NodeID){
 
 		let new_linear_node = g.add_node(Node::new_flat(layer_size, "base_node"));
 
+		let connections = std::mem::size_of_val(&active_nodes.len())*8 - active_nodes.len().leading_zeros() as usize;
+
 		// connect each layer (hidden and output) to previous layers which are a power of 2 from it.
 		let mut jump = 1;
 		while jump <= active_nodes.len(){
-			ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(0.5/jump as f32)));
+			//ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(0.5/jump as f32)));
+			ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(2.0/connections as f32)));
 			jump *= 2;
 		}
 		g.add_operation(basic::Bias::new(&new_linear_node, ops::ParamSharing::Auto, "bias", ops::init_fill(0.0)));
@@ -396,7 +399,8 @@ fn mnist_lognet(regularise: f32) -> (Graph, NodeID, NodeID){
 		if i < hidden_layers{
 			let new_active_node = g.add_node(Node::new_flat(layer_size, "active_node"));
 			//ops.push(activ::Tanh::new(&new_linear_node, &new_active_node, "activation"));
-			ops.push(activ::BeLU::new(&new_linear_node, &new_active_node, ops::ParamSharing::None, "activation", activ::BeLU::init_porque_no_los_dos()));
+			ops.push(activ::ELU::new(&new_linear_node, &new_active_node, "activation"));
+			//ops.push(activ::BeLU::new(&new_linear_node, &new_active_node, ops::ParamSharing::None, "activation", activ::BeLU::init_porque_no_los_dos()));
 			active_nodes.push(new_active_node);
 		}
 
