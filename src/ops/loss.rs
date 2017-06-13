@@ -226,7 +226,7 @@ impl Operation for GeneralLoss {
 		} else if a == 2.0 {
 			for i in 0..n{
 				let x = input_values[i]-target_values[i];
-				*error += strength * (((x/c)*(x/c) + 1.0) - 1.0)/a;
+				*error += strength * ((x/c)*(x/c))/a;
 				input_deriv[i] += strength * x/(c*c);
 			}
 		} else {

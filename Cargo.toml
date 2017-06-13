@@ -27,7 +27,6 @@ image = {version = "0.12", optional = true}
 
 [dependencies.matrixmultiply_mt]
 path = "D:/Repositories/matrixmultiply_mt"
-features = ["arch_sandybridge", "ftz_daz"]
 #matrixmultiply_mt = "0.1"
 #matrixmultiply_mt = {path = "D:/Repositories/matrixmultiply_mt"}
 
