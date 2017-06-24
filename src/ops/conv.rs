@@ -390,7 +390,7 @@ fn stride_vec(channels: usize, shape: &[usize]) -> Vec<usize>{
 	iter::once(&channels).chain(shape.iter()).scan(1, |state, &i| {*state *= i; Some(*state)}).collect::<Vec<usize>>()
 }
 
-#[inline(never)]
+//#[inline(never)]
 fn unsafe_pack_patch_outer(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
 	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
 	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
@@ -405,29 +405,29 @@ fn unsafe_pack_patch_outer(patch: &mut [f32], input: &[f32], channels: usize, ou
 	kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)};
 }
 
-#[inline(never)]
+//#[inline(always)]
 unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: usize, axis: usize, output_ind: usize,
 	ox: usize, ix: isize,
 	start: usize, end: usize, // valid range of the kernels in the current axis
 	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
 	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
 	
-	let i_stride = input_strides[axis];
-	let o_stride = output_strides[axis];
-	let k_stride = kernel_strides[axis];
-	
+
+	let i_stride = *odds::get_unchecked(input_strides, axis);//input_strides[axis];
+	let o_stride = *odds::get_unchecked(output_strides, axis);//output_strides[axis];
+	let k_stride = *odds::get_unchecked(kernel_strides, axis);//kernel_strides[axis];
 	// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
 
 	
 	
 	
 	for i in 0..start*k_stride{
-		patch[i] = 0.0;// fill zeros
+		*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
 	}
 				
 	if axis > 0 {
 		for i in start..end{
-			let temp_ix = (ix + i as isize - (kernel_shape[axis]/2) as isize) as  usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
+			let temp_ix = (ix + i as isize - (*odds::get_unchecked(kernel_shape, axis)/2) as isize) as  usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
 			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
 			
 			//let new_input = &input[i_stride*temp_ix..i_stride*(temp_ix+1)];
@@ -438,16 +438,16 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 
 			let new_axis = axis-1;
 			let new_output_ind = output_ind - ox*o_stride;
-			let new_ox = new_output_ind/output_strides[new_axis];
-			let new_ix = new_ox as isize + (input_shape[new_axis] as isize - output_shape[new_axis] as isize)/2;
-			let (new_start, new_end) = kernel_range(new_ix, input_shape[new_axis], kernel_shape[new_axis]);
+			let new_ox = new_output_ind/ *odds::get_unchecked(output_strides, new_axis);//output_strides[new_axis];
+			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(input_shape, new_axis) as isize)/2;
+			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
 
 			unsafe_pack_patch_recurse(new_patch, new_input, channels, axis - 1, new_output_ind, new_ox, new_ix,
 			new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
 		}
 
 	} else {	
-		let offset = ((ix-kernel_shape[axis] as isize/2)*channels as isize + (start*channels) as isize) as usize;
+		let offset = ((ix-*odds::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
 		let len = (end - start)*channels;
 
 		//let input_crop = &input[offset..][..len];
@@ -458,12 +458,12 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 		
 		//patch_crop.copy_from_slice(input_crop);
 		for i in 0..len{
-			*(patch_crop.get_unchecked_mut(i)) = *input_crop.get_unchecked(i);
+			*odds::get_unchecked_mut(patch_crop, i) = *odds::get_unchecked(input_crop, i);
 		}
 	}
 
-	for i in (end*k_stride)..(kernel_shape[axis]*k_stride){
-		patch[i] = 0.0;// fill zero
+	for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
+		*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
 	}
 }
 
