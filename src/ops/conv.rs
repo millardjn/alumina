@@ -8,6 +8,16 @@ use std::sync::Arc;
 use std::iter;
 use matrixmultiply;
 use odds;
+use num_cpus;
+use std::sync::Mutex;
+use std::sync::mpsc::sync_channel;
+use scoped_threadpool::Pool;
+
+/// Threadpool for offloading lowering/packing operations
+lazy_static! {
+	static ref NUM_CPUS: usize = num_cpus::get();
+	static ref THREAD_POOL: Mutex<Pool> = Mutex::new(Pool::new(*NUM_CPUS as u32));
+}
 
 #[derive(Clone)]
 pub enum Padding {
@@ -51,7 +61,7 @@ impl Convolution {
 			output_channels: output_id.shape.channels,
 			num_params: num_params,
 			init_func: init_func,
-			lowering_memory: 1024*1024*2, // by default perform lowering on the cpu cache, not the whole image
+			lowering_memory: 1024*1024*1, // by default perform lowering on the cpu cache, not the whole image
 
 			shuffled_kernel: vec![0.0; num_params],
 			shuffled_derivatives: vec![0.0; num_params],			
@@ -121,201 +131,227 @@ impl Operation for Convolution {
 	
 	fn num_params(&self) -> usize {self.num_params}
 	
-	fn forward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
+	fn forward(&mut self, data: &mut [RefCell<NodeData>], params: &[f32]){
 		let input = &*{data[self.input_id.ind].borrow_mut()};
 		let output = &mut *{data[self.output_id.ind].borrow_mut()};
-		let in_size = input.shape.flat_size_single();
-		let out_size = output.shape.flat_size_single();
-		
-		//let in_spaxels = in_size/input.shape.channel_dimension;
-		let out_spaxels = out_size/output.shape.channels;
-		
-		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-		// should check shape compatability under padding etc assert!(input.shape.n == output.shape.n);
-		let n = input.shape.n;
-		debug_assert_eq!(n, output.shape.n);
-		debug_assert_eq!(input.shape.channels, self.input_channels);
-		debug_assert_eq!(output.shape.channels, self.output_channels);
-		debug_assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
-		debug_assert_eq!(input.shape.spatial_dimensions.len(), self.kernel_shape.len());
-		debug_assert_eq!(params.len()/self.output_channels, self.kernel_shape.iter().fold(self.input_channels, |p, v| p*v));
 
-		let patch_size = params.len()/self.output_channels;
-
-		let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), out_spaxels*n); // number of spaxels to combine in one sgemm
-		let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
-
-		let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
-		unsafe{
-			patches.set_len(patch_size * max_spaxels);
-		}
-
-		let kernel_strides = stride_vec(self.input_channels, &self.kernel_shape);
-		let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
-		let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
-
-		for batch in 0..n_batches {
-			let spaxel_ind = batch*max_spaxels;
+		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		pool.scoped(|scope|{
 			
-			let batch_spaxels = min(out_spaxels*n - spaxel_ind, max_spaxels);
-
-			let patches = &mut patches[..batch_spaxels*patch_size];
 
 
-			for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
-				debug_assert_eq!(patch_size, patch.len());
-				let n_ind = (spaxel_ind+i)/out_spaxels;
+			let &mut NodeData{shape: ref output_shape, values: ref mut output_values, ..} = output;
 
-				let in_n = &input.values[n_ind*in_size..][..in_size];	
+			let in_size = input.shape.flat_size_single();
+			let out_size = output.shape.flat_size_single();
+			
+			//let in_spaxels = in_size/input.shape.channel_dimension;
+			let out_spaxels = out_size/output.shape.channels;
+			
+			// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
+			// should check shape compatability under padding etc assert!(input.shape.n == output.shape.n);
+			let n = input.shape.n;
+			debug_assert_eq!(n, output.shape.n);
+			debug_assert_eq!(input.shape.channels, self.input_channels);
+			debug_assert_eq!(output.shape.channels, self.output_channels);
+			debug_assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
+			debug_assert_eq!(input.shape.spatial_dimensions.len(), self.kernel_shape.len());
+			debug_assert_eq!(params.len()/self.output_channels, self.kernel_shape.iter().fold(self.input_channels, |p, v| p*v));
 
-				let output_ind = (spaxel_ind+i)%out_spaxels*self.output_channels;
-				unsafe_pack_patch_outer(patch, in_n, self.input_channels, output_ind, &self.kernel_shape, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, &kernel_strides, &input_strides, &output_strides);
-				//pack_patch_recurse(patch, in_n, &self.kernel_shape, self.input_channels, &input.shape.spatial_dimensions, &output.shape.spatial_dimensions, self.kernel_shape.len()-1, output_ind, out_size);
+			let patch_size = params.len()/self.output_channels;
+
+			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), out_spaxels*n); // number of spaxels to combine in one sgemm
+			let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
+
+			// let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
+			// unsafe{
+			// 	patches.set_len(patch_size * max_spaxels);
+			// }
+
+			let kernel_strides = stride_vec(self.input_channels, &self.kernel_shape);
+			let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
+			let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
+
+			let kernel_shape = &self.kernel_shape;
+			let input_channels = self.input_channels;
+			let output_channels = self.output_channels;
+
+			let (tx, rx) = sync_channel(1);
+			let (tx2, rx2) = sync_channel(1);
+			let mut spare_patches = Vec::with_capacity(patch_size * max_spaxels); 
+			unsafe{spare_patches.set_len(patch_size * max_spaxels);}
+			let mut spare_patches_opt = Some(spare_patches);
+			scope.execute(move|| {
+				let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
+				unsafe{patches.set_len(patch_size * max_spaxels);}
+				let mut patches_opt = Some(patches);
+
+				for batch in 0..n_batches {
+					let spaxel_ind = batch*max_spaxels;
+					
+					let batch_spaxels = min(out_spaxels*n - spaxel_ind, max_spaxels);
+					{
+						let patches = &mut patches_opt.as_mut().expect("conv patches missing")[..batch_spaxels*patch_size];
+						for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
+							debug_assert_eq!(patch_size, patch.len());
+							let n_ind = (spaxel_ind+i)/out_spaxels;
+
+							let in_n = &input.values[n_ind*in_size..][..in_size];	
+
+							let output_ind = (spaxel_ind+i)%out_spaxels*output_channels;
+							unsafe_pack_patch_outer(patch, in_n, input_channels, output_ind, kernel_shape, &input.shape.spatial_dimensions, &output_shape.spatial_dimensions, &kernel_strides, &input_strides, &output_strides);
+							//pack_patch_recurse(patch, in_n, &kernel_shape, input_channels, &input.shape.spatial_dimensions, &output_shape.spatial_dimensions, kernel_shape.len()-1, output_ind, out_size);
+						}
+					}
+					tx.send(Some((patches_opt.take().expect("conv patches missing"), spaxel_ind, batch_spaxels))).expect("conv patch send err");
+					patches_opt = Some(rx2.recv().expect("conv patches missing"));
+				}
+				tx.send(None).expect("conv patch send err");
+			});
+
+			while let Some((patches, spaxel_ind, batch_spaxels)) = rx.recv().expect("Convolution channel receive error") {
+				tx2.send(spare_patches_opt.take().expect("conv patches missing")).expect("conv patch send err");
+				let out_b = &mut output_values[spaxel_ind*self.output_channels..][..batch_spaxels*self.output_channels];
+
+				let m = self.output_channels;
+				let n = batch_spaxels;
+				let k = patch_size;
+
+				unsafe{
+					matrixmultiply::sgemm(m, k, n,
+						1.0,
+						params.as_ptr(), k as isize, 1, // A is params, row major
+						patches.as_ptr(), 1, k as isize, // B, input patches column major
+						1.0,
+						out_b.as_mut_ptr(), 1, m as isize); // C output values column major
+				}
+				spare_patches_opt = Some(patches);
 			}
-
-
-			let out_b = &mut output.values[spaxel_ind*self.output_channels..][..batch_spaxels*self.output_channels];
-
-
-			let m = self.output_channels;
-			let n = batch_spaxels;
-			let k = patch_size;
-
-			unsafe{
-				matrixmultiply::sgemm(m, k, n,
-					1.0,
-					params.as_ptr(), k as isize, 1, // A is params, row major
-					patches.as_ptr(), 1, k as isize, // B, input patches column major
-					1.0,
-					out_b.as_mut_ptr(), 1, m as isize); // C output values column major
-			}
-
-		}
-
+		});
 	}
 	
 	fn backward (&mut self, data: &mut [RefCell<NodeData>], params: &[f32], param_deriv: &mut [f32], _error: &mut f32){
 		let input = &mut *{data[self.input_id.ind].borrow_mut()};
 		let output = &*{data[self.output_id.ind].borrow_mut()};
-		let in_size = input.shape.flat_size_single();
-		let out_size = output.shape.flat_size_single();
-		
-		let in_spaxels = in_size/input.shape.channels;
-		//let out_spaxels = out_size/output.shape.channel_dimension;
-		
-		// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
-		// should check shape compatability under padding etc
-		let n = input.shape.n;
-		debug_assert_eq!(n, output.shape.n);
-		debug_assert_eq!(input.shape.channels, self.input_channels);
-		debug_assert_eq!(output.shape.channels, self.output_channels);
-		debug_assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
-		debug_assert_eq!(input.shape.spatial_dimensions.len(), self.kernel_shape.len());
-		debug_assert_eq!(params.len()/self.input_channels, self.kernel_shape.iter().fold(self.output_channels, |p, v| p*v));
-		debug_assert_eq!(params.len(), param_deriv.len());
-		
-		let patch_size = params.len()/self.input_channels;
+	
+		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		pool.scoped(|scope|{
 
-		// let max_batch_size = output.shape.n;//min(output.shape.n, max(1, self.max_sgemm_spaxels/in_spaxels)); // number of n to combine in one sgemm
-		// let n_batches = (output.shape.n + max_batch_size - 1)/max_batch_size;
+			let &mut NodeData{shape: ref input_shape, values: ref input_values, derivatives: ref mut input_derivatives} = input;
 
-		// //let mut patches = vec![0.0; patch_size * out_spaxels * max_batch_size];
-		// let mut patches = Vec::with_capacity(patch_size * in_spaxels * max_batch_size);
-		// unsafe{
-		// 	patches.set_len(patch_size * in_spaxels * max_batch_size);
-		// }
+			let in_size = input.shape.flat_size_single();
+			let out_size = output.shape.flat_size_single();
+			
+			let in_spaxels = in_size/input.shape.channels;
+			//let out_spaxels = out_size/output.shape.channel_dimension;
+			
+			// These checks shouldnt be necessary unless code in the graph doesnt correctly resolve compatible shapes.
+			// should check shape compatability under padding etc
+			let n = input.shape.n;
+			debug_assert_eq!(n, output.shape.n);
+			debug_assert_eq!(input.shape.channels, self.input_channels);
+			debug_assert_eq!(output.shape.channels, self.output_channels);
+			debug_assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
+			debug_assert_eq!(input.shape.spatial_dimensions.len(), self.kernel_shape.len());
+			debug_assert_eq!(params.len()/self.input_channels, self.kernel_shape.iter().fold(self.output_channels, |p, v| p*v));
+			debug_assert_eq!(params.len(), param_deriv.len());
+			
+			let patch_size = params.len()/self.input_channels;
 
-		let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
-		let n_batches = (in_spaxels*n + max_spaxels -1)/max_spaxels;
+			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
+			let n_batches = (in_spaxels*n + max_spaxels -1)/max_spaxels;
 
-		let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
-		unsafe{
-			patches.set_len(patch_size * max_spaxels);
-		}
-
-
-		// flip_transpose_kernel_overwrite(&params, self.input_channels, self.output_channels, &mut self.shuffled_kernel);
-		// flip_transpose_kernel_overwrite(&param_deriv, self.input_channels, self.output_channels, &mut self.shuffled_derivatives);
-
-		col_flip_transpose_kernel_overwrite(&params, self.input_channels, self.output_channels, &mut self.shuffled_kernel);
-		col_flip_transpose_kernel_overwrite(&param_deriv, self.input_channels, self.output_channels, &mut self.shuffled_derivatives);
-
-		let kernel_strides = stride_vec(self.output_channels, &self.kernel_shape);
-		let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
-		let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
-
-		for batch in 0..n_batches {
-			// let batch_size = min(output.shape.n - b*max_batch_size, max_batch_size);
-
-			// let outd_b = &output.derivatives[b*max_batch_size*out_size..][..batch_size*out_size];
-			// let ind_b = &mut input.derivatives[b*max_batch_size*in_size..][..batch_size*in_size];
-			// let in_b = &input.values[b*max_batch_size*in_size..][..batch_size*in_size];		
-
-			// for n_ind in 0..batch_size {
-			// 	let patches = &mut patches[patch_size * in_spaxels * n_ind..][..patch_size * in_spaxels];
-			// 	let outd_n = &outd_b[n_ind*out_size..][..out_size];
-			// 	for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
-			// 		debug_assert_eq!(patch_size, patch.len());
-			// 		let input_ind = i*self.input_channels;
-			// 		//pack_patch_recurse(patch, outd_n, &self.ks, self.output_channels, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, self.ks.len()-1, input_ind, in_size);
-			// 		unsafe_pack_patch_outer(patch, outd_n, self.output_channels, input_ind, &self.ks, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, &kernel_strides, &output_strides, &input_strides);
-			// 	}
+			// let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
+			// unsafe{
+			// 	patches.set_len(patch_size * max_spaxels);
 			// }
 
-			let spaxel_ind = batch*max_spaxels;
+			col_flip_transpose_kernel_overwrite(&params, self.input_channels, self.output_channels, &mut self.shuffled_kernel);
+			col_flip_transpose_kernel_overwrite(&param_deriv, self.input_channels, self.output_channels, &mut self.shuffled_derivatives);
+
+			let kernel_strides = stride_vec(self.output_channels, &self.kernel_shape);
+			let input_strides = stride_vec(self.input_channels, &input.shape.spatial_dimensions);
+			let output_strides = stride_vec(self.output_channels, &output.shape.spatial_dimensions);
 			
-			let batch_spaxels = min(in_spaxels*n - spaxel_ind, max_spaxels);
+			let kernel_shape = &self.kernel_shape;
+			let input_channels = self.input_channels;
+			let output_channels = self.output_channels;
 
-			let patches = &mut patches[..batch_spaxels*patch_size];
+			let (tx, rx) = sync_channel(1);
+			let (tx2, rx2) = sync_channel(1);
+			let mut spare_patches = Vec::with_capacity(patch_size * max_spaxels); 
+			unsafe{spare_patches.set_len(patch_size * max_spaxels);}
+			let mut spare_patches_opt = Some(spare_patches);
+			scope.execute(move|| {
+				let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
+				unsafe{patches.set_len(patch_size * max_spaxels);}
+				let mut patches_opt = Some(patches);
+				for batch in 0..n_batches {
 
-			for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
-				debug_assert_eq!(patch_size, patch.len());
-				let n_ind = (spaxel_ind+i)/in_spaxels;
+					let spaxel_ind = batch*max_spaxels;
+					
+					let batch_spaxels = min(in_spaxels*n - spaxel_ind, max_spaxels);
 
-				let outd_n = &output.derivatives[n_ind*out_size..][..out_size];
+					//let patches = &mut patches[..batch_spaxels*patch_size];
+					{
+						let patches = &mut patches_opt.as_mut().expect("conv patches missing")[..batch_spaxels*patch_size];
+						for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
+							debug_assert_eq!(patch_size, patch.len());
+							let n_ind = (spaxel_ind+i)/in_spaxels;
 
-				let input_ind = (spaxel_ind+i)%in_spaxels*self.input_channels;
-				unsafe_pack_patch_outer(patch, outd_n, self.output_channels, input_ind, &self.kernel_shape, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, &kernel_strides, &output_strides, &input_strides);
-				//pack_patch_recurse(patch, outd_n, &self.kernel_shape, self.output_channels, &output.shape.spatial_dimensions, &input.shape.spatial_dimensions, self.kernel_shape.len()-1, input_ind, in_size);
+							let outd_n = &output.derivatives[n_ind*out_size..][..out_size];
+
+							let input_ind = (spaxel_ind+i)%in_spaxels*input_channels;
+							unsafe_pack_patch_outer(patch, outd_n, output_channels, input_ind, &kernel_shape, &output.shape.spatial_dimensions, &input_shape.spatial_dimensions, &kernel_strides, &output_strides, &input_strides);
+							//pack_patch_recurse(patch, outd_n, &kernel_shape, output_channels, &output.shape.spatial_dimensions, &input_shape.spatial_dimensions, kernel_shape.len()-1, input_ind, in_size);
+						}
+					}
+					tx.send(Some((patches_opt.take().expect("conv patches missing"), spaxel_ind, batch_spaxels))).expect("conv patch send err");
+					patches_opt = Some(rx2.recv().expect("conv patches missing"));
+				}
+				tx.send(None).expect("conv patch send err");
+			});
+			
+			while let Some((patches, spaxel_ind, batch_spaxels)) = rx.recv().expect("Convolution channel receive error") {
+				tx2.send(spare_patches_opt.take().expect("conv patches missing")).expect("conv patch send err");
+
+				let ind_b = &mut input_derivatives[spaxel_ind*self.input_channels..][..batch_spaxels*self.input_channels];
+				let in_b = &input_values[spaxel_ind*self.input_channels..][..batch_spaxels*self.input_channels];
+
+				let m1 = self.input_channels;
+				let n1 = batch_spaxels;
+				let k1 = patch_size;	
+				
+				let m2 = self.input_channels;
+				let n2 = patch_size;
+				let k2 = batch_spaxels;	
+
+				unsafe{
+					// input derivatives
+					matrixmultiply::sgemm(m1, k1, n1,
+						1.0,
+						//self.shuffled_kernel.as_ptr(), k1 as isize, 1, // A is params, row major
+						self.shuffled_kernel.as_ptr(), 1, m1 as isize, // A is params, col major
+						patches.as_ptr(), 1, k1 as isize, // B, input values, column major
+						1.0,
+						ind_b.as_mut_ptr(), 1, m1 as isize // C output values, column major
+					); 
+				
+					// // parameter derivatives
+					matrixmultiply::sgemm(m2, k2, n2,
+						1.0,
+						in_b.as_ptr(), 1, m2 as isize, // A is input image, col major
+						patches.as_ptr(), n2 as isize, 1, // B, derivative patches, row major
+						1.0,
+						//self.shuffled_derivatives.as_mut_ptr(), n2 as isize, 1 // C shuffled parameter derivatives, row major
+						self.shuffled_derivatives.as_mut_ptr(), 1, m2 as isize // C shuffled parameter derivatives, col major
+					);
+				}
+				spare_patches_opt = Some(patches);
 			}
-
-
-			let ind_b = &mut input.derivatives[spaxel_ind*self.input_channels..][..batch_spaxels*self.input_channels];
-			let in_b = &mut input.values[spaxel_ind*self.input_channels..][..batch_spaxels*self.input_channels];
-
-			let m1 = self.input_channels;
-			let n1 = batch_spaxels;
-			let k1 = patch_size;	
-			
-			let m2 = self.input_channels;
-			let n2 = patch_size;
-			let k2 = batch_spaxels;	
-
-			unsafe{
-				// input derivatives
-				matrixmultiply::sgemm(m1, k1, n1,
-					1.0,
-					//self.shuffled_kernel.as_ptr(), k1 as isize, 1, // A is params, row major
-					self.shuffled_kernel.as_ptr(), 1, m1 as isize, // A is params, col major
-					patches.as_ptr(), 1, k1 as isize, // B, input values, column major
-					1.0,
-					ind_b.as_mut_ptr(), 1, m1 as isize // C output values, column major
-				); 
-			
-				// // parameter derivatives
-				matrixmultiply::sgemm(m2, k2, n2,
-					1.0,
-					in_b.as_ptr(), 1, m2 as isize, // A is input image, col major
-					patches.as_ptr(), n2 as isize, 1, // B, derivative patches, row major
-					1.0,
-					//self.shuffled_derivatives.as_mut_ptr(), n2 as isize, 1 // C shuffled parameter derivatives, row major
-					self.shuffled_derivatives.as_mut_ptr(), 1, m2 as isize // C shuffled parameter derivatives, col major
-				);
-			}
-
-		}
-		//flip_transpose_kernel_overwrite(&self.shuffled_derivatives, self.output_channels, self.input_channels, param_deriv);
-		rev_col_flip_transpose_kernel_overwrite(&self.shuffled_derivatives, self.input_channels, self.output_channels, param_deriv);
+			//flip_transpose_kernel_overwrite(&self.shuffled_derivatives, self.output_channels, self.input_channels, param_deriv);
+			rev_col_flip_transpose_kernel_overwrite(&self.shuffled_derivatives, self.input_channels, self.output_channels, param_deriv);
+		});
 	}		
 }
 

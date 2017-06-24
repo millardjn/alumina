@@ -11,6 +11,15 @@ extern crate smallvec;
 extern crate rand;
 extern crate matrixmultiply_mt as matrixmultiply;
 
+extern crate num_cpus;
+extern crate threadpool;
+#[macro_use]
+extern crate lazy_static;
+extern crate typenum;
+extern crate typenum_loops;
+extern crate generic_array;
+extern crate scoped_threadpool;
+
 pub mod graph;
 pub mod ops;
 pub mod opt;
