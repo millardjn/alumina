@@ -30,8 +30,11 @@ pub mod new;
 #[cfg(test)]mod test;
 
 
-/// error_chain 
-mod errors {
-	// Create the Error, ErrorKind, ResultExt, and Result types
-	error_chain!{}
-}
+// /// error_chain 
+// mod errors {
+// 	error_chain!{
+// 		links {
+// 			Another(other_error::Error, other_error::ErrorKind) #[cfg(unix)];
+// 		}
+// 	}
+// }

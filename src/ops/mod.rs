@@ -7,6 +7,7 @@ pub mod reshape;
 pub mod basic;
 pub mod loss;
 pub mod broadcast;
+pub mod spline_activation;
 
 // shapes
 // shapes have a mandatory 'depth' width correspons to the size of the columns in nodes

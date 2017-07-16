@@ -8,9 +8,28 @@ use std::cmp;
 use std::iter::repeat;
 use std::iter::FromIterator;
 use std::sync::Arc;
+use std::iter;
 use ndarray;
+use new::shape;
+use new::shape::{NodeShape, NodeDim};
+use std::cell::{Cell, UnsafeCell};
+use std::mem;
 
-enum NodeType {
+error_chain!{
+	errors {
+		OperationAccessedDeallocatedNode
+		OperationMutablyAccessedABorrowedNode
+		OperationAccessedAMutablyBorrowedNode
+	}
+
+	links {
+		Utils(shape::Error, shape::ErrorKind);
+	}
+}
+
+// TODO change types to 'Node' and 'SharedNode'
+
+pub enum NodeType {
 
 	ParameterNode(ParameterType),
 
@@ -23,136 +42,93 @@ enum NodeType {
 	ReifiedViewNode,
 }
 
-enum ParameterType {
+pub enum ParameterType {
 	Locked(ArrayD<f32>),
 	Init(Arc<Fn(&mut [f32])>),
 }
 
-
+/// A unique identifier for a node in the computational graph
 #[derive(Clone)]
 pub struct NodeID {
 	index: usize,
-	shape: NodeShape,
+	shape: Arc<NodeShape>,
 }
 
 impl NodeID {
+	// pub fn index(&self) -> usize {
+	// 	self.index
+	// }
 
+	pub fn shape(&self) -> &[NodeDim] {
+		&self.shape.dimensions[..]
+	}
 
-	fn value_id(&self) -> DataID {
+	pub fn value_id(&self) -> DataID {
 		DataID{index: self.index * 2, shape: self.shape.clone()}
 	}
 
-	fn gradient_id(&self) -> DataID {
+	pub fn gradient_id(&self) -> DataID {
 		DataID{index: self.index * 2 + 1, shape: self.shape.clone()}
 	}
 }
 
-struct DataID {
+/// A unique identifier for a tensor (values or gradients) of a node
+pub struct DataID {
 	index: usize,
-	shape: NodeShape,
+	shape: Arc<NodeShape>,
 }
 
 impl DataID {
-	fn node_id(&self) -> NodeID {
+	// pub fn index(&self) -> usize {
+	// 	self.index
+	// }
+	
+	pub fn shape(&self) -> &[NodeDim] {
+		&self.shape.dimensions[..]
+	}
+
+	pub fn node_id(&self) -> NodeID {
 		NodeID{index: self.index / 2, shape: self.shape.clone()}
 	}
 }
 
-
+/// A unique identifier for a graph operation
 pub struct OpID {
 	index: usize,
 }
 
 impl OpID {
-	fn new (index: usize) -> OpID {
-		OpID{index}
-	}
+	// pub fn index(&self) -> usize {
+	// 	self.index
+	// }
 
-	fn value_id(&self) -> PassID {
+	pub fn value_id(&self) -> PassID {
 		PassID{index: self.index * 2}
 	}
 
-	fn gradient_id(&self) -> PassID {
+	pub fn gradient_id(&self) -> PassID {
 		PassID{index: self.index * 2 + 1}
 	}
 }
 
-struct PassID {
+/// A unique identifier for the (forward or backward) pass of an operator
+pub struct PassID {
 	index: usize,
 }
 
 impl PassID {
-	fn op_id(&self) -> OpID {
+	// fn index(&self) -> usize {
+	// 	self.index
+	// }
+
+	pub fn op_id(&self) -> OpID {
 		OpID{index: self.index / 2}
-	}
-}
-
-
-// 	data: Vec<ArrayD<f32>>
-
-
-
-
-/// A structure which allows for runtime checked borrowing, similar to a RefCell for a Collection of Arrays,
-/// but with some limitations.
-/// Each element can only be borrowed either once mutably or many times immutably, however,
-/// once borrowed as such it is stuck until DataBorrow is dropped, or by calling reset_all().
-struct DataBorrow <'a> {
-	data: &'a mut [ArrayD<f32>],
-	borrow_flags: Vec<usize>,
-}
-
-const UNUSED: usize = 0;
-const WRITING: usize = !0;
-impl<'a> DataBorrow <'a> {
-
-
-	fn new(slice: &mut [ArrayD<f32>]) -> DataBorrow {
-		let len = slice.len();
-		DataBorrow{
-			data: slice,
-			borrow_flags: vec![UNUSED; len],
-		}
-	}
-
-	/// Forces return of all borrows, and resets runtime checks, allowing new borrowing patterns
-	fn reset_all(mut self) -> Self{
-		for e in &mut self.borrow_flags{
-			*e = UNUSED;
-		}
-		self
-	}
-
-	/// Immutably borrows data element associated with the given ID
-	/// Will panic if data element is already borrowed mutably
-	fn get(&mut self, id: DataID) -> ArrayViewD<f32> {
-		if self.borrow_flags[id.index] != WRITING {
-				self.borrow_flags[id.index] += 1;
-				let ptr = &self.data[id.index] as *const ArrayD<f32>;
-				unsafe{(&*ptr).view()}
-		} else {
-			panic!("already mutably borrowed")
-		}
-	}
-
-	/// Mutably borrows data element associated with the given ID
-	/// Will panic if data element is already mutably or immutably borrowed 
-	/// The borrow will stick until
-	fn get_mut(&mut self, id: DataID) -> ArrayViewMutD<f32> {
-		match self.borrow_flags[id.index] {
-			UNUSED => {
-				self.borrow_flags[id.index] = WRITING;
-				let ptr = &mut self.data[id.index] as *const ArrayD<f32> as *mut ArrayD<f32>;
-				unsafe{(&mut *ptr).view_mut()}
-			},
-			WRITING => panic!("already mutably borrowed"),
-			_ => panic!("already immutably borrowed"),
-		}
 	}
 }
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum NodeTag{
+	Parameter,
 	Id(usize),
 	Int(usize),
 	Str(String),
@@ -201,55 +177,63 @@ impl<'a> From<&'a str> for OpTag{
 	}
 }
 
-pub struct GraphBuilder {
+pub struct Builder {
 
 	node_type: Vec<NodeType>,
 	nodes: Vec<NodeID>,
 	operations: Vec<Box<Operation>>,
 
 	node_tags: HashMap<NodeTag, HashSet<usize>>, // tag, index
-	operation_tags: HashMap<OpTag, usize> // tag, index
+	operation_tags: HashMap<OpTag, HashSet<usize>> // tag, index
 }
 
-impl GraphBuilder {
-	fn tag<T: Into<NodeTag>>(&mut self, node: NodeID, tag: T){
-			let tag = tag.into();
-			match tag {
-				NodeTag::Id(_) => {},
-				NodeTag::Int(_) | NodeTag::Str(_) => {
-					let set = self.node_tags.entry(tag).or_insert(HashSet::new());
-					set.insert(node.index);
-				}
-			}	
-	}
+impl Builder {
 	
-	fn new_node<I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, shape: NodeShape, tag: T, nodetype: NodeType) -> NodeID{
-		let id = NodeID{index: self.nodes.len(), shape: shape};
+	pub fn new() -> Builder{
+		unimplemented!()
+	}
+
+	fn new_node<I: Into<NodeTag>, T: IntoIterator<Item=I>>(&mut self, shape: NodeShape, tag_iter: T, nodetype: NodeType) -> NodeID{
+		let id = NodeID{index: self.nodes.len(), shape: Arc::new(shape)};
 		self.nodes.push(id.clone());
 		self.node_type.push(nodetype);
 		
-		if let Some(into_tag) = tag.into() {
+		let mut tag_iter = tag_iter.into_iter();
+		while let Some(into_tag) = tag_iter.next(){
 			self.tag(id.clone(), into_tag);
 		}
 
 		id
 	}
 
-	pub fn new_variable<S: Into<NodeShape>, I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, shape: S, tag: T) -> NodeID {
-		self.new_node(shape.into(), tag, NodeType::VariableNode)
+	fn tag<T: Into<NodeTag>>(&mut self, node: NodeID, tag: T){
+		let tag = tag.into();
+		match tag {
+			NodeTag::Id(_) => {},
+			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
+				let set = self.node_tags.entry(tag).or_insert(HashSet::new());
+				set.insert(node.index);
+			}
+		}	
+	}
+
+	pub fn set_initial_value(){}
+
+	pub fn new_variable<S: Into<NodeShape>, I: Into<NodeTag>, T: IntoIterator<Item=I>>(&mut self, shape: S, tag_iter: T) -> NodeID {
+		self.new_node(shape.into(), tag_iter, NodeType::VariableNode)
 	}
 
 	/// Creates a node which 
-	pub fn new_parameter<S: Into<NodeShape>, I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, shape: S, init: Arc<Fn(&mut [f32])>, tag: T) -> NodeID {
-		let shape = shape.into();
-		assert!(shape.is_fixed(), "Parameter nodes must be of a fixed shape");
-		self.new_node(shape, tag, NodeType::ParameterNode(ParameterType::Init(init)))
-	}
+	// pub fn new_parameter<S: Into<NodeShape>, I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, shape: S, init: Arc<Fn(&mut [f32])>, tag: T) -> NodeID {
+	// 	let shape = shape.into();
+	// 	assert!(shape.is_fixed(), "Parameter nodes must be of a fixed shape");
+	// 	self.new_node(shape, tag, NodeType::ParameterNode(ParameterType::Init(init)))
+	// }
 
-	pub fn new_locked_parameter<S: Into<NodeShape>, I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, data: ArrayD<f32>, tag: T) -> NodeID {
+	// pub fn new_locked_parameter<S: Into<NodeShape>, I: Into<NodeTag>, T: Into<Option<I>>>(&mut self, data: ArrayD<f32>, tag: T) -> NodeID {
 
-		self.new_node(data.shape().into(), tag, NodeType::ParameterNode(ParameterType::Locked(data)))
-	}
+	// 	self.new_node(data.shape().into(), tag, NodeType::ParameterNode(ParameterType::Locked(data)))
+	// }
 
 	/// Create a node which acts as a subview of another node.
 	/// Contiguous views will be free from time and memory overhead.
@@ -264,249 +248,162 @@ impl GraphBuilder {
 		let tag = tag.into();
 		match tag {
 			NodeTag::Id(ind) => Some(self.nodes[ind].clone()),
-			NodeTag::Int(_) | NodeTag::Str(_) => {
+			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
 				self.node_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(self.nodes[*set.iter().next().unwrap()].clone())} else {None})
 			}
 		}
 	}
 
-	fn get_nodes<T: Into<NodeTag>>(&self, tag: T) {
-		unimplemented!()
-	}
-
-	fn get_parameter<T: Into<OpTag>>(&self, tag: T) -> NodeID {
-		unimplemented!()
-	}
-
-	fn get_op<T: Into<OpTag>>(&self, tag: T) -> &Operation {
-		unimplemented!()
-	}
-
-	fn get_ops<T: Into<OpTag>>(&self, tag: T) -> &Operation {
-		unimplemented!()
-	}
-
-
-
-}
-
-
-#[derive(Debug)]
-pub enum ShapeError{
-	/// Cannot convert a NodeShape into a Data Shape when some higher dimensions are still Unknown after propagating constraints from all prior operations.
-	IncompleteNodeShape,
-	
-	/// Cannot merge shapes which have a fixed but different total number of elements.
-	MergeIncompatibleFlatSize,
-	
-	/// Cannot merge shapes which have a different number of elements
-	MergeIncompatibleChannelDimension,
-	
-	/// Cant merge shapes which have different numbers of higher dimensions, unless one has no higher dimensions
-	MergeIncompatibleRank,
-	
-	
-	MergeIncompatibleHigherDimension,
-	
-	
-	UnderDeterminedFlatSize,
-}
-
-
-
-use self::NodeDim::*;
-#[derive(Clone, Debug, PartialEq)]
-pub enum NodeDim {
-	Unknown,
-	Fixed(usize),
-	/// Inclusive range of possible sizes for a given dimension
-	Range{lower: usize, upper: usize},
-}
-
-impl From<usize> for NodeDim{
-	fn from(s: usize) -> NodeDim {
-		NodeDim::Fixed(s)
-	}
-}
-
-impl<'a> From<&'a usize> for NodeDim{
-	fn from(s: &usize) -> NodeDim {
-		NodeDim::Fixed(*s)
-	}
-}
-
-impl From<(usize, usize)> for NodeDim{
-	fn from((lower, upper): (usize, usize)) -> NodeDim {
-		NodeDim::Range{lower, upper}
-	}
-}
-
-impl<'a> From<(&'a usize, &'a usize)> for NodeDim{
-	fn from((lower, upper): (&usize, &usize)) -> NodeDim {
-		NodeDim::Range{lower: *lower, upper: *upper}
-	}
-}
-
-impl NodeDim {
-	fn multiply (&self, other: &NodeDim) -> NodeDim{
-		match (self, other) {
-			(&Unknown, _) | (_, &Unknown) => Unknown,
-			(&Fixed(x), &Fixed(y)) => Fixed(x*y),
-			(&Fixed(x), &Range{upper, lower}) | (&Range{upper, lower}, &Fixed(x)) => Range{upper: upper*x, lower: lower*x},
-			(&Range{upper: upper1, lower: lower1}, &Range{upper: upper2, lower: lower2}) => Range{upper: upper1*upper2, lower: lower1*lower2},
-		}
-	}
-
-	fn merge(&self, other: &NodeDim) -> Result<NodeDim, ShapeError>{
-		match (self, other) {
-			(&Unknown, x) | (x, &Unknown) => Ok(x.clone()),	
-			(&Fixed(x), &Fixed(y)) => if x == y {Ok(Fixed(x))} else {Err(ShapeError::MergeIncompatibleHigherDimension)},
-			(&Fixed(v), &Range{upper, lower}) | (&Range{upper, lower}, &Fixed(v)) => if v >= lower && v <= upper {Ok(Fixed(v))} else {Err(ShapeError::MergeIncompatibleHigherDimension)},
-			(&Range{upper: upper1, lower: lower1}, &Range{upper: upper2, lower: lower2}) =>  {
-				let upper = cmp::min(upper1, upper2);
-				let lower = cmp::max(lower1, lower2);
-				if lower == upper {
-					Ok(Fixed(lower))
-				} else if lower < upper {
-					Ok(Range{upper: upper, lower: lower})
-				} else {
-					Err(ShapeError::MergeIncompatibleHigherDimension)
+	pub fn get_nodes<'a, T: Into<NodeTag>>(&'a self, tag: T) -> Box<Iterator<Item=NodeID> + 'a> {
+		let tag = tag.into();
+		match tag {
+			NodeTag::Id(ind) => Box::new(iter::once(self.nodes[ind].clone())),
+			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter  => {
+				match self.node_tags.get(&tag){
+					Some(set) => Box::new(set.iter().map(move |&ind| self.nodes[ind].clone())),
+					None => Box::new(iter::empty::<NodeID>()),
 				}
-			},	
-		}
-		
-	}
-
-}
-
-
-
-#[derive(Clone, PartialEq)]
-pub struct NodeShape{
-	pub dimensions: SmallVec<[NodeDim;6]>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size
-}
-
-impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
-	fn from(i: I) -> NodeShape {
-		let dimensions: SmallVec<[NodeDim; 6]> = i.into_iter().map(|e| e.clone().into()).collect();
-		if let NodeDim::Fixed(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of fixed size")}
-		NodeShape{dimensions}
-	}
-}
-
-impl NodeShape{
-	
-	pub fn channels(&self) -> usize {
-		match self.dimensions[self.dimensions.len() - 1] {
-			NodeDim::Fixed(dim) => dim,
-			_ => unreachable!(),
-		}
-	}
-
-	pub fn spatial_dimensions(&self) -> &[NodeDim]{
-		&self.dimensions[1..]
-	}
-	
-	/// Should be called and only called by operations prior to propagating shape constraints
-	/// The higher dimension ranges are collapsed to the lower bound, and all None entries are replaced with the range 0:0
-	pub fn collapse_dimensions_to_minimum(&mut self) -> Result<(), ShapeError>{
-		
-		for i in 0.. self.dimensions.len(){
-			match &self.dimensions[i] {
-				&Unknown => return Err(ShapeError::IncompleteNodeShape),
-				&Fixed(_) => {},
-				&Range{lower, ..} => self.dimensions[i] = Fixed(lower),
-			};
-			
-		}
-		Ok(())
-	}
-	
-	pub fn flat_size(&self) -> NodeDim {
-		self.dimensions.iter().fold(1.into(), |prev, item| prev.multiply(item))
-	}
-	
-	pub fn force_flat_size(&self) -> Result<usize, ShapeError>{
-		let mut size = 1;
-
-		for dim in self.dimensions.iter() {
-			match dim {
-				&Fixed(v) => size *= v,
-				&Range{upper, lower} if upper == lower => size *= lower,
-				_ => return Err(ShapeError::UnderDeterminedFlatSize),
 			}
 		}
-
-		Ok(size)
 	}
-	
-	/// If range upper != lower, lowe will be used.
-	pub fn to_data_shape(&self, n: usize) -> Result<IxDyn, ShapeError> {
-		let mut dims: SmallVec<[usize; 6]> = SmallVec::new();
-		dims.push(n);
-		for dim in self.spatial_dimensions().iter() {
-			match dim {
-				 &Fixed(v) => dims.push(v),
-				_ => return Err(ShapeError::IncompleteNodeShape),
+
+	pub fn get_parameters<'a>(&'a self) -> Box<Iterator<Item=NodeID> + 'a> {
+		self.get_nodes(NodeTag::Parameter)
+	}
+
+	pub fn get_op<T: Into<OpTag>>(&self, tag: T) -> Option<OpID> {
+		let tag = tag.into();
+		match tag {
+			OpTag::Id(ind) => Some(OpID{index: ind}),
+			OpTag::Int(_) | OpTag::Str(_) => {
+				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(OpID{index: *set.iter().next().unwrap()})} else {None})
 			}
 		}
-		Ok(ndarray::IxDyn(&dims))
 	}
-	
-	pub fn is_fixed(&self) -> bool {
-		self.dimensions.iter().all(|x|{
-			match x {
-				&Fixed(_) => true,
-				_ => false,
+
+	pub fn get_ops<'a, T: Into<OpTag>>(&'a self, tag: T) -> Box<Iterator<Item=OpID> + 'a> {
+		let tag = tag.into();
+		match tag {
+			OpTag::Id(ind) => Box::new(iter::once(OpID{index: ind})),
+			OpTag::Int(_) | OpTag::Str(_)  => {
+				match self.operation_tags.get(&tag){
+					Some(set) => Box::new(set.iter().map(|&ind| OpID{index: ind})),
+					None => Box::new(iter::empty::<OpID>()),
+				}
 			}
-		})
+		}
 	}
-	
-	pub fn ndim(&self) -> usize {
-		self.dimensions.len()
+}
+
+// struct Graph{
+// 	pass_inputs: Vec<Vec<NodeID>>,
+// 	pass_outputs: Vec<Vec<NodeID>>,
+
+// 	// Passes which input into the data
+// 	data_inputs: Vec<Vec<PassID>>,
+
+// 	// Passes which rely on the data
+// 	data_outputs: Vec<Vec<PassID>>,
+
+// 	pass order:
+
+// 	available_inputs:
+// 	required_outputs:
+// }
+
+
+enum DataState<T>{
+	Unallocated,
+	Allocated(T),
+	Deallocated,
+}
+
+/// A structure which allows for runtime checked borrowing, similar to a RefCell for a Collection of Arrays,
+/// but with some limitations.
+/// Each element can only be borrowed either once mutably or many times immutably, however,
+/// once borrowed as such it is stuck until DataBorrow is dropped, or by calling reset_all().
+pub struct GraphData {
+	n: usize,
+	shapes: Vec<NodeShape>,
+	data: Vec<DataState<ArrayD<f32>>>,
+	borrow_flags: Vec<Cell<usize>>,
+}
+
+const UNUSED: usize = 0;
+const WRITING: usize = !0;
+impl GraphData {
+
+	pub fn new(n: usize, shapes: Vec<NodeShape>) -> GraphData {
+		let num_nodes = shapes.len();
+		GraphData{
+			n: n,
+			shapes: shapes,
+			data: (0..num_nodes * 2).map(|_i| DataState::Unallocated).collect(),
+			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
+		}
 	}
-	
-	pub fn merge(&self, other: &NodeShape) -> Result<NodeShape, ShapeError>{
-		
-		if self.is_fixed() && other.is_fixed() {
-			self.merge_fixed(other)	
-		} else if self.channels() != other.channels() {
-			Err(ShapeError::MergeIncompatibleChannelDimension)
-		} else if self.ndim() != other.ndim() {
-			Err(ShapeError::MergeIncompatibleRank)
+
+	/// Deallocates the data specified by DataID
+	pub fn deallocate(&mut self, id: DataID){
+		mem::replace(&mut self.data[id.index], DataState::Deallocated);
+	}
+
+	/// This resets runtime checks, allowing new borrowing patterns
+	/// By taking `self` this forces return of all prior borrows
+	pub fn clear_borrow_flags(mut self) -> Self{
+		for e in &mut self.borrow_flags{
+			e.set(UNUSED);
+		}
+		self
+	}
+
+	/// Should never be called if a &mut borrow could possibly exist.
+	unsafe fn get_or_init(&self, id: &DataID) -> Result<*mut ArrayD<f32>>{
+		let ptr = &self.data[id.index] as *const _ as *mut _;
+		match *ptr {
+			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedNode),
+			DataState::Unallocated => {
+					*ptr = DataState::Allocated(ArrayD::zeros(self.shapes[id.node_id().index].to_data_shape(self.n)?));
+					if let DataState::Allocated(ref mut data) = *ptr{
+						Ok(data as *mut ArrayD<f32>)
+					} else {
+						unreachable!()
+					}
+				},
+			DataState::Allocated(ref mut data) => Ok(data as *mut ArrayD<f32>),
+		}
+	}
+
+	/// - `n` the number of input samples in the batch
+	pub fn n(&self) -> usize{
+		self.n
+	}
+
+	/// Immutably borrows data element associated with the given ID
+	/// Will panic if data element is already borrowed mutably
+	pub fn get<'a>(&'a self, id: DataID) -> Result<ArrayViewD<f32>> {
+		if self.borrow_flags[id.index].get() != WRITING {
+				let ptr = unsafe{self.get_or_init(&id)?};
+				self.borrow_flags[id.index].set(self.borrow_flags[id.index].get() + 1);
+				let array: &'a ArrayD<f32> = unsafe{&*ptr};
+				Ok(array.view())
 		} else {
-			let mut vec = SmallVec::new();
-			for (s, o) in self.spatial_dimensions().iter().zip(other.spatial_dimensions()){
-				vec.push(s.merge(o)?);
-			}
-			vec.push(self.channels().into());
-			Ok(NodeShape{dimensions: vec})
+			bail!(ErrorKind::OperationAccessedAMutablyBorrowedNode)
 		}
 	}
-	
-	#[inline(always)]
-	fn merge_fixed(&self, other: &NodeShape) -> Result<NodeShape, ShapeError>{
 
-		match (self.flat_size(), other.flat_size()){
-			(Fixed(x), Fixed(y)) if x == y => {},
-			_ => return Err(ShapeError::MergeIncompatibleFlatSize),
+	/// Mutably borrows data element associated with the given ID
+	/// Will panic if data element is already mutably or immutably borrowed 
+	/// The borrow will stick until
+	pub fn get_mut<'a>(&'a self, id: DataID) -> Result<ArrayViewMutD<f32>> {
+		match self.borrow_flags[id.index].get() {
+			UNUSED => {
+				let ptr = unsafe{self.get_or_init(&id)?};
+				self.borrow_flags[id.index].set(WRITING);
+				let array: &'a mut ArrayD<f32> = unsafe{&mut *ptr};
+				Ok(array.view_mut())
+			},
+			_ => bail!(ErrorKind::OperationMutablyAccessedABorrowedNode),
 		}
-
-		if self.ndim() == 1 {
-			Ok(other.clone())
-		} else if other.ndim() == 1 {
-			Ok(self.clone())
-		} else if self.ndim() != other.ndim() {
-			Err(ShapeError::MergeIncompatibleRank)
-		} else if self.channels() != other.channels() {	
-			Err(ShapeError::MergeIncompatibleChannelDimension)
-		} else {
-			let mut vec = SmallVec::new();
-			for (s, o) in self.spatial_dimensions().iter().zip(other.spatial_dimensions()){
-				vec.push(s.merge(o)?);
-			}
-			vec.push(self.channels().into());
-			Ok(NodeShape{dimensions: vec})
-		}	
 	}
 }
