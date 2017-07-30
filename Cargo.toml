@@ -16,7 +16,7 @@ images = ["image"]
 
 [dependencies]
 clippy = {version = "*", optional = true}
-ndarray = "0.9"
+ndarray = "0.10"
 walkdir = "1"
 error-chain = "0.10"
 odds = "0.2.25"
@@ -31,6 +31,7 @@ typenum = "1.9"
 typenum_loops = "0.1"
 generic-array = "0.8"
 scoped_threadpool = "0.1.7"
+ordermap = "0.2"
 
 [dependencies.matrixmultiply_mt]
 path = "D:/Repositories/matrixmultiply_mt"

@@ -1,17 +1,27 @@
+use new::graph::{NodeID, DataID, GraphData, GraphShapes};
+use new::graph;
+use new::shape::NodeShape;
+use std::any::Any;
 
+pub trait OperationBuilder: Any {
+	type OperationType: Operation;
+	fn new() -> Self;
 
-pub train OperationBuilder {
-	type OpType: Operation;
-	fn build(&self) -> OpType;
+	/// Called by graph when the builder is passed to the graph,
+	/// letting arbitrary graph modification occur 
+	/// Used to let Operations create parameter nodes as necessary,
+	/// or to implement operations with are compositions of smaller operations
+	fn pre_build(&mut self, &mut graph::Builder);
+
+	/// Called by graph::Builder to construct the operation instance
+	fn build() -> Self::OperationType;
 }
 
-pub trait Operation: OperationClone {
+pub trait Operation: OperationClone + Any{
+
 	fn instance_name(&self) -> &str;
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes);
 	fn num_params(&self) -> usize;
-	fn input_node_IDs(&self) -> Vec<NodeID>;
-	fn output_node_IDs(&self) -> Vec<NodeID>; 
-
 
 	fn init_params(&mut self, params: &mut [f32]){
 		if self.num_params() == 0 {
@@ -25,15 +35,15 @@ pub trait Operation: OperationClone {
 	fn get_meta(&self) -> &OperatorMetaData;
 	
 	/// Returns the nodeIDs (inputs, outputs) of the nodes
-	fn operation_dependancies(&self) -> (Vec<NodeID>, Vec<NodeID>);
+	fn operation_dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
 
 	/// Returns the DataIDs of the (inputs, outputs) of the forward pass
 	/// where the inputs are a subset of the operation input nodes values
 	/// and where the outputs are a subset of the operations output node values
-	fn forward_dependancies(&self) -> (Vec<DataID>, Vec<DataID>){
+	fn forward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		// the default implementation returns the largest possible set of DataIDs based on the operation dependancies
 		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
-		let (op_inputs, op_outputs) = self.operation_dependancies();
+		let (op_inputs, op_outputs) = self.operation_dependencies();
 		(
 			op_inputs.iter().map(|nodeid| nodeid.value_id()).collect(),
 			op_outputs.iter().map(|nodeid| nodeid.value_id()).collect()
@@ -43,10 +53,10 @@ pub trait Operation: OperationClone {
 	/// Returns the DataIDs of the (inputs, outputs) of the backward pass
 	/// where the inputs are a subset of the operation input nodes values, and output nodes gradients
 	/// and where the outputs are a subset of the operations input nodes gradients
-	fn backward_dependancies(&self) -> (Vec<DataID>, Vec<DataID>){
+	fn backward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		// the default implementation returns the largest possible set of DataIDs based on the operation dependancies
 		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
-		let (op_inputs, op_outputs) = self.operation_dependancies();
+		let (op_inputs, op_outputs) = self.operation_dependencies();
 		(
 			op_inputs.iter().map(|in_node| in_node.value_id()).chain(op_outputs.iter().map(|out_node| out_node.gradient_id())).collect(),
 			op_inputs.iter().map(|in_node| in_node.gradient_id()).collect()
@@ -64,25 +74,22 @@ pub trait Operation: OperationClone {
 	fn backward (&mut self, data: &mut GraphData, error: &mut f32);
 }
 
-
-pub trait SingleOutputOperation {
-
+pub trait SimpleOperationBuilder: OperationBuilder {
+	fn set_output(&mut self, id: &NodeID);
+	fn required_output_shape(&self) -> NodeShape;
+	//fn build_with_output() -> Self::OperationType;
 }
 
-impl<T: SingleOutputOperation> Operation for T {
-
-}
-
-pub trait ElementwiseOperation {
+pub trait SimpleOperation: Operation {
 
 }
 
 
-
+// based on metadata from: https://github.com/Metadiff/gir
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperatorMetaData {
 	pub name: &'static str,
-	pub arity: Arity,
+	//pub arity: Arity,
 	pub num_outputs: usize,
 	pub differential_parents: usize,
 	pub ordered_parents: bool,
@@ -92,7 +99,7 @@ pub struct OperatorMetaData {
 	pub differentiable: bool,
 	pub scalar_output: bool,
 	pub shape_operator: bool,
-	pub fixed_output_type: Option<FundamentalType>,
+	//pub fixed_output_type: Option<FundamentalType>,
 }
 
 // Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
@@ -110,21 +117,4 @@ impl Clone for Box<Operation> {
 	fn clone(&self) -> Box<Operation> {
 		self.clone_box()
 	}
-}
-
-// based on metadata from: https://github.com/Metadiff/gir
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationMetaData {
-	pub name: &'static str,
-	pub arity: Arity,
-	pub num_outputs: usize,
-	pub differential_parents: usize,
-	pub ordered_parents: bool,
-	pub elementwise: bool,
-	pub type_preserving: bool,
-	pub reduction: bool,
-	pub differentiable: bool,
-	pub scalar_output: bool,
-	pub shape_operator: bool,
-	pub fixed_output_type: Option<FundamentalType>,
 }

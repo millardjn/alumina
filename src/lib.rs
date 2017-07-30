@@ -19,6 +19,7 @@ extern crate typenum;
 extern crate typenum_loops;
 extern crate generic_array;
 extern crate scoped_threadpool;
+extern crate ordermap;
 
 pub mod graph;
 pub mod ops;

@@ -14,16 +14,14 @@ error_chain!{
 		/// Cannot merge shapes which have a fixed but different total number of elements.
 		MergeIncompatibleFlatSize{}
 		
-		/// Cannot merge shapes which have a different number of elements
+		/// Cannot merge shapes which have a different number of channels
 		MergeIncompatibleChannelDimension{}
 		
 		/// Cant merge shapes which have different numbers of higher dimensions, unless one has no higher dimensions
 		MergeIncompatibleRank{}
-		
-		
+
 		MergeIncompatibleHigherDimension{}
-		
-		
+
 		UnderDeterminedFlatSize{}
 	}
 }

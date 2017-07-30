@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use ndarray::ArrayD;
 use ndarray::prelude::*;
 use smallvec::SmallVec;
-use ops::Operation;
+//use ops::Operation;
 use std::cmp;
 use std::iter::repeat;
 use std::iter::FromIterator;
@@ -14,6 +14,9 @@ use new::shape;
 use new::shape::{NodeShape, NodeDim};
 use std::cell::{Cell, UnsafeCell};
 use std::mem;
+use std::collections::VecDeque;
+use ordermap::OrderMap;
+use new::ops::*;
 
 error_chain!{
 	errors {
@@ -31,95 +34,97 @@ error_chain!{
 
 pub enum NodeType {
 
-	ParameterNode(ParameterType),
+	/// This node has an independent values for each input the input batch.
+	/// The outermost dimension of the tensor is the batch size `n`
+	IndependentNode,
 
-	VariableNode,
-
-	XVariableNode,
-
-	ViewNode(NodeID),
-
-	ReifiedViewNode,
+	/// This node's shape does not depend on batch size.
+	/// Examples are optimisable parameters, or an average across a mini batch
+	SharedNode,
 }
 
-pub enum ParameterType {
-	Locked(ArrayD<f32>),
-	Init(Arc<Fn(&mut [f32])>),
-}
+//pub enum ParameterType {
+//	Locked(ArrayD<f32>),
+//	Init(Arc<Fn(&mut [f32])>),
+//}
 
 /// A unique identifier for a node in the computational graph
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeID {
 	index: usize,
-	shape: Arc<NodeShape>,
+	//shape: Arc<NodeShape>, // op builders should be able to just get it from the graphbuilders
 }
 
 impl NodeID {
-	// pub fn index(&self) -> usize {
-	// 	self.index
+
+	// pub fn shape(&self) -> &[NodeDim] {
+	// 	&self.shape.dimensions[..]
 	// }
 
-	pub fn shape(&self) -> &[NodeDim] {
-		&self.shape.dimensions[..]
-	}
-
 	pub fn value_id(&self) -> DataID {
-		DataID{index: self.index * 2, shape: self.shape.clone()}
+		DataID{index: self.index * 2}//, shape: self.shape.clone()}
 	}
 
 	pub fn gradient_id(&self) -> DataID {
-		DataID{index: self.index * 2 + 1, shape: self.shape.clone()}
+		DataID{index: self.index * 2 + 1}//, shape: self.shape.clone()}
 	}
 }
 
 /// A unique identifier for a tensor (values or gradients) of a node
+#[derive(Clone, Debug)]
 pub struct DataID {
 	index: usize,
-	shape: Arc<NodeShape>,
+	//shape: Arc<NodeShape>,
 }
 
 impl DataID {
-	// pub fn index(&self) -> usize {
-	// 	self.index
-	// }
-	
-	pub fn shape(&self) -> &[NodeDim] {
-		&self.shape.dimensions[..]
+	pub fn is_value(&self) -> bool {
+		self.index % 2 == 0
 	}
 
+	pub fn is_gradient(&self) -> bool {
+		self.index % 2 == 1
+	}
+
+	// pub fn shape(&self) -> &[NodeDim] {
+	// 	&self.shape.dimensions[..]
+	// }
+
 	pub fn node_id(&self) -> NodeID {
-		NodeID{index: self.index / 2, shape: self.shape.clone()}
+		NodeID{index: self.index / 2}//, shape: self.shape.clone()}
 	}
 }
 
 /// A unique identifier for a graph operation
+#[derive(Clone, Debug)]
 pub struct OpID {
 	index: usize,
 }
 
 impl OpID {
-	// pub fn index(&self) -> usize {
-	// 	self.index
-	// }
-
-	pub fn value_id(&self) -> PassID {
+	pub fn forward_id(&self) -> PassID {
 		PassID{index: self.index * 2}
 	}
 
-	pub fn gradient_id(&self) -> PassID {
+	pub fn backward_id(&self) -> PassID {
 		PassID{index: self.index * 2 + 1}
 	}
 }
 
 /// A unique identifier for the (forward or backward) pass of an operator
+#[derive(Clone, Debug)]
 pub struct PassID {
 	index: usize,
 }
 
 impl PassID {
-	// fn index(&self) -> usize {
-	// 	self.index
-	// }
+	pub fn is_forward(&self) -> bool {
+		self.index % 2 == 0
+	}
+
+	pub fn is_backward(&self) -> bool {
+		self.index % 2 == 1
+	}
 
 	pub fn op_id(&self) -> OpID {
 		OpID{index: self.index / 2}
@@ -177,50 +182,174 @@ impl<'a> From<&'a str> for OpTag{
 	}
 }
 
+/// Used to construct the definition of the computational hypergraph.
+/// This cannot be executed, an executable `Graph` can be built using 
 pub struct Builder {
 
 	node_type: Vec<NodeType>,
 	nodes: Vec<NodeID>,
 	operations: Vec<Box<Operation>>,
 
-	node_tags: HashMap<NodeTag, HashSet<usize>>, // tag, index
-	operation_tags: HashMap<OpTag, HashSet<usize>> // tag, index
+	node_tags: OrderMap<NodeTag, OrderMap<usize, ()>>, // tag, index
+	operation_tags: OrderMap<OpTag, OrderMap<usize, ()>>, // tag, index
+	initial_value: Vec<Option<ArrayD<f32>>>,
 }
 
 impl Builder {
 	
-	pub fn new() -> Builder{
+	pub fn new() -> Builder {
 		unimplemented!()
 	}
 
+	///
+	/// * inputs - this must be an in order slice of the nodes which will be supplied by the data stream used when evaluating the graph.
+	pub fn build(&self, inputs: &[DataID], requested_outputs: &[DataID]) -> Graph {
+
+		let mut is_input = vec![false; self.nodes.len()*2];
+		for data_id in inputs {
+			is_input[data_id.index] = true;
+		}
+
+		let (pass_inputs, pass_outputs, data_inputs, data_outputs) = self.collect_dependencies();
+		
+		// Find the minimum set of operations and nodes required to calculate the `required_outputs`
+		let mut required_data: Vec<bool> = vec![false; self.nodes.len()*2];
+		let mut required_passes: Vec<bool> = vec![false; self.operations.len()*2];
+		{
+			let mut pass_queue: VecDeque<PassID> = VecDeque::new();
+			let mut data_queue: VecDeque<DataID> = VecDeque::new(); 
+
+
+			// start with the data requested by the user
+			for data_id in requested_outputs {
+				required_data[data_id.index] == true;
+				data_queue.push_back(data_id.clone());
+			}
+
+			// For each item queued also queue its inputs if they havent already been marked as required.
+			while !(pass_queue.is_empty() && data_queue.is_empty()) {
+				if let Some(data_id) = data_queue.pop_front() {
+
+					if !is_input[data_id.index] {
+						for pass_id in &data_inputs[data_id.index] {
+							if required_passes[pass_id.index] == false {
+								required_passes[pass_id.index] = true;
+								pass_queue.push_back(pass_id.clone());
+							}
+						}
+					}
+
+				}
+				if let Some(pass_id) = pass_queue.pop_front() {
+					for data_id in &pass_inputs[pass_id.index] {
+						if required_data[data_id.index] == false {
+							required_data[data_id.index] == true;
+							data_queue.push_back(data_id.clone());
+						}
+					}
+				}
+			}
+		}
+
+		// Todo find operation order, and 
+
+		let graph = Graph{
+			pass_inputs: pass_inputs,
+			pass_outputs: pass_outputs,
+
+			data_inputs: data_inputs,
+			data_outputs: data_outputs,
+
+			available_inputs: inputs.to_vec(),
+			requested_outputs: requested_outputs.to_vec(),
+
+			pass_order: unimplemented!(),
+		};
+
+		graph
+	}
+
+	fn collect_dependencies(&self) -> (Vec<Vec<DataID>>, Vec<Vec<DataID>>, Vec<Vec<PassID>>, Vec<Vec<PassID>>) {
+		let mut pass_inputs: Vec<Vec<DataID>> = (0..self.operations.len()*2).map(|_| vec![]).collect();
+		let mut pass_outputs: Vec<Vec<DataID>> = (0..self.operations.len()*2).map(|_| vec![]).collect();
+
+		let mut data_inputs: Vec<Vec<PassID>> = (0..self.nodes.len()*2).map(|_| vec![]).collect();
+		let mut data_outputs: Vec<Vec<PassID>> = (0..self.nodes.len()*2).map(|_| vec![]).collect();
+
+		for op_id in (0..self.operations.len()).map(|i| OpID{index:i}) {
+			let operation = &*self.operations[op_id.index];
+
+			let forward_id = op_id.forward_id();
+			let (forward_inputs, forward_outputs) = operation.forward_dependencies();
+			pass_inputs[forward_id.index] = forward_inputs;
+			pass_outputs[forward_id.index] = forward_outputs;
+
+			let backward_id = op_id.backward_id();
+			let (backward_inputs, backward_outputs) = operation.backward_dependencies();
+			pass_inputs[backward_id.index] = backward_inputs;
+			pass_outputs[backward_id.index] = backward_outputs;
+		}
+
+		for pass_id in (0..self.operations.len()*2).map(|i| PassID{index:i}) {
+			for data_id in &pass_inputs[pass_id.index] {
+				data_outputs[data_id.index].push(pass_id.clone());
+			}
+			for data_id in &pass_outputs[pass_id.index] {
+				data_inputs[data_id.index].push(pass_id.clone())
+			}
+		}
+
+		(pass_inputs, pass_outputs, data_inputs, data_outputs)
+	}
+
+	/// Node values are initialised to be zero filled by default
+	/// If a NdArray value is supplied to this method that can be broadcast to this node, it will be used to set the initial value of the node
+	/// This can be used to supply fixed inputs, which replace parameters, to operations when further operations is to be avoided.
+	pub fn set_initial_value(&mut self, id: NodeID, value: ArrayD<f32>){
+		self.initial_value[id.index] = Some(value);
+	}
+
+	pub fn clear_initial_value(&mut self, id: NodeID){
+		self.initial_value[id.index] = None;
+	}
+
+	fn add_operation<B: OperationBuilder>(&mut self, builder: B) -> OpID {
+		unimplemented!();
+	}
+
+	fn add_simple_operation<B: SimpleOperationBuilder>(&mut self, mut builder: B) -> (OpID, NodeID) {
+		let node_id = self.new_node(builder.required_output_shape(), iter::empty::<NodeTag>(), NodeType::IndependentNode);
+		builder.set_output(&node_id);
+		let op_id = self.add_operation(builder);
+		(op_id, node_id)
+	}
+
 	fn new_node<I: Into<NodeTag>, T: IntoIterator<Item=I>>(&mut self, shape: NodeShape, tag_iter: T, nodetype: NodeType) -> NodeID{
-		let id = NodeID{index: self.nodes.len(), shape: Arc::new(shape)};
+		let id = NodeID{index: self.nodes.len()};//, shape: Arc::new(shape)};
 		self.nodes.push(id.clone());
 		self.node_type.push(nodetype);
 		
 		let mut tag_iter = tag_iter.into_iter();
 		while let Some(into_tag) = tag_iter.next(){
-			self.tag(id.clone(), into_tag);
+			self.tag_node(id.clone(), into_tag);
 		}
 
 		id
 	}
 
-	fn tag<T: Into<NodeTag>>(&mut self, node: NodeID, tag: T){
+	fn tag_node<T: Into<NodeTag>>(&mut self, node: NodeID, tag: T){
 		let tag = tag.into();
 		match tag {
 			NodeTag::Id(_) => {},
 			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
-				let set = self.node_tags.entry(tag).or_insert(HashSet::new());
-				set.insert(node.index);
+				let set = self.node_tags.entry(tag).or_insert(OrderMap::new());
+				set.insert(node.index, ());
 			}
 		}	
 	}
 
-	pub fn set_initial_value(){}
-
-	pub fn new_variable<S: Into<NodeShape>, I: Into<NodeTag>, T: IntoIterator<Item=I>>(&mut self, shape: S, tag_iter: T) -> NodeID {
-		self.new_node(shape.into(), tag_iter, NodeType::VariableNode)
+	pub fn new_shared_node<S: Into<NodeShape>, I: Into<NodeTag>, T: IntoIterator<Item=I>>(&mut self, shape: S, tag_iter: T) -> NodeID {
+		self.new_node(shape.into(), tag_iter, NodeType::SharedNode)
 	}
 
 	/// Creates a node which 
@@ -249,7 +378,7 @@ impl Builder {
 		match tag {
 			NodeTag::Id(ind) => Some(self.nodes[ind].clone()),
 			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
-				self.node_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(self.nodes[*set.iter().next().unwrap()].clone())} else {None})
+				self.node_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(self.nodes[*set.keys().next().unwrap()].clone())} else {None})
 			}
 		}
 	}
@@ -260,7 +389,7 @@ impl Builder {
 			NodeTag::Id(ind) => Box::new(iter::once(self.nodes[ind].clone())),
 			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter  => {
 				match self.node_tags.get(&tag){
-					Some(set) => Box::new(set.iter().map(move |&ind| self.nodes[ind].clone())),
+					Some(set) => Box::new(set.keys().map(move |&ind| self.nodes[ind].clone())),
 					None => Box::new(iter::empty::<NodeID>()),
 				}
 			}
@@ -276,7 +405,7 @@ impl Builder {
 		match tag {
 			OpTag::Id(ind) => Some(OpID{index: ind}),
 			OpTag::Int(_) | OpTag::Str(_) => {
-				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(OpID{index: *set.iter().next().unwrap()})} else {None})
+				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(OpID{index: *set.keys().next().unwrap()})} else {None})
 			}
 		}
 	}
@@ -287,7 +416,7 @@ impl Builder {
 			OpTag::Id(ind) => Box::new(iter::once(OpID{index: ind})),
 			OpTag::Int(_) | OpTag::Str(_)  => {
 				match self.operation_tags.get(&tag){
-					Some(set) => Box::new(set.iter().map(|&ind| OpID{index: ind})),
+					Some(set) => Box::new(set.keys().map(|&ind| OpID{index: ind})),
 					None => Box::new(iter::empty::<OpID>()),
 				}
 			}
@@ -295,22 +424,33 @@ impl Builder {
 	}
 }
 
-// struct Graph{
-// 	pass_inputs: Vec<Vec<NodeID>>,
-// 	pass_outputs: Vec<Vec<NodeID>>,
+pub struct Graph{
+	pass_inputs: Vec<Vec<DataID>>,
+	pass_outputs: Vec<Vec<DataID>>,
 
-// 	// Passes which input into the data
-// 	data_inputs: Vec<Vec<PassID>>,
+	// Passes which input into the data
+	data_inputs: Vec<Vec<PassID>>,
 
-// 	// Passes which rely on the data
-// 	data_outputs: Vec<Vec<PassID>>,
+	// Passes which rely on the data
+	data_outputs: Vec<Vec<PassID>>,
 
-// 	pass order:
+	available_inputs: Vec<DataID>,
+	requested_outputs: Vec<DataID>,
 
-// 	available_inputs:
-// 	required_outputs:
-// }
+	pass_order: Vec<PassID>,
+}
 
+
+pub struct GraphShapes{
+	shapes: Vec<NodeShape>,
+}
+
+impl GraphShapes {
+	pub fn merge_with(&mut self, id: NodeID, shape: NodeShape) -> Result<()>{
+		self.shapes[id.index] = self.shapes[id.index].merge(&shape)?;
+		Ok(())
+	}
+}
 
 enum DataState<T>{
 	Unallocated,
@@ -327,19 +467,21 @@ pub struct GraphData {
 	shapes: Vec<NodeShape>,
 	data: Vec<DataState<ArrayD<f32>>>,
 	borrow_flags: Vec<Cell<usize>>,
+	initial_value: Vec<Option<ArrayD<f32>>>,
 }
 
 const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl GraphData {
 
-	pub fn new(n: usize, shapes: Vec<NodeShape>) -> GraphData {
+	pub fn new(n: usize, shapes: Vec<NodeShape>, initial_value: Vec<Option<ArrayD<f32>>>,) -> GraphData {
 		let num_nodes = shapes.len();
 		GraphData{
 			n: n,
 			shapes: shapes,
 			data: (0..num_nodes * 2).map(|_i| DataState::Unallocated).collect(),
 			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
+			initial_value: initial_value,
 		}
 	}
 
@@ -363,7 +505,18 @@ impl GraphData {
 		match *ptr {
 			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedNode),
 			DataState::Unallocated => {
-					*ptr = DataState::Allocated(ArrayD::zeros(self.shapes[id.node_id().index].to_data_shape(self.n)?));
+					let mut data = ArrayD::zeros(self.shapes[id.node_id().index].to_data_shape(self.n)?);
+					if id.is_value() {
+						if let Some(ref init_value) = self.initial_value[id.node_id().index]{
+							if let Some(broadcasted_init) = init_value.broadcast(data.shape()){
+								data = data + broadcasted_init;
+							} else {
+								bail!(format!("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id.node_id(), init_value.shape(), data.shape()));
+							}
+						}
+					}
+					*ptr = DataState::Allocated(data);
+
 					if let DataState::Allocated(ref mut data) = *ptr{
 						Ok(data as *mut ArrayD<f32>)
 					} else {

@@ -1,0 +1,7 @@
+trait IndexableData {
+
+}
+
+trait DataStream {
+	
+}
