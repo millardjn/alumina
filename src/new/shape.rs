@@ -11,7 +11,7 @@ error_chain!{
 		/// Cannot convert a NodeShape into a Data Shape when some higher dimensions are still Unknown after propagating constraints from all prior operations.
 		IncompleteNodeShape{}
 		
-		/// Cannot merge shapes which have a fixed but different total number of elements.
+		/// Cannot merge shapes which have a Known but different total number of elements.
 		MergeIncompatibleFlatSize{}
 		
 		/// Cannot merge shapes which have a different number of channels
@@ -27,37 +27,89 @@ error_chain!{
 }
 
 
+/// NodeShape argument constructor.
+///
+/// Returns a value of the type `&[NodeDim]`
+///
+/// Three types of vales can be entered as a list into the macro,
+/// with the following conversions taking place:
+/// Unknown values:   Unknown => NodeDim::Unknown
+/// usize values:     5       => NodeDim::Known(5)
+/// usize tuples:     (4, 7)  => NodeDim::IncInterval{lower:4, upper:7}
+///
+///
+/// ```
+/// #[macro_use]
+/// extern crate alumina;
+/// use new::shape::NodeDim;
+///
+/// fn test() {
+///		assert_eq!(
+///			shape![Unknown, 5, (3, 9), 7],
+///			NodeShape::from(&[NodeDim::Unknown, NodeDim::Known(5), NodeDim::IncInterval{lower:3, upper:9}, NodeDim::Known(7)])
+///		);
+/// }
+/// ```
+#[macro_export]
+macro_rules! shape(
 
+    (@parse Unknown) => {
+        NodeDim::Unknown
+    };
+    
+    (@parse ($l:expr, $u:expr)) => {
+        NodeDim::IncInterval($l, $u)
+    };
+    
+    (@parse $v:expr) => {
+        NodeDim::Known($v)
+    };
+    
+    
+    ( $( $x:tt ),* ) => {
+        NodeShape::from(&[
+            $(
+                shape!(@parse $x),
+            )*
+        ])
+    };
+    
+);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NodeDim {
+
+	/// A dimension which does not yet have any constraints
 	Unknown,
-	Fixed(usize),
-	/// Inclusive range of possible sizes for a given dimension
-	Range{lower: usize, upper: usize},
+
+	/// A fully constrained dimension
+	Known(usize),
+
+	/// Inclusive interval of possible sizes for a given dimension
+	IncInterval{lower: usize, upper: usize},
 }
 
 impl From<usize> for NodeDim{
 	fn from(s: usize) -> NodeDim {
-		NodeDim::Fixed(s)
+		NodeDim::Known(s)
 	}
 }
 
 impl<'a> From<&'a usize> for NodeDim{
 	fn from(s: &usize) -> NodeDim {
-		NodeDim::Fixed(*s)
+		NodeDim::Known(*s)
 	}
 }
 
 impl From<(usize, usize)> for NodeDim{
 	fn from((lower, upper): (usize, usize)) -> NodeDim {
-		NodeDim::Range{lower, upper}
+		NodeDim::IncInterval{lower, upper}
 	}
 }
 
 impl<'a> From<(&'a usize, &'a usize)> for NodeDim{
 	fn from((lower, upper): (&usize, &usize)) -> NodeDim {
-		NodeDim::Range{lower: *lower, upper: *upper}
+		NodeDim::IncInterval{lower: *lower, upper: *upper}
 	}
 }
 
@@ -65,24 +117,24 @@ impl NodeDim {
 	fn multiply (&self, other: &NodeDim) -> NodeDim{
 		match (self, other) {
 			(&Unknown, _) | (_, &Unknown) => Unknown,
-			(&Fixed(x), &Fixed(y)) => Fixed(x*y),
-			(&Fixed(x), &Range{upper, lower}) | (&Range{upper, lower}, &Fixed(x)) => Range{upper: upper*x, lower: lower*x},
-			(&Range{upper: upper1, lower: lower1}, &Range{upper: upper2, lower: lower2}) => Range{upper: upper1*upper2, lower: lower1*lower2},
+			(&Known(x), &Known(y)) => Known(x*y),
+			(&Known(x), &IncInterval{upper, lower}) | (&IncInterval{upper, lower}, &Known(x)) => IncInterval{upper: upper*x, lower: lower*x},
+			(&IncInterval{upper: upper1, lower: lower1}, &IncInterval{upper: upper2, lower: lower2}) => IncInterval{upper: upper1*upper2, lower: lower1*lower2},
 		}
 	}
 
 	fn merge(&self, other: &NodeDim) -> Result<NodeDim>{
 		match (self, other) {
 			(&Unknown, x) | (x, &Unknown) => Ok(x.clone()),	
-			(&Fixed(x), &Fixed(y)) => if x == y {Ok(Fixed(x))} else {bail!(ErrorKind::MergeIncompatibleHigherDimension)},
-			(&Fixed(v), &Range{upper, lower}) | (&Range{upper, lower}, &Fixed(v)) => if v >= lower && v <= upper {Ok(Fixed(v))} else {bail!(ErrorKind::MergeIncompatibleHigherDimension)},
-			(&Range{upper: upper1, lower: lower1}, &Range{upper: upper2, lower: lower2}) =>  {
+			(&Known(x), &Known(y)) => if x == y {Ok(Known(x))} else {bail!(ErrorKind::MergeIncompatibleHigherDimension)},
+			(&Known(v), &IncInterval{upper, lower}) | (&IncInterval{upper, lower}, &Known(v)) => if v >= lower && v <= upper {Ok(Known(v))} else {bail!(ErrorKind::MergeIncompatibleHigherDimension)},
+			(&IncInterval{upper: upper1, lower: lower1}, &IncInterval{upper: upper2, lower: lower2}) =>  {
 				let upper = cmp::min(upper1, upper2);
 				let lower = cmp::max(lower1, lower2);
 				if lower == upper {
-					Ok(Fixed(lower))
+					Ok(Known(lower))
 				} else if lower < upper {
-					Ok(Range{upper: upper, lower: lower})
+					Ok(IncInterval{upper: upper, lower: lower})
 				} else {
 					bail!(ErrorKind::MergeIncompatibleHigherDimension)
 				}
@@ -97,13 +149,13 @@ impl NodeDim {
 
 #[derive(Clone, PartialEq)]
 pub struct NodeShape{
-	pub dimensions: SmallVec<[NodeDim;6]>, // None indicates Runtime Determined, Range indicates acceptible range for fixed size
+	pub dimensions: SmallVec<[NodeDim;6]>,
 }
 
 impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 	fn from(i: I) -> NodeShape {
 		let dimensions: SmallVec<[NodeDim; 6]> = i.into_iter().map(|e| e.clone().into()).collect();
-		if let NodeDim::Fixed(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of fixed size")}
+		if let NodeDim::Known(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of Known size")}
 		NodeShape{dimensions}
 	}
 }
@@ -112,7 +164,7 @@ impl NodeShape{
 	
 	pub fn channels(&self) -> usize {
 		match self.dimensions[self.dimensions.len() - 1] {
-			NodeDim::Fixed(dim) => dim,
+			NodeDim::Known(dim) => dim,
 			_ => unreachable!(),
 		}
 	}
@@ -122,14 +174,14 @@ impl NodeShape{
 	}
 	
 	/// Should be called and only called by operations prior to propagating shape constraints
-	/// The higher dimension ranges are collapsed to the lower bound, and all None entries are replaced with the range 0:0
+	/// The higher dimension ranges are collapsed to the lower bound, and any Unknown entries will result in an IncompleteNodeShape Error
 	pub fn collapse_dimensions_to_minimum(&mut self) -> Result<()>{
 		
 		for i in 0.. self.dimensions.len(){
 			match &self.dimensions[i] {
 				&Unknown => bail!(ErrorKind::IncompleteNodeShape),
-				&Fixed(_) => {},
-				&Range{lower, ..} => self.dimensions[i] = Fixed(lower),
+				&Known(_) => {},
+				&IncInterval{lower, ..} => self.dimensions[i] = Known(lower),
 			};
 			
 		}
@@ -145,8 +197,8 @@ impl NodeShape{
 
 		for dim in self.dimensions.iter() {
 			match dim {
-				&Fixed(v) => size *= v,
-				&Range{upper, lower} if upper == lower => size *= lower,
+				&Known(v) => size *= v,
+				&IncInterval{upper, lower} if upper == lower => size *= lower,
 				_ => bail!(ErrorKind::UnderDeterminedFlatSize),
 			}
 		}
@@ -154,23 +206,24 @@ impl NodeShape{
 		Ok(size)
 	}
 	
-	/// If range upper != lower, lowe will be used.
+	/// If all dimension values are `Known` this will 
+	/// This should generally only be called after 
 	pub fn to_data_shape(&self, n: usize) -> Result<IxDyn> {
 		let mut dims: SmallVec<[usize; 6]> = SmallVec::new();
 		dims.push(n);
 		for dim in self.spatial_dimensions().iter() {
 			match dim {
-				 &Fixed(v) => dims.push(v),
+				 &Known(v) => dims.push(v),
 				_ => bail!(ErrorKind::IncompleteNodeShape),
 			}
 		}
 		Ok(ndarray::IxDyn(&dims))
 	}
 	
-	pub fn is_fixed(&self) -> bool {
+	pub fn is_known(&self) -> bool {
 		self.dimensions.iter().all(|x|{
 			match x {
-				&Fixed(_) => true,
+				&Known(_) => true,
 				_ => false,
 			}
 		})
@@ -181,9 +234,9 @@ impl NodeShape{
 	}
 	
 	pub fn merge(&self, other: &NodeShape) -> Result<NodeShape>{
-		
-		if self.is_fixed() && other.is_fixed() {
-			self.merge_fixed(other)	
+
+		if self.is_known() && other.is_known() {
+			self.merge_known(other)	
 		} else if self.channels() != other.channels() {
 			bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else if self.ndim() != other.ndim() {
@@ -199,10 +252,10 @@ impl NodeShape{
 	}
 	
 	#[inline(always)]
-	fn merge_fixed(&self, other: &NodeShape) -> Result<NodeShape>{
+	fn merge_known(&self, other: &NodeShape) -> Result<NodeShape>{
 
 		match (self.flat_size(), other.flat_size()){
-			(Fixed(x), Fixed(y)) if x == y => {},
+			(Known(x), Known(y)) if x == y => {},
 			_ => bail!(ErrorKind::MergeIncompatibleFlatSize),
 		}
 

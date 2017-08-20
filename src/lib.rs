@@ -2,8 +2,7 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![recursion_limit = "1024"]
 
-#[macro_use]
-extern crate error_chain;
+#[macro_use] extern crate error_chain;
 extern crate ndarray;
 extern crate odds;
 extern crate walkdir;
@@ -13,13 +12,13 @@ extern crate matrixmultiply_mt as matrixmultiply;
 
 extern crate num_cpus;
 extern crate threadpool;
-#[macro_use]
-extern crate lazy_static;
+#[macro_use] extern crate lazy_static;
 extern crate typenum;
 extern crate typenum_loops;
 extern crate generic_array;
 extern crate scoped_threadpool;
 extern crate ordermap;
+#[macro_use] extern crate matches;
 
 pub mod graph;
 pub mod ops;

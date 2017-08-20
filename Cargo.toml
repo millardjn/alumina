@@ -32,6 +32,7 @@ typenum_loops = "0.1"
 generic-array = "0.8"
 scoped_threadpool = "0.1.7"
 ordermap = "0.2"
+matches = "0.1"
 
 [dependencies.matrixmultiply_mt]
 path = "D:/Repositories/matrixmultiply_mt"

@@ -3,33 +3,31 @@ use new::graph;
 use new::shape::NodeShape;
 use std::any::Any;
 
-pub trait OperationBuilder: Any {
+pub trait OperationBuilder: Any + Default {
 	type OperationType: Operation;
-	fn new() -> Self;
-
-	/// Called by graph when the builder is passed to the graph,
-	/// letting arbitrary graph modification occur 
-	/// Used to let Operations create parameter nodes as necessary,
-	/// or to implement operations with are compositions of smaller operations
-	fn pre_build(&mut self, &mut graph::Builder);
 
 	/// Called by graph::Builder to construct the operation instance
-	fn build() -> Self::OperationType;
+	/// Arbitrary graph modification occur allowing 
+	/// Used to let Operations create parameter nodes as necessary,
+	/// or to implement operations with are compositions of smaller operations
+	fn build(&mut self, &mut graph::Builder) -> Option<Self::OperationType>;
 }
 
 pub trait Operation: OperationClone + Any{
 
 	fn instance_name(&self) -> &str;
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes);
-	fn num_params(&self) -> usize;
+	
+	// TODO sort out initilisation
+	// fn num_params(&self) -> usize;
 
-	fn init_params(&mut self, params: &mut [f32]){
-		if self.num_params() == 0 {
-			assert_eq!(0, params.len(), "init_params passed non-zero length slice for an operation with no parameters");
-		} else {
-			unimplemented!();
-		}
-	}
+	// fn init_params(&mut self, params: &mut [f32]){
+	// 	if self.num_params() == 0 {
+	// 		assert_eq!(0, params.len(), "init_params passed non-zero length slice for an operation with no parameters");
+	// 	} else {
+	// 		unimplemented!();
+	// 	}
+	// }
 	
 	/// Returns the meta data
 	fn get_meta(&self) -> &OperatorMetaData;
@@ -116,5 +114,112 @@ impl<T> OperationClone for T where T: 'static + Operation + Clone {
 impl Clone for Box<Operation> {
 	fn clone(&self) -> Box<Operation> {
 		self.clone_box()
+	}
+}
+
+
+/// An operation which does nothing
+/// Can be returned as an 
+#[derive(Clone)]
+struct NullOperation {
+	
+}
+
+impl Operation for NullOperation {
+	fn instance_name(&self) -> &str {
+		"Null Operation"
+	}
+
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes){}
+			
+	fn get_meta(&self) -> &OperatorMetaData{
+		unimplemented!()
+	}
+	
+	fn operation_dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
+		(vec![], vec![])
+	}
+
+	fn forward (&mut self, _data: &mut GraphData){}
+	
+	fn backward (&mut self, _data: &mut GraphData, _error: &mut f32){}
+}
+
+
+mod test {
+	use new::graph::{NodeID, GraphData, GraphShapes};
+	use new::graph;
+	use super::*;
+
+	#[derive(Clone)]
+	struct DummyOperation {
+		name: String,
+		inputs: Vec<NodeID>,
+		outputs: Vec<NodeID>
+	}
+
+	impl Operation for DummyOperation {
+		fn instance_name(&self) -> &str {
+			&self.name
+		}
+
+		fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes){
+			// Nothing
+		}
+				
+		fn get_meta(&self) -> &OperatorMetaData{
+			unimplemented!()
+		}
+		
+		fn operation_dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
+			(self.inputs.clone(), self.outputs.clone())
+		}
+
+		fn forward (&mut self, _data: &mut GraphData){
+			// Nothing
+		}
+		
+		fn backward (&mut self, _data: &mut GraphData, _error: &mut f32){
+			// Nothing
+		}
+	}
+
+	struct DummyOperationBuilder{
+		name: Option<String>,
+		inputs: Vec<NodeID>,
+		outputs: Vec<NodeID>
+	}
+
+	impl DummyOperationBuilder {
+		fn new(name: String) -> DummyOperationBuilder{
+			DummyOperationBuilder {
+				name: Some(name),
+				inputs: vec![],
+				outputs: vec![],
+			}
+		}
+	}
+
+	impl Default for DummyOperationBuilder {
+		fn default() -> Self {
+			DummyOperationBuilder {
+				name: None,
+				inputs: vec![],
+				outputs: vec![],
+			}
+		}
+	}
+
+	impl OperationBuilder for DummyOperationBuilder {
+		type OperationType = DummyOperation;
+
+		/// Called by graph::Builder to construct the operation instance
+		fn build(&mut self, graph: &mut graph::Builder) -> Option<Self::OperationType>{
+			DummyOperation{
+				name: "".to_string(),
+				inputs: self.inputs.clone(),
+				outputs: self.outputs.clone(),
+			}.into()
+		}
 	}
 }
