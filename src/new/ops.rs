@@ -1,4 +1,4 @@
-use new::graph::{NodeID, DataID, GraphData, GraphShapes};
+use new::graph::{NodeID, DataID, Storage, GraphShapes};
 use new::graph;
 use new::shape::NodeShape;
 use std::any::Any;
@@ -10,7 +10,7 @@ pub trait OperationBuilder: Any + Default {
 	/// Arbitrary graph modification occur allowing 
 	/// Used to let Operations create parameter nodes as necessary,
 	/// or to implement operations with are compositions of smaller operations
-	fn build(&mut self, &mut graph::Builder) -> Option<Self::OperationType>;
+	fn build(&mut self, &mut graph::Builder) -> Self::OperationType;
 }
 
 pub trait Operation: OperationClone + Any{
@@ -62,14 +62,14 @@ pub trait Operation: OperationClone + Any{
 	}
 
 	/// should update output node values based on input node values. Must use += when writing to output node.
-	fn forward (&mut self, data: &mut GraphData);
+	fn forward (&mut self, data: &mut Storage);
 	
 	/// Should calculate error gradient contribution of operation to the input node and parameters based on the output node derivatives.
 	/// Each operation will be passed its relevant slice for params and param_derivs
 	/// Note: all calculations should use += as to not overwrite other operations contributions,
 	/// and in the case of data shape n>1 the sum of parameter gradients from all individual examples should be accumulated in param_deriv and error
 	/// the graph will later divide by n to get the mean error and error derivatives.
-	fn backward (&mut self, data: &mut GraphData, error: &mut f32);
+	fn backward (&mut self, data: &mut Storage, error: &mut f32);
 }
 
 pub trait SimpleOperationBuilder: OperationBuilder {
@@ -140,14 +140,14 @@ impl Operation for NullOperation {
 		(vec![], vec![])
 	}
 
-	fn forward (&mut self, _data: &mut GraphData){}
+	fn forward (&mut self, _data: &mut Storage){}
 	
-	fn backward (&mut self, _data: &mut GraphData, _error: &mut f32){}
+	fn backward (&mut self, _data: &mut Storage, _error: &mut f32){}
 }
 
 
 mod test {
-	use new::graph::{NodeID, GraphData, GraphShapes};
+	use new::graph::{NodeID, Storage, GraphShapes};
 	use new::graph;
 	use super::*;
 
@@ -175,11 +175,11 @@ mod test {
 			(self.inputs.clone(), self.outputs.clone())
 		}
 
-		fn forward (&mut self, _data: &mut GraphData){
+		fn forward (&mut self, _data: &mut Storage){
 			// Nothing
 		}
 		
-		fn backward (&mut self, _data: &mut GraphData, _error: &mut f32){
+		fn backward (&mut self, _data: &mut Storage, _error: &mut f32){
 			// Nothing
 		}
 	}
@@ -214,7 +214,7 @@ mod test {
 		type OperationType = DummyOperation;
 
 		/// Called by graph::Builder to construct the operation instance
-		fn build(&mut self, graph: &mut graph::Builder) -> Option<Self::OperationType>{
+		fn build(&mut self, graph: &mut graph::Builder) -> Self::OperationType{
 			DummyOperation{
 				name: "".to_string(),
 				inputs: self.inputs.clone(),

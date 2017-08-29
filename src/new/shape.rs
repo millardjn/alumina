@@ -168,10 +168,6 @@ impl NodeShape{
 			_ => unreachable!(),
 		}
 	}
-
-	pub fn spatial_dimensions(&self) -> &[NodeDim]{
-		&self.dimensions[1..]
-	}
 	
 	/// Should be called and only called by operations prior to propagating shape constraints
 	/// The higher dimension ranges are collapsed to the lower bound, and any Unknown entries will result in an IncompleteNodeShape Error
@@ -207,11 +203,12 @@ impl NodeShape{
 	}
 	
 	/// If all dimension values are `Known` this will 
-	/// This should generally only be called after 
-	pub fn to_data_shape(&self, n: usize) -> Result<IxDyn> {
-		let mut dims: SmallVec<[usize; 6]> = SmallVec::new();
-		dims.push(n);
-		for dim in self.spatial_dimensions().iter() {
+	/// This should generally only be called after `collapse_dimensions_to_minimum`
+	pub fn to_data_shape(&self) -> Result<IxDyn> {
+		let mut dims = Vec::with_capacity(self.dimensions.len());
+
+		//dims.push(n);
+		for dim in self.dimensions.iter() {
 			match dim {
 				 &Known(v) => dims.push(v),
 				_ => bail!(ErrorKind::IncompleteNodeShape),
@@ -243,10 +240,9 @@ impl NodeShape{
 			bail!(ErrorKind::MergeIncompatibleRank)
 		} else {
 			let mut vec = SmallVec::new();
-			for (s, o) in self.spatial_dimensions().iter().zip(other.spatial_dimensions()){
+			for (s, o) in self.dimensions.iter().zip(&other.dimensions){
 				vec.push(s.merge(o)?);
 			}
-			vec.push(self.channels().into());
 			Ok(NodeShape{dimensions: vec})
 		}
 	}
@@ -269,10 +265,9 @@ impl NodeShape{
 			bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else {
 			let mut vec = SmallVec::new();
-			for (s, o) in self.spatial_dimensions().iter().zip(other.spatial_dimensions()){
+			for (s, o) in self.dimensions.iter().zip(&other.dimensions){
 				vec.push(s.merge(o)?);
 			}
-			vec.push(self.channels().into());
 			Ok(NodeShape{dimensions: vec})
 		}	
 	}

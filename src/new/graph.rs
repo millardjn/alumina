@@ -1,14 +1,15 @@
-
+#![allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 use ndarray::ArrayD;
 use ndarray::prelude::*;
 use smallvec::SmallVec;
+use ndarray::Ix;
 //use ops::Operation;
 use std::cmp;
+use std::iter;
 use std::iter::repeat;
 use std::iter::FromIterator;
 use std::sync::Arc;
-use std::iter;
 use ndarray;
 use new::shape;
 use new::shape::{NodeShape, NodeDim};
@@ -25,15 +26,22 @@ error_chain!{
 		OperationAccessedAMutablyBorrowedNode
 		NodeNameMatchesExistingTag
 		NodeNameMatchesExistingName
+		NodeTagMatchesExistingName
 		ParameterNodesMustHaveKnownSize
 		ZeroNodesMatchTag
 		MultipleNodesMatchTag
 		GraphContainsCircularDependencies
 		InputsInsufficientForRequestedOutputs
+		InputSizeError
+		StaticInputBroadcastFailure(id: NodeID, s1: Vec<Ix>, s2: Vec<Ix>){
+			display("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id, s1, s2)
+		}
+		PassAttemptedToAccessDataNotListedAsInputOrOutput
+		PassAttemptedToMutablyAccessDataNotListedAsOutput
 	}
 
 	links {
-		Utils(shape::Error, shape::ErrorKind);
+		ShapeError(shape::Error, shape::ErrorKind);
 	}
 }
 
@@ -45,10 +53,6 @@ pub struct NodeID {
 }
 
 impl NodeID {
-
-	// pub fn shape(&self) -> &[NodeDim] {
-	// 	&self.shape.dimensions[..]
-	// }
 
 	pub fn value_id(&self) -> DataID {
 		DataID{index: self.index * 2}//, shape: self.shape.clone()}
@@ -74,10 +78,6 @@ impl DataID {
 	pub fn is_gradient(&self) -> bool {
 		self.index % 2 == 1
 	}
-
-	// pub fn shape(&self) -> &[NodeDim] {
-	// 	&self.shape.dimensions[..]
-	// }
 
 	pub fn node_id(&self) -> NodeID {
 		NodeID{index: self.index / 2}//, shape: self.shape.clone()}
@@ -167,6 +167,12 @@ impl<'a> From<&'a str> for NodeTag{
 	}
 }
 
+impl From<String> for NodeTag{
+	fn from(i: String) -> NodeTag {
+		NodeTag::Str(i.to_string())
+	}
+}
+
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum OpTag{
 	Id(usize),
@@ -192,16 +198,24 @@ impl<'a> From<&'a str> for OpTag{
 	}
 }
 
+impl From<String> for OpTag{
+	fn from(i: String) -> OpTag {
+		OpTag::Str(i)
+	}
+}
+
 /// Used to construct the definition of the computational hypergraph.
 /// This cannot be executed, an executable `Graph` can be built using 
 pub struct Builder {
 
-	//node_type: Vec<NodeType>,
-	nodes: Vec<(NodeID, String)>,
-	operations: Vec<Box<Operation>>,
+	nodes: Vec<NodeID>,
+	node_shapes: Vec<NodeShape>,
+	node_names: OrderMap<String, NodeID>,
+	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
 
-	node_tags: OrderMap<NodeTag, OrderMap<usize, ()>>, // tag, index
-	operation_tags: OrderMap<OpTag, OrderMap<usize, ()>>, // tag, index
+	operations: Vec<Box<Operation>>,
+	operation_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
+
 	static_inputs: OrderMap<DataID, ArrayD<f32>>,
 }
 
@@ -217,8 +231,6 @@ impl Builder {
 		Graph::new(&self, inputs, requested_outputs)
 	}
 
-
-
 	/// Node values are initialised to be zero filled by default
 	/// If a NdArray value is supplied to this method that can be broadcast to this node, it will be used to set the initial value of the node
 	/// This can be used to supply fixed inputs, which replace parameters, to operations when further operations is to be avoided.
@@ -230,104 +242,150 @@ impl Builder {
 		self.static_inputs.remove(&id);
 	}
 
-	fn add_operation<B: OperationBuilder>(&mut self, builder: B) -> OpID {
-		unimplemented!();
+	fn add_operation<B: OperationBuilder>(&mut self, mut builder: B) -> OpID {
+		let op_id = OpID{index: self.operations.len()};
+		let op = Box::new(builder.build(self));
+		self.operations.push(op);
+		op_id
 	}
 
-	// TODO fn add_layer(SimpleOperationBuilder and output NodeShape)
-	// fn add_simple_operation<B: SimpleOperationBuilder>(&mut self, mut builder: B) -> (OpID, NodeID) {
-	// 	let node_id = self.new_node("TODO", builder.required_output_shape(), &[]);
+	// fn add_layer(SimpleOperationBuilder and output NodeShape){}
+	// fn add_simple_operation<B: SimpleOperationBuilder>(&mut self, mut builder: B, shape: NodeShape) -> (OpID, NodeID) {
+	// 	let name = unimplemented!();
+	// 	let node_id = self.new_node(builder.required_output_shape(), name, &[]);
 	// 	builder.set_output(&node_id);
 	// 	let op_id = self.add_operation(builder);
 	// 	(op_id, node_id)
 	// }
 
-	fn new_node<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
-		// TODO: ensure that names are always unique
+	fn new_node<I: Into<String>>(&mut self, shape: NodeShape, name: I, tags: Vec<NodeTag>) -> Result<NodeID>{
+		
 		let name = name.into();
-		ensure!(!self.nodes.iter().any(|&(_, ref existing)| &name == existing), ErrorKind::NodeNameMatchesExistingName);
+
+		// ensure names are unique w.r.t other names and tags
+		ensure!(!self.node_names.contains_key(&name), ErrorKind::NodeNameMatchesExistingName);
 		ensure!(!self.node_tags.contains_key(&name.as_str().into()), ErrorKind::NodeNameMatchesExistingTag);
 
 		let node_id = NodeID{index: self.nodes.len()};
-		self.nodes.push((node_id.clone(), name));
+		self.node_names.insert(name, node_id.clone());
+		self.nodes.push(node_id.clone());
 		
 		for tag in tags{
+			// ensure that tags don't overlap with node names
 			match tag {
-				_ => {},
-				NodeTag::Str(ref val) => {
-					// TODO: Check that str isnt already in names
-
+				NodeTag::Str(ref tag_str) => {
+					ensure!(!self.node_names.contains_key(tag_str), ErrorKind::NodeTagMatchesExistingName);
 				},
+				_ => {},
 			}
+
 			match tag {
 				NodeTag::Id(_) => {},
 				NodeTag::Int(_) => {
-					let set = self.node_tags.entry(tag).or_insert(OrderMap::new());
-					set.insert(node_id.index, ());
+					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
 				},
 				NodeTag::Str(_) => {
-					let set = self.node_tags.entry(tag).or_insert(OrderMap::new());
-					set.insert(node_id.index, ());
+					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
 				},
 				NodeTag::Parameter => {
 					ensure!(shape.is_known(), ErrorKind::ParameterNodesMustHaveKnownSize);
-					let set = self.node_tags.entry(tag).or_insert(OrderMap::new());
-					set.insert(node_id.index, ());
+					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
 				}
 			}
 		}
 
+		// push shape after tags to avoid deep copy
+		self.node_shapes.push(shape);
+
 		Ok(node_id)
 	}
 
-	/// registers a a tag<-> node association
-	// fn tag_node(&mut self, node: NodeID, tag: NodeTag) -> Result<()>{
-		
-
-	// 	Ok()
-	// }
-
 	/// Create a node which acts as a subview of another node.
-	/// Contiguous views will be free from time and memory overhead.
+	/// Contiguous views will be free from time and memory overhead, recording just a view.
 	/// Non-contigues views will incurr a memory and time overhead during runtime.
 	/// Returns NodeID of the new node.
-	pub fn new_view<S: Into<NodeShape>, T: Into<NodeTag>>(&mut self, shape: S, tag: T) -> NodeID {
+	fn new_read_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
+	}
+
+	fn new_write_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
+		unimplemented!()
+	}
+
+	pub fn get_node_name(&self, node_id: &NodeID) -> &str{
+		for (k, v) in self.node_names.iter(){
+			if v == node_id {
+				return k;
+			}
+		}
+		unreachable!()
+	}
+
+	pub fn is_node_tagged<T: Into<NodeTag>>(&self, node_id: NodeID, tag: T) -> bool {
+		let tag = tag.into();
+		match tag {
+			NodeTag::Id(ind) => {ind == node_id.index},
+			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
+				match self.node_tags.get(&tag){
+					Some(set) => set.contains_key(&node_id),
+					None => false,
+				}
+			}
+		}
+	}
+
+	pub fn is_op_tagged<T: Into<OpTag>>(&self, op_id: OpID, tag: T) -> bool {
+		let tag = tag.into();
+		match tag {
+			OpTag::Id(ind) => {ind == op_id.index},
+			OpTag::Int(_) | OpTag::Str(_) => {
+				match self.operation_tags.get(&tag){
+					Some(set) => set.contains_key(&op_id),
+					None => false,
+				}
+			}
+		}
 	}
 
 	// Returns the NodeID which was tagged with 'tag'. returns none if zero or more than one NodeIDs are associated with the tag.
 	pub fn get_node<T: Into<NodeTag>>(&self, tag: T) -> Result<NodeID> {
 		let tag = tag.into();
 		match tag {
-			NodeTag::Id(ind) => Ok(self.nodes[ind].0.clone()),
-			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
+			NodeTag::Id(ind) => Ok(self.nodes[ind].clone()),
+			NodeTag::Str(_) => {
+				unimplemented!()
+			},
+			NodeTag::Int(_) | NodeTag::Parameter => {
 				let set = match self.node_tags.get(&tag){
 					Some(set) => set,
 					None => bail!(ErrorKind::ZeroNodesMatchTag),
 				};
 				match set.len() {
 					0 => bail!(ErrorKind::ZeroNodesMatchTag),
-					1 => Ok(self.nodes[*set.keys().next().unwrap()].0.clone()),
+					1 => Ok(set.keys().next().unwrap().clone()),
 					_ => bail!(ErrorKind::MultipleNodesMatchTag),
 				}
 			}
 		}
 	}
 
-	pub fn get_nodes<'a, T: Into<NodeTag>>(&'a self, tag: T) -> Vec<NodeID> {
+	pub fn get_nodes<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderMap<NodeID, ()> {
 		let tag = tag.into();
 		match tag {
-			NodeTag::Id(ind) => vec![self.nodes[ind].0.clone()],
-			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter  => {
+			NodeTag::Id(ind) => iter::once((self.nodes[ind].clone(), ())).collect(),
+			NodeTag::Str(_) => {
+				unimplemented!()
+			},
+			NodeTag::Int(_) | NodeTag::Parameter  => {
 				match self.node_tags.get(&tag){
-					Some(set) => set.keys().map(move |&ind| self.nodes[ind].0.clone()).collect(),
-					None => vec![],
+					Some(set) => set.clone(),//.map(move |&ind| self.nodes[ind].0.clone()).collect(),
+					None => OrderMap::new(),
 				}
 			}
 		}
 	}
 
-	pub fn get_parameters<'a>(&'a self) -> Vec<NodeID> {
+	pub fn get_parameters<'a>(&'a self) -> OrderMap<NodeID, ()> {
 		self.get_nodes(NodeTag::Parameter)
 	}
 
@@ -336,7 +394,7 @@ impl Builder {
 		match tag {
 			OpTag::Id(ind) => Some(OpID{index: ind}),
 			OpTag::Int(_) | OpTag::Str(_) => {
-				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(OpID{index: *set.keys().next().unwrap()})} else {None})
+				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(set.keys().next().unwrap().clone())} else {None})
 			}
 		}
 	}
@@ -347,7 +405,7 @@ impl Builder {
 			OpTag::Id(ind) => Box::new(iter::once(OpID{index: ind})),
 			OpTag::Int(_) | OpTag::Str(_)  => {
 				match self.operation_tags.get(&tag){
-					Some(set) => Box::new(set.keys().map(|&ind| OpID{index: ind})),
+					Some(set) => Box::new(set.keys().cloned()),
 					None => Box::new(iter::empty::<OpID>()),
 				}
 			}
@@ -367,12 +425,17 @@ pub struct Graph{
 	// Passes which rely on the data
 	data_outputs: Vec<Vec<PassID>>,
 
+	nodes: Vec<NodeID>,
+	node_shapes: Vec<NodeShape>,
+	node_names: OrderMap<String, NodeID>,
+	operations: Vec<Box<Operation>>,
+	static_inputs: OrderMap<DataID, ArrayD<f32>>,
+
 	required_data: Vec<bool>,
 	required_passes: Vec<bool>,
 	pass_order: Vec<PassID>,
 
 	supplied_inputs: Vec<DataID>,
-	static_inputs: OrderMap<DataID, ArrayD<f32>>,
 	requested_outputs: Vec<DataID>,
 }
 
@@ -392,22 +455,36 @@ impl Graph {
 		// Find the order of operations
 		let pass_order = find_pass_order(n_passes, n_data, &is_input, &required_data, &required_passes, &pass_inputs, &pass_outputs, &data_inputs, &data_outputs)?;
 
+		let filtered_static_inputs = builder.static_inputs.iter()
+			.filter(|&(k, v)| !inputs.contains(k))
+			.map(|(k, v)| (k.clone(), v.clone())).collect();
+
 		let graph = Graph{
 			pass_inputs: pass_inputs,
 			pass_outputs: pass_outputs,
 			data_inputs: data_inputs,
 			data_outputs: data_outputs,
 
+			nodes: builder.nodes.clone(),
+			node_shapes: builder.node_shapes.clone(),
+			node_names: builder.node_names.clone(),
+
+			operations: builder.operations.clone(),
+			static_inputs: filtered_static_inputs,
+
 			required_data: required_data,
 			required_passes: required_passes,
 			pass_order: pass_order,
 
 			supplied_inputs: inputs.to_vec(),
-			static_inputs: builder.static_inputs.clone(),
 			requested_outputs: requested_outputs.to_vec(),
 		};
 
 		Ok(graph)
+	}
+
+	pub fn execute(&mut self, input: Vec<ArrayD<f32>>, parameters: Vec<ArrayD<f32>>) -> Storage{
+		unimplemented!()
 	}
 }
 
@@ -649,7 +726,34 @@ fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_d
 
 
 
+fn find_shapes(graph: &Graph, passes: &[PassID], inputs: &[DataID], input_data: &[ArrayD<f32>], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<Vec<IxDyn>> {
+	// if inputs are present along with static_inputs the inputs should add
 
+	let mut shapes = GraphShapes::new(graph);
+
+	// for all inputs, merge data shape into existing graph shape
+	ensure!(inputs.len() == input_data.len(), ErrorKind::InputSizeError);
+	for (input, input_data) in inputs.iter().zip(input_data) {
+		shapes.merge_input(&input, input_data.shape());
+	}
+
+	// for all static inputs, if not in inputs, merge into graph shape
+	// because static_inputs can be broadcast, resolving the dimension will be harder
+	// iterate from the lowest dimension up, if the static_input dimension is not 1 then enforce it in the shape
+	for (static_input, static_input_data) in static_inputs.iter() {
+		if !inputs.contains(static_input) {
+			shapes.merge_static_input(&static_input, static_input_data.shape());
+		}
+	}
+
+	// for all operation forward passes that are scheduled. call the relevant shape propagation
+	let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
+	for op_id in op_ids {
+		graph.operations[op_id.index].propagate_shape_constraints(&mut shapes);
+	}
+
+	shapes.shapes.iter().map(|shape| shape.to_data_shape().map_err(|e| e.into())).collect()
+}
 
 
 
@@ -664,6 +768,8 @@ fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_d
 
 enum DataState<T>{
 	Unallocated,
+	UnallocatedInput(usize), //index in input_data
+	UnallocatedStaticInput,
 	Allocated(T),
 	Deallocated,
 }
@@ -672,31 +778,51 @@ enum DataState<T>{
 /// but with some limitations.
 /// Each element can only be borrowed either once mutably or many times immutably, however,
 /// once borrowed as such it is stuck until DataBorrow is dropped, or by calling reset_all().
-pub struct GraphData {
-	n: usize,
-	shapes: Vec<NodeShape>,
+pub struct Storage<'a> {
+	shapes: Vec<IxDyn>,
+	input_data: &'a [ArrayD<f32>],
 	data: Vec<DataState<ArrayD<f32>>>,
 	borrow_flags: Vec<Cell<usize>>,
-	initial_value: Vec<Option<ArrayD<f32>>>,
+	graph: &'a Graph,
+	next_pass: Option<PassID>
 }
 
 const UNUSED: usize = 0;
 const WRITING: usize = !0;
-impl GraphData {
+impl<'a> Storage<'a> {
 
-	pub fn new(n: usize, shapes: Vec<NodeShape>, initial_value: Vec<Option<ArrayD<f32>>>,) -> GraphData {
+	pub fn new(input_data: &'a [ArrayD<f32>], shapes: Vec<IxDyn>, graph: &'a Graph) -> Storage<'a> {
 		let num_nodes = shapes.len();
-		GraphData{
-			n: n,
+
+		let mut data: Vec<DataState<ArrayD<f32>>> = (0..num_nodes * 2).map(|_i| DataState::Unallocated).collect();
+
+		for (i, data_id) in graph.supplied_inputs.iter().enumerate() {
+			debug_assert!(shapes[data_id.node_id().index].slice() == input_data[data_id.index].shape());
+			data[data_id.index] = DataState::UnallocatedInput(i);
+		}
+		
+		for (data_id, _data) in graph.static_inputs.iter() {
+			data[data_id.index] = DataState::UnallocatedStaticInput;
+		}
+
+		Storage{
 			shapes: shapes,
-			data: (0..num_nodes * 2).map(|_i| DataState::Unallocated).collect(),
+			input_data: input_data,
+			data: data,
 			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
-			initial_value: initial_value,
+			graph: graph,
+			next_pass: None,
 		}
 	}
 
+	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass
+	/// This can be useful to ensure that passes dont access anything they shouldn't.
+	fn set_next_pass_debug(&mut self, pass_id: &PassID){
+		self.next_pass = Some(pass_id.clone());
+	}
+
 	/// Deallocates the data specified by DataID
-	pub fn deallocate(&mut self, id: DataID){
+	fn deallocate(&mut self, id: DataID){
 		mem::replace(&mut self.data[id.index], DataState::Deallocated);
 	}
 
@@ -715,35 +841,45 @@ impl GraphData {
 		match *ptr {
 			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedNode),
 			DataState::Unallocated => {
-					let mut data = ArrayD::zeros(self.shapes[id.node_id().index].to_data_shape(self.n)?);
-					if id.is_value() {
-						if let Some(ref init_value) = self.initial_value[id.node_id().index]{
-							if let Some(broadcasted_init) = init_value.broadcast(data.shape()){
-								data = data + broadcasted_init;
-							} else {
-								bail!(format!("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id.node_id(), init_value.shape(), data.shape()));
-							}
-						}
-					}
-					*ptr = DataState::Allocated(data);
-
-					if let DataState::Allocated(ref mut data) = *ptr{
-						Ok(data as *mut ArrayD<f32>)
+				*ptr = DataState::Allocated(ArrayD::zeros(self.shapes[id.node_id().index].clone()));
+			},
+			DataState::UnallocatedInput(ind) =>{
+				*ptr = DataState::Allocated(self.input_data[ind].clone())
+			},
+			DataState::UnallocatedStaticInput => {
+				let shape = self.shapes[id.node_id().index].clone();
+				if let Some(ref static_data) = self.graph.static_inputs.get(id){
+					if let Some(broadcasted_view) = static_data.broadcast(shape){
+						*ptr = DataState::Allocated(broadcasted_view.to_owned())
 					} else {
-						unreachable!()
+						bail!(ErrorKind::StaticInputBroadcastFailure(id.node_id(), static_data.shape().to_owned(), self.shapes[id.node_id().index].slice().to_owned()))
 					}
-				},
-			DataState::Allocated(ref mut data) => Ok(data as *mut ArrayD<f32>),
+				} else {
+					unreachable!();
+				}
+			},
+			DataState::Allocated(_) => {},
+		}
+
+		// return pointer to allocated data
+		if let DataState::Allocated(ref mut data) = *ptr{
+			Ok(data as *mut ArrayD<f32>)
+		} else {
+			unreachable!()
 		}
 	}
 
 	/// Immutably borrows data element associated with the given ID
 	/// Will panic if data element is already borrowed mutably
-	pub fn get<'a>(&'a self, id: DataID) -> Result<ArrayViewD<f32>> {
+	pub fn get<'b>(&'b self, id: DataID) -> Result<ArrayViewD<f32>> {
+		if let Some(ref pass_id) = self.next_pass {
+			ensure!(self.graph.pass_inputs[pass_id.index].contains(&id)||self.graph.pass_outputs[pass_id.index].contains(&id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput);
+		}
+
 		if self.borrow_flags[id.index].get() != WRITING {
 				let ptr = unsafe{self.get_or_init(&id)?};
 				self.borrow_flags[id.index].set(self.borrow_flags[id.index].get() + 1);
-				let array: &'a ArrayD<f32> = unsafe{&*ptr};
+				let array: &'b ArrayD<f32> = unsafe{&*ptr};
 				Ok(array.view())
 		} else {
 			bail!(ErrorKind::OperationAccessedAMutablyBorrowedNode)
@@ -753,12 +889,15 @@ impl GraphData {
 	/// Mutably borrows data element associated with the given ID
 	/// Will panic if data element is already mutably or immutably borrowed 
 	/// The borrow will stick until
-	pub fn get_mut<'a>(&'a self, id: DataID) -> Result<ArrayViewMutD<f32>> {
+	pub fn get_mut<'b>(&'b self, id: DataID) -> Result<ArrayViewMutD<f32>> {
+		if let Some(ref pass_id) = self.next_pass {
+			ensure!(self.graph.pass_outputs[pass_id.index].contains(&id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput);
+		}
 		match self.borrow_flags[id.index].get() {
 			UNUSED => {
 				let ptr = unsafe{self.get_or_init(&id)?};
 				self.borrow_flags[id.index].set(WRITING);
-				let array: &'a mut ArrayD<f32> = unsafe{&mut *ptr};
+				let array: &'b mut ArrayD<f32> = unsafe{&mut *ptr};
 				Ok(array.view_mut())
 			},
 			_ => bail!(ErrorKind::OperationMutablyAccessedABorrowedNode),
@@ -798,7 +937,17 @@ pub struct GraphShapes{
 }
 
 impl GraphShapes {
-	pub fn new() -> GraphShapes {
+	pub fn new(graph: &Graph) -> GraphShapes {
+		GraphShapes{
+			shapes: graph.node_shapes.clone(),
+		}
+	}
+
+	fn merge_input(&mut self, data_id: &DataID, shape: &[Ix]) -> Result<()>{
+		unimplemented!()
+	}
+
+	fn merge_static_input(&mut self, data_id: &DataID, shape: &[Ix]) -> Result<()> {
 		unimplemented!()
 	}
 
