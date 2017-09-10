@@ -53,27 +53,28 @@ error_chain!{
 #[macro_export]
 macro_rules! shape(
 
-    (@parse Unknown) => {
-        NodeDim::Unknown
-    };
-    
-    (@parse ($l:expr, $u:expr)) => {
-        NodeDim::IncInterval($l, $u)
-    };
-    
-    (@parse $v:expr) => {
-        NodeDim::Known($v)
-    };
-    
-    
-    ( $( $x:tt ),* ) => {
-        NodeShape::from(&[
-            $(
-                shape!(@parse $x),
-            )*
-        ])
-    };
-    
+	(@parse Unknown) => {
+		NodeDim::Unknown
+	};
+	
+	(@parse ($l:expr, $u:expr)) => {
+		NodeDim::IncInterval($l, $u)
+	};
+	
+	(@parse $v:expr) => {
+		NodeDim::Known($v)
+	};
+	
+	
+	( $( $x:tt ),* ) => {
+		{let slice: &[NodeDim] = &[
+			$(
+				shape!(@parse $x),
+			)*
+		];
+		NodeShape::from(slice)}
+	};
+	
 );
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,6 +88,12 @@ pub enum NodeDim {
 
 	/// Inclusive interval of possible sizes for a given dimension
 	IncInterval{lower: usize, upper: usize},
+}
+
+impl<'a> From<&'a NodeDim> for NodeDim{
+	fn from(s: &NodeDim) -> NodeDim {
+		s.clone()
+	}
 }
 
 impl From<usize> for NodeDim{
@@ -147,7 +154,7 @@ impl NodeDim {
 
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeShape{
 	pub dimensions: SmallVec<[NodeDim;6]>,
 }

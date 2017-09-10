@@ -1,19 +1,25 @@
+pub mod dummy;
+
 use new::graph::{NodeID, DataID, Storage, GraphShapes};
 use new::graph;
 use new::shape::NodeShape;
 use std::any::Any;
+use std::fmt::Debug;
 
 pub trait OperationBuilder: Any + Default {
 	type OperationType: Operation;
+
+	/// Supply name for operation
+	fn name<T: Into<String>>(self, name: T) -> Self;
 
 	/// Called by graph::Builder to construct the operation instance
 	/// Arbitrary graph modification occur allowing 
 	/// Used to let Operations create parameter nodes as necessary,
 	/// or to implement operations with are compositions of smaller operations
-	fn build(&mut self, &mut graph::Builder) -> Self::OperationType;
+	fn build(self, &mut graph::Builder) -> Self::OperationType;
 }
 
-pub trait Operation: OperationClone + Any{
+pub trait Operation: OperationClone + Any + Debug{
 
 	fn instance_name(&self) -> &str;
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes);
@@ -69,7 +75,7 @@ pub trait Operation: OperationClone + Any{
 	/// Note: all calculations should use += as to not overwrite other operations contributions,
 	/// and in the case of data shape n>1 the sum of parameter gradients from all individual examples should be accumulated in param_deriv and error
 	/// the graph will later divide by n to get the mean error and error derivatives.
-	fn backward (&mut self, data: &mut Storage, error: &mut f32);
+	fn backward (&mut self, data: &mut Storage);
 }
 
 pub trait SimpleOperationBuilder: OperationBuilder {
@@ -120,7 +126,7 @@ impl Clone for Box<Operation> {
 
 /// An operation which does nothing
 /// Can be returned as an 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct NullOperation {
 	
 }
@@ -142,84 +148,14 @@ impl Operation for NullOperation {
 
 	fn forward (&mut self, _data: &mut Storage){}
 	
-	fn backward (&mut self, _data: &mut Storage, _error: &mut f32){}
+	fn backward (&mut self, _data: &mut Storage){}
 }
 
 
-mod test {
-	use new::graph::{NodeID, Storage, GraphShapes};
-	use new::graph;
-	use super::*;
+// mod test {
+// 	use new::graph::{NodeID, Storage, GraphShapes};
+// 	use new::graph;
+// 	use super::*;
 
-	#[derive(Clone)]
-	struct DummyOperation {
-		name: String,
-		inputs: Vec<NodeID>,
-		outputs: Vec<NodeID>
-	}
 
-	impl Operation for DummyOperation {
-		fn instance_name(&self) -> &str {
-			&self.name
-		}
-
-		fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes){
-			// Nothing
-		}
-				
-		fn get_meta(&self) -> &OperatorMetaData{
-			unimplemented!()
-		}
-		
-		fn operation_dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
-			(self.inputs.clone(), self.outputs.clone())
-		}
-
-		fn forward (&mut self, _data: &mut Storage){
-			// Nothing
-		}
-		
-		fn backward (&mut self, _data: &mut Storage, _error: &mut f32){
-			// Nothing
-		}
-	}
-
-	struct DummyOperationBuilder{
-		name: Option<String>,
-		inputs: Vec<NodeID>,
-		outputs: Vec<NodeID>
-	}
-
-	impl DummyOperationBuilder {
-		fn new(name: String) -> DummyOperationBuilder{
-			DummyOperationBuilder {
-				name: Some(name),
-				inputs: vec![],
-				outputs: vec![],
-			}
-		}
-	}
-
-	impl Default for DummyOperationBuilder {
-		fn default() -> Self {
-			DummyOperationBuilder {
-				name: None,
-				inputs: vec![],
-				outputs: vec![],
-			}
-		}
-	}
-
-	impl OperationBuilder for DummyOperationBuilder {
-		type OperationType = DummyOperation;
-
-		/// Called by graph::Builder to construct the operation instance
-		fn build(&mut self, graph: &mut graph::Builder) -> Self::OperationType{
-			DummyOperation{
-				name: "".to_string(),
-				inputs: self.inputs.clone(),
-				outputs: self.outputs.clone(),
-			}.into()
-		}
-	}
-}
+// }
