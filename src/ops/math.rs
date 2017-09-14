@@ -6,8 +6,7 @@ use vec_math::VecMath;
 
 pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	assert!(graph.nodes().iter().all(|n| n.shape.is_fixed()), "Must use fixed size nodes in graph when doing numerical testing.");
-	let n = 13;
-	
+	let n = 7;
 	
 	let training = graph.training_input_nodes().iter().map(|node| {
 		let data_shape = node.shape.to_data_shape(n).unwrap();
@@ -32,19 +31,18 @@ pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	let (_loss_0, grad_0, node_data) = graph.backprop(n, input_0.clone(), training.clone(), &params_0);
 	
 	
-	let tolerance = 0.001; //should be near zero but some functions are less stable.
-	
-	
+	let tolerance = 0.005; //should be near zero but some functions are less stable.
+		
 	// A small step along along the returned gradient should produce a correspending change in error.
 	// repeat for parameters and inputs
 	if params_0.len() > 0 {
-
-		let params_1 = params_0.add_scaled(&grad_0, -step_size);
-		let params_2 = params_0.add_scaled(&grad_0, step_size);
+		let grad_mag_sqr = grad_0.dot(&grad_0);
+		let params_1 = params_0.add_scaled(&grad_0, -step_size/grad_mag_sqr);
+		let params_2 = params_0.add_scaled(&grad_0, step_size/grad_mag_sqr);
 		let (loss_1, _, _) = graph.backprop(n, input_0.clone(), training.clone(), &params_1);
 		let (loss_2, _, _) = graph.backprop(n, input_0.clone(), training.clone(), &params_2);
 
-		let expected_diff = 2.0*step_size*grad_0.dot(&grad_0);
+		let expected_diff = 2.0*step_size;//*grad_0.dot(&grad_0);
 		let diff = loss_2 - loss_1;
 		let err = expected_diff - diff;
 		let rel_err = err.abs()/diff.abs().max(expected_diff.abs());
@@ -55,27 +53,21 @@ pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	
 	
 	if graph.input_node_IDs().len() > 0{// change inputs in direction of error gradients and check for correct change in error
-		
-		let input_norm_sqr = graph.input_node_IDs().iter()
-			.map(|id| &node_data[id.ind])
-			.map(|node| node.derivatives.dot(&node.derivatives))
-			.fold(0.0, |acc, n| acc + n);
-		
 
 		let input_1 = graph.input_node_IDs().iter()
 			.map(|id| &node_data[id.ind])
-			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, -step_size)))
+			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, -step_size/node.derivatives.dot(&node.derivatives))))
 			.collect();
 			
 		let input_2 = graph.input_node_IDs().iter()
 			.map(|id| &node_data[id.ind])
-			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, step_size)))
+			.map(|node| NodeData::new(node.shape.clone(), node.values.add_scaled(&node.derivatives, step_size/node.derivatives.dot(&node.derivatives))))
 			.collect();
 
 		let (loss_1, _, _) = graph.backprop(n, input_1, training.clone(), &params_0);
 		let (loss_2, _, _) = graph.backprop(n, input_2, training.clone(), &params_0);
 		
-		let expected_diff = 2.0*step_size*input_norm_sqr;
+		let expected_diff = 2.0*step_size;
 		let diff = loss_2 - loss_1;
 		let err = expected_diff - diff;
 		let rel_err = err.abs()/diff.abs().max(expected_diff.abs());
@@ -86,10 +78,8 @@ pub fn test_numeric (mut graph: Graph, input_variance: f32, step_size: f32){
 	}
 	
 	
-	// A small step in a random direction should produce a change in error proportional to the projection onto the gradient.
-	// repeat for parameters and inputs
-
-	
+	// TODO A small step in a random direction should produce a change in error proportional to the projection onto the gradient.
+	// repeat for parameters and inputs	
 }
 
 
