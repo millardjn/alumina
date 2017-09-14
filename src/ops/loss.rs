@@ -215,7 +215,7 @@ impl Operation for GeneralLoss {
 			for i in 0..n{
 				let x = input_values[i]-target_values[i];
 				*error += -strength * (-0.5*(x/c)*(x/c)).exp_m1();
-				input_deriv[i] += strength * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+				input_deriv[i] += strength * x/(c*c) * (-0.5*(x/c)*(x/c)).exp(); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
 			}
 		} else if a == 1.0 {
 			for i in 0..n{
@@ -625,7 +625,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 0.1);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -649,7 +649,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 0.01);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -673,7 +673,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 0.01);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -697,7 +697,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 0.01);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -721,7 +721,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 0.1);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -764,7 +764,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 0.05, 1e-0);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
@@ -784,7 +784,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 0.3, 1e-3);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 }

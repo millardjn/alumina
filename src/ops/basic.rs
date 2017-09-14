@@ -573,7 +573,7 @@ mod tests {
 			graph.init_params();
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 

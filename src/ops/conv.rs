@@ -660,9 +660,9 @@ mod test {
 		for _ in 1..20{
 			let mut graph = Graph::new();
 		
-			let n1 = graph.add_input_node(Node::new_sized(5, &[13, 17], "nodein"));
-			let n2 = graph.add_output_node(Node::new_sized(11, &[13, 17], "nodeout"));
-			let n3 = graph.add_training_input_node(Node::new_sized(11, &[13, 17], "nodetrain"));
+			let n1 = graph.add_input_node(Node::new_sized(5, &[9, 11], "nodein"));
+			let n2 = graph.add_output_node(Node::new_sized(7, &[9, 11], "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_sized(7, &[9, 11], "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
 				Convolution::new_default(&n1, &n2, &[3, 5]),

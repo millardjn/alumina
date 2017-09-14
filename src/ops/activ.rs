@@ -584,8 +584,8 @@ impl Operation for BeLU {
 
 
 #[derive(Clone)]
-pub struct SrgbToLinearFunc{}
-impl ActivationFunc for SrgbToLinearFunc {
+pub struct SlowSrgbToLinearFunc{}
+impl ActivationFunc for SlowSrgbToLinearFunc {
 	fn activ (x: f32) -> (f32, f32){
 		if x <= 0.0404482362771082{
 			(x/12.92, 1.0/12.92)
@@ -594,12 +594,12 @@ impl ActivationFunc for SrgbToLinearFunc {
 		}
 	}
 }
-pub type SrgbToLinear = GenericActivation<SrgbToLinearFunc>;
+pub type SlowSrgbToLinear = GenericActivation<SlowSrgbToLinearFunc>;
 
 
 #[derive(Clone)]
-pub struct LinearToSrgbFunc{}
-impl ActivationFunc for LinearToSrgbFunc {
+pub struct SlowLinearToSrgbFunc{}
+impl ActivationFunc for SlowLinearToSrgbFunc {
 	fn activ (x: f32) -> (f32, f32){	
 			if x <= 0.00313066844250063{
 				(x*12.92, 12.92)
@@ -608,9 +608,41 @@ impl ActivationFunc for LinearToSrgbFunc {
 			}
 	}
 }
-pub type LinearToSrgb = GenericActivation<LinearToSrgbFunc>;
+pub type SlowLinearToSrgb = GenericActivation<SlowLinearToSrgbFunc>;
 
 
+
+#[derive(Clone)]
+pub struct FastSrgbToLinearFunc{}
+impl ActivationFunc for FastSrgbToLinearFunc {
+	fn activ (x: f32) -> (f32, f32){
+		if x <= 0.0404482362771082{
+			(x/12.92, 1.0/12.92)
+		} else {
+			(0.001522305 + x*0.012475774 +   x*x*0.662456816212772 +   x*x*x*0.32679397543773, 
+			                 0.012475774 + x*2.0*0.662456816212772 + x*x*3.0*0.32679397543773)
+		}
+	}
+}
+pub type FastSrgbToLinear = GenericActivation<FastSrgbToLinearFunc>;
+
+
+#[derive(Clone)]
+pub struct FastLinearToSrgbFunc{}
+impl ActivationFunc for FastLinearToSrgbFunc {
+	fn activ (x: f32) -> (f32, f32){	
+			if x <= 0.00313066844250063{
+				(x*12.92, 12.92)
+			} else {
+				let s1 = x.sqrt();
+				let s2 = s1.sqrt();
+				let s3 = s2.sqrt();
+				(0.0247739296039335 + s1*0.566594443670738 +      s2*0.860802363395032 -            s3*0.451609906876097,
+				                     0.5*0.566594443670738/s1 + 0.25*0.860802363395032/(s1*s2) - 0.125*0.451609906876097/(s1*s2*s3))
+			}
+	}
+}
+pub type FastLinearToSrgb = GenericActivation<FastLinearToSrgbFunc>;
 
 
 
@@ -948,7 +980,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_srgb2lin_backprop(){
+	fn test_slowsrgb2lin_backprop(){
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
@@ -957,19 +989,19 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(40, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				SrgbToLinear::new(&n1, &n2, "linear"),
+				SlowSrgbToLinear::new(&n1, &n2, "linear"),
 				MseLoss::new_default(&n2, &n3),
 			];
 		
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 
 	#[test]
-	fn test_lin2srgb_backprop(){
+	fn test_slowlin2srgb_backprop(){
 		for _ in 1..100{		
 			let mut graph = Graph::new();
 		
@@ -978,17 +1010,58 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(40, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				LinearToSrgb::new(&n1, &n2, "srgb"),
+				SlowLinearToSrgb::new(&n1, &n2, "srgb"),
 				MseLoss::new_default(&n2, &n3),
 			];
 		
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 0.5, 1e-2);
 		}
 	}
 
+	#[test]
+	fn test_fastsrgb2lin_backprop(){
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(40, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(40, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(40, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				FastSrgbToLinear::new(&n1, &n2, "linear"),
+				MseLoss::new_default(&n2, &n3),
+			];
+		
+			graph.add_operations(ops);
+			
+			use ops::math::*;
+			test_numeric(graph, 1.0, 1e-2);
+		}
+	}
+
+	#[test]
+	fn test_fastlin2srgb_backprop(){
+		for _ in 1..100{		
+			let mut graph = Graph::new();
+		
+			let n1 = graph.add_input_node(Node::new_flat(40, "nodein"));
+			let n2 = graph.add_output_node(Node::new_flat(40, "nodeout"));
+			let n3 = graph.add_training_input_node(Node::new_flat(40, "nodetrain"));
+			
+			let ops: Vec<Box<Operation>> = vec![
+				FastLinearToSrgb::new(&n1, &n2, "srgb"),
+				MseLoss::new_default(&n2, &n3),
+			];
+		
+			graph.add_operations(ops);
+			
+			use ops::math::*;
+			test_numeric(graph, 0.5, 1e-2);
+		}
+	}
 
 	#[test]
 	fn test_logistic_backprop(){
@@ -1049,7 +1122,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-1);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 
@@ -1071,7 +1144,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-1);
+			test_numeric(graph, 1.0, 1e-3);
 		}
 	}
 	
@@ -1221,7 +1294,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 0.1, 1e-1);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}	
 	
@@ -1242,7 +1315,7 @@ mod tests {
 			graph.add_operations(ops);
 			
 			use ops::math::*;
-			test_numeric(graph, 1.0, 1e-3);
+			test_numeric(graph, 1.0, 1e-2);
 		}
 	}
 }
