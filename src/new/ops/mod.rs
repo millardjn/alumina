@@ -6,6 +6,8 @@ use new::shape::NodeShape;
 use std::any::Any;
 use std::fmt::Debug;
 
+//TODO: remove mutability of operations in favor of state objects that implement Any
+
 pub trait OperationBuilder: Any + Default {
 	type OperationType: Operation;
 

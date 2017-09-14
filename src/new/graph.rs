@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 use ndarray::ArrayD;
+use ndarray::ArrayBase;
 use ndarray::prelude::*;
 use smallvec::SmallVec;
 use ndarray::Ix;
@@ -21,9 +22,10 @@ use new::ops::*;
 
 error_chain!{
 	errors {
-		OperationAccessedDeallocatedNode
-		OperationMutablyAccessedABorrowedNode
-		OperationAccessedAMutablyBorrowedNode
+		OperationAccessedDataNotMarkedRequired // Todo rename
+		OperationAccessedDeallocatedData
+		OperationMutablyAccessedBorrowedData
+		OperationAccessedMutablyBorrowedData
 		NodeNameMatchesExistingTag
 		NodeNameMatchesExistingName
 		NodeTagMatchesExistingName
@@ -317,11 +319,11 @@ impl Builder {
 	/// Contiguous views will be free from time and memory overhead, recording just a view.
 	/// Non-contigues views will incurr a memory and time overhead during runtime.
 	/// Returns NodeID of the new node.
-	fn new_read_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
+	pub fn new_read_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
 	}
 
-	fn new_write_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
+	pub fn new_write_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
 	}
 
@@ -445,6 +447,14 @@ impl Builder {
 			}
 		}
 	}
+
+	pub fn num_data(&self) -> usize{
+		self.nodes.len()*2
+	}
+
+	pub fn num_passes(&self) -> usize{
+		self.operations.len()*2
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -506,27 +516,35 @@ pub struct Graph{
 
 	supplied_inputs: Vec<DataID>,
 	requested_outputs: Vec<DataID>,
+
+	passes_before_dealloc: Vec<usize>,
+
+	shapes: Vec<IxDyn>,
 }
 
 impl Graph {
 	fn new(builder: &Builder, inputs: &[DataID], requested_outputs: &[DataID]) -> Result<Graph> {
-		let n_passes = builder.operations.len()*2;
-		let n_data = builder.nodes.len()*2;
 
-
-		let is_input = find_inputs(n_data, inputs, &builder.static_inputs);
+		let is_input = find_inputs(builder.num_data(), inputs, &builder.static_inputs);
 
 		let dependencies = Dependencies::new(builder);
 		
 		// Find the minimum set of operations and nodes required to calculate the `required_outputs`
-		let (required_data, required_passes) = find_required(n_passes, n_data, &is_input, requested_outputs, &dependencies);
+		let (required_data, required_passes) = find_required(builder.num_passes(), builder.num_data(), &is_input, requested_outputs, &dependencies);
 
 		// Find the order of operations
-		let pass_order = find_pass_order(n_passes, n_data, &is_input, &required_data, &required_passes, &dependencies)?;
+		let pass_order = find_pass_order(&builder, &is_input, &required_data, &required_passes, &dependencies)?;
 
+		// remove overlap between static_inpts and inputs
 		let filtered_static_inputs = builder.static_inputs.iter()
-			.filter(|&(k, v)| !inputs.contains(k))
+			.filter(|&(k, _v)| !inputs.contains(k))
 			.map(|(k, v)| (k.clone(), v.clone())).collect();
+
+		// for each data_id count the number of passes deemed required which depend on it, then add 1 if it is a requested output
+		let mut passes_before_dealloc: Vec<usize> = dependencies.data_outputs.iter().map(|passes| passes.iter().filter(|pass| required_passes[pass.index]).count()).collect();
+		for data_id in requested_outputs {
+			passes_before_dealloc[data_id.index] += 1;
+		}
 
 		let graph = Graph{
 			dependencies: dependencies,
@@ -544,28 +562,48 @@ impl Graph {
 
 			supplied_inputs: inputs.to_vec(),
 			requested_outputs: requested_outputs.to_vec(),
+
+			passes_before_dealloc: passes_before_dealloc,
+
+			shapes: vec![],
 		};
 
 		Ok(graph)
 	}
 
-	pub fn execute(&mut self, input: Vec<ArrayD<f32>>, parameters: Vec<ArrayD<f32>>) -> Result<Storage>{
-		//unimplemented!()
-		assert_eq!(input.len(), self.supplied_inputs.len());
+	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
+		assert_eq!(inputs.len(), self.supplied_inputs.len());
 
-		let shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &input, &self.static_inputs)?;
+		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
+		if self.shapes.len() != inputs.len()
+		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.supplied_inputs[i].index].slice()}) {
+			self.shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &inputs, &self.static_inputs)?;
+		}
 
-		let mut storage = Storage::new(&self.dependencies, &self.static_inputs, &self.supplied_inputs, input, shapes);
+		let mut storage = Storage::new(&self.required_data, &self.dependencies, &self.static_inputs, &self.supplied_inputs, inputs, &self.shapes);
+
+		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
+
 		for pass in &self.pass_order {
-			storage.set_next_pass_debug(pass); // TODO make optional
+			storage.set_next_pass_debug(Some(pass)); // TODO make optional
 			if pass.is_forward() {
 				self.operations[pass.op_id().index].forward(&mut storage);
 			}
 			if pass.is_backward() {
 				self.operations[pass.op_id().index].backward(&mut storage);
 			}
-			// TODO deallocate as required
+
+			for data_id in &self.dependencies.pass_inputs[pass.index] {
+				debug_assert!(passes_before_dealloc[data_id.index] > 0);
+				passes_before_dealloc[data_id.index] -= 1;
+				if passes_before_dealloc[data_id.index] == 0 {
+					storage.deallocate(data_id);
+				}
+			}
+			
+			storage = storage.clear_borrow_flags();
 		}
+		storage.set_next_pass_debug(None);
 
 		Ok(storage)
 	}
@@ -629,17 +667,17 @@ fn find_required(n_passes: usize, n_data: usize, is_input: &[bool], requested_ou
 	(required_data, required_passes)
 }
 
-/// returns the order in which passes should be called such that dependencies are respected.
-/// By default this will order passes in the otder that they were added to the graph, and only perform the minimal rearragement required to ensure dependencies are met.
+/// Returns the order in which passes should be called such that dependencies are respected.
+/// By default this will order passes in the order that they were added to the graph, and only perform the minimal rearrangement required to ensure dependencies are met.
 /// out of order dependeancies can cause quadratic slow down (this can probably be removed using priority queues)
-fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_data: &[bool], required_passes: &[bool], dependencies: &Dependencies) -> Result<Vec<PassID>>{
-	assert_eq!(n_passes, dependencies.pass_inputs.len());
-	assert_eq!(n_passes, dependencies.pass_outputs.len());
-	assert_eq!(n_passes, required_passes.len());
+fn find_pass_order(builder: &Builder, is_input: &[bool], required_data: &[bool], required_passes: &[bool], dependencies: &Dependencies) -> Result<Vec<PassID>>{
+	assert_eq!(builder.num_passes(), dependencies.pass_inputs.len());
+	assert_eq!(builder.num_passes(), dependencies.pass_outputs.len());
+	assert_eq!(builder.num_passes(), required_passes.len());
 
-	assert_eq!(n_data, dependencies.data_inputs.len());
-	assert_eq!(n_data, dependencies.data_outputs.len());
-	assert_eq!(n_data, is_input.len());
+	assert_eq!(builder.num_data(), dependencies.data_inputs.len());
+	assert_eq!(builder.num_data(), dependencies.data_outputs.len());
+	assert_eq!(builder.num_data(), is_input.len());
 
 
 	#[derive(Clone)]
@@ -725,8 +763,8 @@ fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_d
 	let mut deferred_passes: VecDeque<PassID> = VecDeque::new();
 	
 	// Setup states
-	let mut passes_ready: Vec<PassState> = (0..n_passes).map(|i| PassState::Pending(dependencies.pass_inputs[i].len())).collect();
-	let mut data_ready: Vec<DataState> = (0..n_data).map(|i| DataState::Pending(dependencies.data_inputs[i].len())).collect();
+	let mut passes_ready: Vec<PassState> = (0..builder.num_passes()).map(|i| PassState::Pending(dependencies.pass_inputs[i].len())).collect();
+	let mut data_ready: Vec<DataState> = (0..builder.num_data()).map(|i| DataState::Pending(dependencies.data_inputs[i].len())).collect();
 	for (i, &is_input) in is_input.iter().enumerate() {
 		if is_input {
 			mark_data_ready(&DataID{index: i}, &mut data_ready, &mut passes_ready, &dependencies)
@@ -741,8 +779,8 @@ fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_d
 	// iterate over all required passes,
 	// add to pass order where possible (inputs are ready), otherwise add to deferred queue
 	// the resulting pass order should be as close to the users order while still not being out of order
-	let forward_required_passes = (0..n_passes).map(|i| PassID{index:i}).filter(|id| id.is_forward() && required_passes[id.index]);
-	let backward_required_passes = (0..n_passes).map(|i| PassID{index:i}).filter(|id| id.is_backward() && required_passes[id.index]);
+	let forward_required_passes = (0..builder.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_forward() && required_passes[id.index]);
+	let backward_required_passes = (0..builder.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_backward() && required_passes[id.index]);
 	let default_pass_order = forward_required_passes.chain(backward_required_passes.rev());
 	for pass_id in default_pass_order {
 
@@ -766,7 +804,7 @@ fn find_pass_order(n_passes: usize, n_data: usize, is_input: &[bool], required_d
 		}
 	}
 	
-	if (0..n_data).filter(|&i| required_data[i]).any(|i| matches!(data_ready[i], DataState::Unavailable)) {
+	if (0..builder.num_data()).filter(|&i| required_data[i]).any(|i| matches!(data_ready[i], DataState::Unavailable)) {
 		bail!(ErrorKind::InputsInsufficientForRequestedOutputs)
 	}
 
@@ -846,6 +884,7 @@ impl GraphShapes {
 
 
 enum DataState<T>{
+	NotRequired,
 	Unallocated,
 	UnallocatedInput(usize), //index in input_data
 	UnallocatedStaticInput,
@@ -858,7 +897,7 @@ enum DataState<T>{
 /// Each element can only be borrowed either once mutably or many times immutably, however,
 /// once borrowed as such it is stuck until DataBorrow is dropped, or by calling reset_all().
 pub struct Storage<'a> {
-	shapes: Vec<IxDyn>,
+	shapes: &'a [IxDyn],
 	input_data: Vec<ArrayD<f32>>,
 	error: f32,
 	data: Vec<DataState<ArrayD<f32>>>,
@@ -872,16 +911,18 @@ const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl<'a> Storage<'a> {
 
-	pub fn new(dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: Vec<IxDyn>) -> Storage<'a> {
+	pub fn new(required_data: &[bool], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
+		debug_assert_eq!(supplied_inputs.len(), input_data.len());
+
 		let num_nodes = shapes.len();
 
-		let mut data: Vec<DataState<ArrayD<f32>>> = (0..num_nodes * 2).map(|_i| DataState::Unallocated).collect();
+		let mut data: Vec<DataState<ArrayD<f32>>> = required_data.iter().map(|&r| if r {DataState::Unallocated} else {DataState::NotRequired}).collect();
 
-		for (i, data_id) in supplied_inputs.iter().enumerate() {
-			debug_assert!(shapes[data_id.node_id().index].slice() == input_data[data_id.index].shape());
+		for (i, (data_id, input_data)) in supplied_inputs.iter().zip(&input_data).enumerate() {
+			debug_assert!(shapes[data_id.node_id().index].slice() == input_data.shape());
 			data[data_id.index] = DataState::UnallocatedInput(i);
 		}
-		
+
 		for (data_id, _data) in static_inputs.iter() {
 			debug_assert!(!matches!(data[data_id.index], DataState::UnallocatedInput(_)));
 			data[data_id.index] = DataState::UnallocatedStaticInput;
@@ -893,7 +934,6 @@ impl<'a> Storage<'a> {
 			error: 0.0,
 			data: data,
 			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
-			//graph: graph,
 			static_inputs,
 			dependencies,
 			next_pass: None,
@@ -902,13 +942,13 @@ impl<'a> Storage<'a> {
 
 	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass
 	/// This can be useful to ensure that passes dont access anything they shouldn't.
-	fn set_next_pass_debug(&mut self, pass_id: &PassID){
-		self.next_pass = Some(pass_id.clone());
+	fn set_next_pass_debug(&mut self, pass_id: Option<&PassID>){
+		self.next_pass = pass_id.cloned();
 	}
 
 	/// Deallocates the data specified by DataID
-	fn deallocate(&mut self, id: DataID){
-		mem::replace(&mut self.data[id.index], DataState::Deallocated);
+	fn deallocate(&mut self, data_id: &DataID){
+		mem::replace(&mut self.data[data_id.index], DataState::Deallocated);
 	}
 
 	/// This resets runtime checks, allowing new borrowing patterns
@@ -924,7 +964,8 @@ impl<'a> Storage<'a> {
 	unsafe fn get_or_init(&self, id: &DataID) -> Result<*mut ArrayD<f32>>{
 		let ptr = &self.data[id.index] as *const _ as *mut _;
 		match *ptr {
-			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedNode),
+			DataState::NotRequired => bail!(ErrorKind::OperationAccessedDataNotMarkedRequired),
+			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedData),
 			DataState::Unallocated => {
 				*ptr = DataState::Allocated(ArrayD::zeros(self.shapes[id.node_id().index].clone()));
 			},
@@ -962,38 +1003,41 @@ impl<'a> Storage<'a> {
 
 	/// Immutably borrows data element associated with the given ID
 	/// Will panic if data element is already borrowed mutably
-	pub fn get<'b>(&'b self, id: DataID) -> Result<ArrayViewD<f32>> {
+	pub fn get<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(&id)||self.dependencies.pass_outputs[pass_id.index].contains(&id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput);
+			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput);
 		}
 
-		if self.borrow_flags[id.index].get() != WRITING {
-				let ptr = unsafe{self.get_or_init(&id)?};
-				self.borrow_flags[id.index].set(self.borrow_flags[id.index].get() + 1);
+		if self.borrow_flags[data_id.index].get() != WRITING {
+				let ptr = unsafe{self.get_or_init(data_id)?};
+				self.borrow_flags[data_id.index].set(self.borrow_flags[data_id.index].get() + 1);
 				let array: &'b ArrayD<f32> = unsafe{&*ptr};
 				Ok(array.view())
 		} else {
-			bail!(ErrorKind::OperationAccessedAMutablyBorrowedNode)
+			bail!(ErrorKind::OperationAccessedMutablyBorrowedData)
 		}
 	}
 
 	/// Mutably borrows data element associated with the given ID
 	/// Will panic if data element is already mutably or immutably borrowed 
 	/// The borrow will stick until
-	pub fn get_mut<'b>(&'b self, id: DataID) -> Result<ArrayViewMutD<f32>> {
+	pub fn get_mut<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewMutD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(&id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput);
+			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput);
 		}
-		match self.borrow_flags[id.index].get() {
+		match self.borrow_flags[data_id.index].get() {
 			UNUSED => {
-				let ptr = unsafe{self.get_or_init(&id)?};
-				self.borrow_flags[id.index].set(WRITING);
+				let ptr = unsafe{self.get_or_init(data_id)?};
+				self.borrow_flags[data_id.index].set(WRITING);
 				let array: &'b mut ArrayD<f32> = unsafe{&mut *ptr};
 				Ok(array.view_mut())
 			},
-			_ => bail!(ErrorKind::OperationMutablyAccessedABorrowedNode),
+			_ => bail!(ErrorKind::OperationMutablyAccessedBorrowedData),
 		}
 	}
+
+	// TODO add method to check if a tensor is marked as "required"
+	// TODO add method to consume self and return a Map from DataID to ArrayDs
 }
 
 
@@ -1010,11 +1054,11 @@ impl<'a> Storage<'a> {
 
 
 #[test]
-fn test_builders(){
-	_test_builders().unwrap();
+fn test_build(){
+	_test_build().unwrap();
 }
 
-fn _test_builders() -> Result<()>{
+fn _test_build() -> Result<()>{
 	use new::ops::dummy;
 	use new::graph;
 	use new::shape;
@@ -1035,14 +1079,90 @@ fn _test_builders() -> Result<()>{
 	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node));
 
 	let g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
-	println!("{:?}", g1.pass_order);
-	println!("{:?}", g1.required_passes);
 	let g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
-	println!("{:?}", g2.pass_order);
-	println!("{:?}", g2.required_passes);
 
 	assert!(g1.pass_order.len() > 0);
 	assert!(g2.pass_order.len() > 0);
+
+	Ok(())
+}
+
+
+#[test]
+fn test_execute(){
+	_test_execute().unwrap();
+}
+
+fn _test_execute() -> Result<()>{
+	use new::ops::dummy;
+	use new::graph;
+	use new::shape;
+
+	let mut b = graph::Builder::new();
+
+	let node1 = b.new_node(shape![4, 5, 16], "node1", tag!["input"])?;
+	let node2 = b.new_node(shape![4, 5, 16], "node2", tag![])?;
+	b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2).touch_data(true));
+
+	let mut prev_node = node2.clone();
+	for i in 3..10 {
+		let next_node = b.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
+		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true));
+		prev_node = next_node;
+	}
+
+	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true));
+
+	let mut g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
+	let mut g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
+
+
+	g1.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+
+	g2.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+
+	Ok(())
+}
+
+
+#[test]
+fn test_execute_deallocation(){
+	_test_execute_deallocation().unwrap();
+}
+
+fn _test_execute_deallocation() -> Result<()>{
+	use new::ops::dummy;
+	use new::graph;
+	use new::shape;
+
+	let mut b = graph::Builder::new();
+
+	let node1 = b.new_node(shape![4, 5, 16], "node1", tag!["input"])?;
+	let node2 = b.new_node(shape![4, 5, 16], "node2", tag![])?;
+	b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2).touch_data(true));
+
+	let mut prev_node = node2.clone();
+	for i in 3..10 {
+		let next_node = b.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
+		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true));
+		prev_node = next_node;
+	}
+
+	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true));
+
+	let mut g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
+	let mut g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
+
+	// Make sure we get the right errors when accessing nodes that should be deallocated or never have been allocated
+	let s1 = g1.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+	s1.get(&prev_node.value_id()).unwrap();
+	assert!(matches!(s1.get(&node2.value_id()), Err(Error(ErrorKind::OperationAccessedDeallocatedData, _))));
+	assert!(matches!(s1.get(&node2.gradient_id()), Err(Error(ErrorKind::OperationAccessedDataNotMarkedRequired, _))));
+
+	let s2 = g2.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+	s2.get(&node2.gradient_id()).unwrap();
+	assert!(matches!(s2.get(&prev_node.value_id()), Err(Error(ErrorKind::OperationAccessedDeallocatedData, _))));
+	assert!(matches!(s2.get(&node1.gradient_id()), Err(Error(ErrorKind::OperationAccessedDataNotMarkedRequired, _))));
 
 	Ok(())
 }
@@ -1167,6 +1287,10 @@ fn _test_insufficient_input_detection() -> Result<()>{
 	Ok(())
 }
 
+// TODO detect required ops which want to write to input data
+
 // TODO detect that name conflict detection works
 
 // TODO detect problems with shape propagation
+
+// TODO detect problems with static_input broadcasting
