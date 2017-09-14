@@ -41,28 +41,27 @@ error_chain!{
 /// ```
 /// #[macro_use]
 /// extern crate alumina;
-/// use new::shape::NodeDim;
+/// use alumina::new::shape::{NodeDim, NodeShape};
 ///
-/// fn test() {
-///		assert_eq!(
-///			shape![Unknown, 5, (3, 9), 7],
-///			NodeShape::from(&[NodeDim::Unknown, NodeDim::Known(5), NodeDim::IncInterval{lower:3, upper:9}, NodeDim::Known(7)])
-///		);
+/// fn main() {
+///		let s1: NodeShape = shape![Unknown, 5, (3, 9), 7];
+///		let s2: NodeShape = NodeShape::from(&[NodeDim::Unknown, NodeDim::Known(5), NodeDim::IncInterval{lower:3, upper:9}, NodeDim::Known(7)]);
+///		assert_eq!(s1, s2);
 /// }
 /// ```
 #[macro_export]
 macro_rules! shape(
 
 	(@parse Unknown) => {
-		NodeDim::Unknown
+		$crate::new::shape::NodeDim::Unknown
 	};
 	
 	(@parse ($l:expr, $u:expr)) => {
-		NodeDim::IncInterval($l, $u)
+		$crate::new::shape::NodeDim::IncInterval{lower: $l, upper: $u}
 	};
 	
 	(@parse $v:expr) => {
-		NodeDim::Known($v)
+		$crate::new::shape::NodeDim::Known($v)
 	};
 	
 	
@@ -72,7 +71,7 @@ macro_rules! shape(
 				shape!(@parse $x),
 			)*
 		];
-		NodeShape::from(slice)}
+		$crate::new::shape::NodeShape::from(slice)}
 	};
 	
 );
