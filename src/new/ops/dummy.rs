@@ -6,7 +6,8 @@ use super::*;
 pub struct DummyOperation {
 	name: String,
 	inputs: Vec<NodeID>,
-	outputs: Vec<NodeID>
+	outputs: Vec<NodeID>,
+	touch_data: bool,
 }
 
 impl Operation for DummyOperation {
@@ -26,19 +27,35 @@ impl Operation for DummyOperation {
 		(self.inputs.clone(), self.outputs.clone())
 	}
 
-	fn forward (&mut self, _data: &mut Storage){
-		// Nothing
+	fn forward (&mut self, data: &mut Storage){
+		if self.touch_data {
+			for id in &self.inputs {
+				let _x = data.get(&id.value_id());
+			}
+			for id in &self.outputs {
+				let _x = data.get_mut(&id.value_id());
+			}
+		}
 	}
 	
-	fn backward (&mut self, _data: &mut Storage){
-		// Nothing
+	fn backward (&mut self, data: &mut Storage){
+		if self.touch_data {
+			for id in &self.inputs {
+				let _x = data.get(&id.value_id());
+				let _x = data.get_mut(&id.gradient_id());
+			}
+			for id in &self.outputs {
+				let _x = data.get(&id.gradient_id());
+			}
+		}
 	}
 }
 
 pub struct Builder{
 	name: Option<String>,
 	inputs: Vec<NodeID>,
-	outputs: Vec<NodeID>
+	outputs: Vec<NodeID>,
+	touch_data: bool,
 }
 
 impl Builder {
@@ -47,7 +64,14 @@ impl Builder {
 			name: None,
 			inputs: vec![],
 			outputs: vec![],
+			touch_data: false,
 		}
+	}
+
+	/// Access the input and output node data from Storage
+	pub fn touch_data(mut self, touch_data: bool) -> Self{
+		self.touch_data = touch_data;
+		self
 	}
 
 	pub fn input(mut self, node_id: &NodeID) -> Self{
@@ -77,11 +101,7 @@ impl Builder {
 
 impl Default for Builder {
 	fn default() -> Self {
-		Builder {
-			name: None,
-			inputs: vec![],
-			outputs: vec![],
-		}
+		Builder::new()
 	}
 }
 
@@ -94,11 +114,12 @@ impl OperationBuilder for Builder {
 	}
 
 	/// Called by graph::Builder to construct the operation instance
-	fn build(self, graph: &mut graph::Builder) -> Self::OperationType{
+	fn build(self, _graph: &mut graph::Builder) -> Self::OperationType{
 		DummyOperation{
 			name: "".to_string(),
 			inputs: self.inputs.clone(),
 			outputs: self.outputs.clone(),
+			touch_data: self. touch_data,
 		}.into()
 	}
 }
