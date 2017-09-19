@@ -215,12 +215,12 @@ impl Operation for GeneralLoss {
 			for i in 0..n{
 				let x = input_values[i]-target_values[i];
 				*error += -strength * (-0.5*(x/c)*(x/c)).exp_m1();
-				input_deriv[i] += strength * x/(c*c) * (-0.5*(x/c)*(x/c)).exp(); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
+				input_deriv[i] += strength * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
 			}
 		} else if a == 1.0 {
 			for i in 0..n{
 				let x = input_values[i]-target_values[i];
-				*error += strength *(((x/c)*(x/c) + 1.0).sqrt() - 1.0);
+				*error += strength *(((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
 				input_deriv[i] += strength * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
 			}
 		} else if a == 2.0 {
@@ -619,7 +619,7 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), 1.0 + range.ind_sample(&mut rng), power, "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
@@ -643,7 +643,7 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), 1.0 + range.ind_sample(&mut rng).abs(), power, "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
@@ -667,7 +667,7 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), 1.0 + range.ind_sample(&mut rng), power, "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
@@ -691,7 +691,7 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power, "generalloss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), 1.0 + range.ind_sample(&mut rng), power, "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();
@@ -715,7 +715,7 @@ mod tests {
 			let n3 = graph.add_training_input_node(Node::new_flat(100, "nodetrain"));
 			
 			let ops: Vec<Box<Operation>> = vec![
-				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), range.ind_sample(&mut rng), power_range.ind_sample(&mut rng), "generalloss"),
+				GeneralLoss::new(&n1, &n3, range.ind_sample(&mut rng), 1.0 + range.ind_sample(&mut rng), power_range.ind_sample(&mut rng), "generalloss"),
 			];
 			graph.add_operations(ops);
 			graph.init_params();

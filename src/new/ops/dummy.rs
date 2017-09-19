@@ -1,6 +1,6 @@
 use new::graph::{NodeID, Storage, GraphShapes};
 use new::graph;
-use super::*;
+use new::ops::*;
 
 #[derive(Clone, Debug)]
 pub struct DummyOperation {
@@ -15,19 +15,19 @@ impl Operation for DummyOperation {
 		&self.name
 	}
 
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes){
-		// Nothing
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{
+		Ok(())
 	}
 			
-	fn get_meta(&self) -> &OperatorMetaData{
+	fn get_meta(&self) -> &OperationMetaData{
 		unimplemented!()
 	}
 	
-	fn operation_dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
+	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(self.inputs.clone(), self.outputs.clone())
 	}
 
-	fn forward (&mut self, data: &mut Storage){
+	fn forward (&mut self, data: &mut Storage) -> Result<()>{
 		if self.touch_data {
 			for id in &self.inputs {
 				let _x = data.get(&id.value_id());
@@ -36,9 +36,10 @@ impl Operation for DummyOperation {
 				let _x = data.get_mut(&id.value_id());
 			}
 		}
+		Ok(())
 	}
 	
-	fn backward (&mut self, data: &mut Storage){
+	fn backward (&mut self, data: &mut Storage) -> Result<()>{
 		if self.touch_data {
 			for id in &self.inputs {
 				let _x = data.get(&id.value_id());
@@ -48,6 +49,7 @@ impl Operation for DummyOperation {
 				let _x = data.get(&id.gradient_id());
 			}
 		}
+		Ok(())
 	}
 }
 
@@ -99,12 +101,6 @@ impl Builder {
 	}
 }
 
-impl Default for Builder {
-	fn default() -> Self {
-		Builder::new()
-	}
-}
-
 impl OperationBuilder for Builder {
 	type OperationType = DummyOperation;
 
@@ -114,12 +110,17 @@ impl OperationBuilder for Builder {
 	}
 
 	/// Called by graph::Builder to construct the operation instance
-	fn build(self, _graph: &mut graph::Builder) -> Self::OperationType{
-		DummyOperation{
-			name: "".to_string(),
+	fn build(self, builder: &mut graph::Builder) -> Result<Self::OperationType> {
+		let name = if let Some(name) = self.name {
+			name
+		} else {
+			op_name_gen(builder, "Dummy", &self.inputs, &self.outputs)
+		};
+		Ok(DummyOperation{
+			name: name,
 			inputs: self.inputs.clone(),
 			outputs: self.outputs.clone(),
 			touch_data: self. touch_data,
-		}.into()
+		})
 	}
 }

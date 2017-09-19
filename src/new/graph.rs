@@ -5,7 +5,6 @@ use ndarray::ArrayBase;
 use ndarray::prelude::*;
 use smallvec::SmallVec;
 use ndarray::Ix;
-//use ops::Operation;
 use std::cmp;
 use std::iter;
 use std::iter::repeat;
@@ -19,29 +18,73 @@ use std::mem;
 use std::collections::VecDeque;
 use ordermap::OrderMap;
 use new::ops::*;
+use std::borrow::Borrow;
 
 error_chain!{
 	errors {
-		OperationAccessedDataNotMarkedRequired // Todo rename
-		OperationAccessedDeallocatedData
-		OperationMutablyAccessedBorrowedData
-		OperationAccessedMutablyBorrowedData
-		NodeNameMatchesExistingTag
-		NodeNameMatchesExistingName
-		NodeTagMatchesExistingName
-		ParameterNodesMustHaveKnownSize
-		ZeroNodesMatchTag
-		MultipleNodesMatchTag
-		GraphContainsCircularDependencies(deferred_passes: Vec<(PassID, Vec<DataID>)>){
-			display("The following passes were required, but could not be included: {:?}", deferred_passes) //TODO change to print op and node names
+		/// This errorkind indicates that the data requested was never allocated as it was not a required component of the subgraph.
+		StorageDataMarkedNotRequired{} //TODO give name of node
+		/// This errorkind indicates that the data requested has already been deallocated.
+		/// Ensure that it was included in the output used to define the subgraph being executed.
+		StorageDataDeallocated{}
+		/// This errorkind indicates that data requested cannot be mutably borrowed as it has already been immutably borrowed.
+		/// Borrows are not reset until after the operation pass has completed.
+		StorageDataAlreadyBorrowed{}
+		/// This errorkind indicates that data requested cannot be borrowed as it has already been mutably borrowed.
+		/// Borrows are not reset until after the operation pass has completed.
+		StorageDataAlreadyMutablyBorrowed{}
+		/// This errorkind indicates that two identical node names have been supplied.
+		/// Node names must be unique.
+		NodeNameConflict(name: String){
+			display("There is a conflict between node names, ensure they are unique. Duplicate name: {}", name)
 		}
-		InputsInsufficientForRequestedOutputs
-		InputSizeError
+		/// This errorkind indicates that the node name supplied is identical to a node tag.
+		/// Node names must be unique.
+		NodeTagNameConflict(name: String){
+			display("There is a conflict between tags and node names, ensure names are unique. Duplicate name: {}", name)
+		}
+		/// This errorkind indicates that two identical op names have been supplied.
+		/// Op names must be unique.
+		OpNameConflict(name: String){
+			display("There is a conflict between op names, ensure they are unique. Duplicate name: {}", name)
+		}
+		/// This errorkind indicates that the op name supplied is identical to an op tag.
+		/// Op names must be unique.
+		OpTagNameConflict(name: String){
+			display("There is a conflict between tags and op names, ensure names are unique. Duplicate name: {}", name)
+		}
+		/// This errorkind indicates that a node was marked as a `Parameter` did not have a Known size.
+		/// Parameter node shapes cannot contain any `Unknown` or `Interval` dimensions.
+		ParameterNodesMustHaveKnownSize(name: String, shape: NodeShape){
+			display("Parameter node shapes cannot contain any `Unknown` or `Interval` dimensions: {} shape: {:?}", name, shape)
+		}
+		/// Could not find any nodes matching the tag supplied
+		ZeroNodesMatchTag(tag: NodeTag){
+			display("Could not find any nodes matching the tag supplied: {:?}", tag)
+		} // TODO include tag
+		/// Found more than one nodes matching the tag supplied, use the method for multiple NodeIDs.
+		MultipleNodesMatchTag(tag: NodeTag){
+			display("Found more than one nodes matching the tag supplied, use the method for multiple NodeIDs. {:?}", tag)
+		}
+		/// Could not find any ops matching the tag supplied
+		ZeroOpsMatchTag(tag: OpTag){
+			display("Could not find any ops matching the tag supplied: {:?}", tag)
+		}
+		/// Found more than one ops matching the tag supplied, use the method for multiple OpIDs.
+		MultipleOpsMatchTag(tag: OpTag){
+			display("Found more than one ops matching the tag supplied, use the method for multiple OpIDs. {:?}", tag)
+		}
+		/// A topological sort could not be completed, due to circular dependencies.
+		GraphContainsCircularDependencies(deferred_passes: Vec<(PassID, Vec<DataID>)>){
+			display("The following passes were required, but could not be included in the execution order: {:?}", deferred_passes) //TODO change to print op and node names
+		}
+		InputsInsufficientForRequestedOutputs{}
+		InputSizeError{}
 		StaticInputBroadcastFailure(id: NodeID, s1: Vec<Ix>, s2: Vec<Ix>){
 			display("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id, s1, s2)
 		}
-		PassAttemptedToAccessDataNotListedAsInputOrOutput
-		PassAttemptedToMutablyAccessDataNotListedAsOutput
+		PassAttemptedToAccessDataNotListedAsInputOrOutput{}
+		PassAttemptedToMutablyAccessDataNotListedAsOutput{}
 	}
 
 	links {
@@ -124,28 +167,7 @@ impl PassID {
 	}
 }
 
-#[macro_export]
-macro_rules! tag(
-
-    (@parse Parameter) => {
-        NodeTag::Parameter
-    };
-    
-    (@parse $v:expr) => {
-        ($v).into()
-    };
-    
-    ( $( $x:tt ),* ) => {
-        vec![
-            $(
-                tag!(@parse $x),
-            )*
-        ]
-    };
-    
-);
-
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum NodeTag{
 	Parameter,
 	Id(usize),
@@ -153,9 +175,9 @@ pub enum NodeTag{
 	Str(String),
 }
 
-impl From<NodeID> for NodeTag{
-	fn from(i: NodeID) -> NodeTag {
-		NodeTag::Id(i.index)
+impl<T: Borrow<NodeID>> From<T> for NodeTag{
+	fn from(i: T) -> NodeTag {
+		NodeTag::Id(i.borrow().index)
 	}
 }
 
@@ -177,16 +199,16 @@ impl From<String> for NodeTag{
 	}
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum OpTag{
 	Id(usize),
 	Int(usize),
 	Str(String),
 }
 
-impl From<OpID> for OpTag{
-	fn from(i: OpID) -> OpTag {
-		OpTag::Int(i.index)
+impl<T: Borrow<OpID>> From<T> for OpTag{
+	fn from(i: T) -> OpTag {
+		OpTag::Int(i.borrow().index)
 	}
 }
 
@@ -217,8 +239,9 @@ pub struct Builder {
 	node_names: OrderMap<String, NodeID>,
 	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
 
-	operations: Vec<Box<Operation>>,
-	operation_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
+	ops: Vec<Box<Operation>>,
+	op_names: OrderMap<String, OpID>,
+	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
 
 	static_inputs: OrderMap<DataID, ArrayD<f32>>,
 }
@@ -232,8 +255,9 @@ impl Builder {
 			node_names: OrderMap::new(),
 			node_tags: OrderMap::new(),
 
-			operations: vec![],
-			operation_tags: OrderMap::new(),
+			ops: vec![],
+			op_names: OrderMap::new(),
+			op_tags: OrderMap::new(),
 
 			static_inputs: OrderMap::new(),
 		}
@@ -256,11 +280,44 @@ impl Builder {
 		self.static_inputs.remove(&id);
 	}
 
-	pub fn add_operation<B: OperationBuilder>(&mut self, builder: B) -> OpID {
-		let op_id = OpID{index: self.operations.len()};
-		let op = Box::new(builder.build(self));
-		self.operations.push(op);
-		op_id
+	pub fn add_operation<B: OperationBuilder>(&mut self, builder: B, tags: Vec<OpTag>) -> Result<OpID> {
+		
+		let op = Box::new(builder.build(self)?);
+		
+		let name = op.instance_name().to_string();
+
+		// ensure names are unique w.r.t other names and tags
+		ensure!(!self.op_names.contains_key(&name), ErrorKind::OpNameConflict(name));
+		ensure!(!self.op_tags.contains_key(&name.as_str().into()), ErrorKind::OpTagNameConflict(name));
+		for tag in &tags{
+			// ensure that tags don't overlap with existing names
+			match tag {
+				&OpTag::Str(ref tag_str) => {
+					ensure!(&name != tag_str, ErrorKind::OpTagNameConflict(tag_str.to_string()));
+					ensure!(!self.op_names.contains_key(tag_str), ErrorKind::OpTagNameConflict(tag_str.to_string()));
+				},
+				_ => {},
+			}
+		}
+
+		// all good, so add op
+		let op_id = OpID{index: self.ops.len()};
+		self.op_names.insert(name, op_id.clone());
+		self.ops.push(op);
+
+		for tag in tags{
+			match tag {
+				OpTag::Id(_) => {},
+				OpTag::Int(_) => {
+					self.op_tags.entry(tag).or_insert(OrderMap::new()).insert(op_id.clone(), ());
+				},
+				OpTag::Str(_) => {
+					self.op_tags.entry(tag).or_insert(OrderMap::new()).insert(op_id.clone(), ());
+				},
+			}
+		}
+
+		Ok(op_id)
 	}
 
 	// fn add_layer(SimpleOperationBuilder and output NodeShape){}
@@ -277,40 +334,40 @@ impl Builder {
 		let name = name.into();
 
 		// ensure names are unique w.r.t other names and tags
-		ensure!(!self.node_names.contains_key(&name), ErrorKind::NodeNameMatchesExistingName);
-		ensure!(!self.node_tags.contains_key(&name.as_str().into()), ErrorKind::NodeNameMatchesExistingTag);
+		ensure!(!self.node_names.contains_key(&name), ErrorKind::NodeNameConflict(name));
+		ensure!(!self.node_tags.contains_key(&name.as_str().into()), ErrorKind::NodeTagNameConflict(name));
 		for tag in &tags{
-			// ensure that tags don't overlap with node names
+			// ensure that tags don't overlap with existing names
 			match tag {
 				&NodeTag::Str(ref tag_str) => {
-					ensure!(&name != tag_str, ErrorKind::NodeTagMatchesExistingName);
-					ensure!(!self.node_names.contains_key(tag_str), ErrorKind::NodeTagMatchesExistingName);
+					ensure!(&name != tag_str, ErrorKind::NodeTagNameConflict(tag_str.to_string()));
+					ensure!(!self.node_names.contains_key(tag_str), ErrorKind::NodeTagNameConflict(tag_str.to_string()));
 				},
 				_ => {},
+			}
+		}
+
+		for tag in &tags{
+			if matches!(tag, &NodeTag::Parameter){
+				ensure!(shape.is_known(), ErrorKind::ParameterNodesMustHaveKnownSize(name, shape));
 			}
 		}
 
 		// all good, so add node
 		let node_id = NodeID{index: self.nodes.len()};
 		self.node_names.insert(name, node_id.clone());
+		self.node_shapes.push(shape);
 		self.nodes.push(node_id.clone());
 		
 		for tag in tags{
 			match tag {
 				NodeTag::Id(_) => {},
-				NodeTag::Int(_) => {
+				NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
 					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
 				},
-				NodeTag::Str(_) => {
-					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
-				},
-				NodeTag::Parameter => {
-					ensure!(shape.is_known(), ErrorKind::ParameterNodesMustHaveKnownSize);
-					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
-				}
 			}
 		}
-		self.node_shapes.push(shape); // push shape after tags to avoid deep copy
+
 
 		Ok(node_id)
 	}
@@ -319,15 +376,15 @@ impl Builder {
 	/// Contiguous views will be free from time and memory overhead, recording just a view.
 	/// Non-contigues views will incurr a memory and time overhead during runtime.
 	/// Returns NodeID of the new node.
-	pub fn new_read_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
+	pub fn new_read_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
 	}
 
-	pub fn new_write_view<I: Into<String>>(&mut self, name: I, shape: NodeShape, tags: Vec<NodeTag>) -> Result<NodeID>{
+	pub fn new_write_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
 	}
 
-	pub fn get_node_name(&self, node_id: &NodeID) -> &str{
+	pub fn node_name(&self, node_id: &NodeID) -> &str{
 		for (k, v) in self.node_names.iter(){
 			if v == node_id {
 				return k;
@@ -336,6 +393,7 @@ impl Builder {
 		unreachable!()
 	}
 
+	// TODO check names
 	pub fn is_node_tagged<T: Into<NodeTag>>(&self, node_id: NodeID, tag: T) -> bool {
 		let tag = tag.into();
 		match tag {
@@ -349,12 +407,13 @@ impl Builder {
 		}
 	}
 
+	// TODO check names
 	pub fn is_op_tagged<T: Into<OpTag>>(&self, op_id: OpID, tag: T) -> bool {
 		let tag = tag.into();
 		match tag {
 			OpTag::Id(ind) => {ind == op_id.index},
 			OpTag::Int(_) | OpTag::Str(_) => {
-				match self.operation_tags.get(&tag){
+				match self.op_tags.get(&tag){
 					Some(set) => set.contains_key(&op_id),
 					None => false,
 				}
@@ -363,7 +422,7 @@ impl Builder {
 	}
 
 	// Returns the NodeID which was tagged with 'tag'. returns none if zero or more than one NodeIDs are associated with the tag.
-	pub fn get_node<T: Into<NodeTag>>(&self, tag: T) -> Result<NodeID> {
+	pub fn get_node_id<T: Into<NodeTag>>(&self, tag: T) -> Result<NodeID> {
 		let tag = tag.into();
 		match tag {
 			NodeTag::Id(ind) => Ok(self.nodes[ind].clone()),
@@ -374,30 +433,30 @@ impl Builder {
 				} else {
 					let set = match self.node_tags.get(&tag){
 						Some(set) => set,
-						None => bail!(ErrorKind::ZeroNodesMatchTag),
+						None => bail!(ErrorKind::ZeroNodesMatchTag(tag.clone())),
 					};
 					match set.len() {
-						0 => bail!(ErrorKind::ZeroNodesMatchTag),
+						0 => bail!(ErrorKind::ZeroNodesMatchTag(tag.clone())),
 						1 => Ok(set.keys().next().unwrap().clone()),
-						_ => bail!(ErrorKind::MultipleNodesMatchTag),
+						_ => bail!(ErrorKind::MultipleNodesMatchTag(tag.clone())),
 					}
 				}
 			},
 			NodeTag::Int(_) | NodeTag::Parameter => {
 				let set = match self.node_tags.get(&tag){
 					Some(set) => set,
-					None => bail!(ErrorKind::ZeroNodesMatchTag),
+					None => bail!(ErrorKind::ZeroNodesMatchTag(tag)),
 				};
 				match set.len() {
-					0 => bail!(ErrorKind::ZeroNodesMatchTag),
+					0 => bail!(ErrorKind::ZeroNodesMatchTag(tag)),
 					1 => Ok(set.keys().next().unwrap().clone()),
-					_ => bail!(ErrorKind::MultipleNodesMatchTag),
+					_ => bail!(ErrorKind::MultipleNodesMatchTag(tag)),
 				}
 			}
 		}
 	}
 
-	pub fn get_nodes<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderMap<NodeID, ()> {
+	pub fn get_node_ids<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderMap<NodeID, ()> {
 		let tag = tag.into();
 		match tag {
 			NodeTag::Id(ind) => iter::once((self.nodes[ind].clone(), ())).collect(),
@@ -421,26 +480,60 @@ impl Builder {
 		}
 	}
 
-	pub fn get_parameters<'a>(&'a self) -> OrderMap<NodeID, ()> {
-		self.get_nodes(NodeTag::Parameter)
+	pub fn get_node_shape<T: Into<NodeTag>>(&self, tag: T) -> Result<&NodeShape> {
+		self.get_node_id(tag).map(|id| &self.node_shapes[id.index])
 	}
 
-	pub fn get_op<T: Into<OpTag>>(&self, tag: T) -> Option<OpID> {
+	pub fn get_parameter_ids<'a>(&'a self) -> OrderMap<NodeID, ()> {
+		self.get_node_ids(NodeTag::Parameter)
+	}
+
+	pub fn get_op<T: Into<OpTag>>(&self, tag: T) -> Result<&Operation> {
+		self.get_op_id(tag).map(|id| &*self.ops[id.index])
+	}
+
+	/// Returns a single OpID matching a op tag
+	/// Returns an error if multiple or zero ops are associated with the tag
+	pub fn get_op_id<T: Into<OpTag>>(&self, tag: T) -> Result<OpID> {
 		let tag = tag.into();
 		match tag {
-			OpTag::Id(ind) => Some(OpID{index: ind}),
-			OpTag::Int(_) | OpTag::Str(_) => {
-				self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(set.keys().next().unwrap().clone())} else {None})
+			OpTag::Id(ind) => Ok(OpID{index: ind}),
+			OpTag::Str(ref string) => {
+				//self.operation_tags.get(&tag).and_then(|set| if set.len() == 1 {Some(set.keys().next().unwrap().clone())} else {None})
+				if let Some(op_id) = self.op_names.get(string) {
+					Ok(op_id.clone())
+				} else {
+					let set = match self.op_tags.get(&tag){
+						Some(set) => set,
+						None => bail!(ErrorKind::ZeroOpsMatchTag(tag.clone())),
+					};
+					match set.len() {
+						0 => bail!(ErrorKind::ZeroOpsMatchTag(tag.clone())),
+						1 => Ok(set.keys().next().unwrap().clone()),
+						_ => bail!(ErrorKind::MultipleOpsMatchTag(tag.clone())),
+					}
+				}
+			},
+			OpTag::Int(_) => {
+				let set = match self.op_tags.get(&tag){
+					Some(set) => set,
+					None => bail!(ErrorKind::ZeroOpsMatchTag(tag)),
+				};
+				match set.len() {
+					0 => bail!(ErrorKind::ZeroOpsMatchTag(tag)),
+					1 => Ok(set.keys().next().unwrap().clone()),
+					_ => bail!(ErrorKind::MultipleOpsMatchTag(tag)),
+				}
 			}
 		}
 	}
 
-	pub fn get_ops<'a, T: Into<OpTag>>(&'a self, tag: T) -> Box<Iterator<Item=OpID> + 'a> {
+	pub fn get_op_ids<'a, T: Into<OpTag>>(&'a self, tag: T) -> Box<Iterator<Item=OpID> + 'a> {
 		let tag = tag.into();
 		match tag {
 			OpTag::Id(ind) => Box::new(iter::once(OpID{index: ind})),
 			OpTag::Int(_) | OpTag::Str(_)  => {
-				match self.operation_tags.get(&tag){
+				match self.op_tags.get(&tag){
 					Some(set) => Box::new(set.keys().cloned()),
 					None => Box::new(iter::empty::<OpID>()),
 				}
@@ -448,12 +541,16 @@ impl Builder {
 		}
 	}
 
+	/// Returns the number of tensors in the graph
+	/// Currently this is twice the number of nodes (values and gradients)
 	pub fn num_data(&self) -> usize{
 		self.nodes.len()*2
 	}
 
+	/// Returns the number of passes in the graph
+	/// Currently this is twice the number of ops (forward pass and backwards pass)
 	pub fn num_passes(&self) -> usize{
-		self.operations.len()*2
+		self.ops.len()*2
 	}
 }
 
@@ -467,27 +564,27 @@ pub struct Dependencies {
 
 impl Dependencies {
 	fn new(builder: &Builder) -> Dependencies {
-		let mut pass_inputs: Vec<Vec<DataID>> = (0..builder.operations.len()*2).map(|_| vec![]).collect();
-		let mut pass_outputs: Vec<Vec<DataID>> = (0..builder.operations.len()*2).map(|_| vec![]).collect();
+		let mut pass_inputs: Vec<Vec<DataID>> = (0..builder.num_passes()).map(|_| vec![]).collect();
+		let mut pass_outputs: Vec<Vec<DataID>> = (0..builder.num_passes()).map(|_| vec![]).collect();
 
-		for op_id in (0..builder.operations.len()).map(|i| OpID{index:i}) {
-			let operation = &*builder.operations[op_id.index];
+		for op_id in (0..builder.ops.len()).map(|i| OpID{index:i}) {
+			let op = &*builder.ops[op_id.index];
 
 			let forward_id = op_id.forward_id();
-			let (forward_inputs, forward_outputs) = operation.forward_dependencies();
+			let (forward_inputs, forward_outputs) = op.forward_dependencies();
 			pass_inputs[forward_id.index] = forward_inputs;
 			pass_outputs[forward_id.index] = forward_outputs;
 
 			let backward_id = op_id.backward_id();
-			let (backward_inputs, backward_outputs) = operation.backward_dependencies();
+			let (backward_inputs, backward_outputs) = op.backward_dependencies();
 			pass_inputs[backward_id.index] = backward_inputs;
 			pass_outputs[backward_id.index] = backward_outputs;
 		}
 
-		let mut data_inputs: Vec<Vec<PassID>> = (0..builder.nodes.len()*2).map(|_| vec![]).collect();
-		let mut data_outputs: Vec<Vec<PassID>> = (0..builder.nodes.len()*2).map(|_| vec![]).collect();
+		let mut data_inputs: Vec<Vec<PassID>> = (0..builder.num_data()).map(|_| vec![]).collect();
+		let mut data_outputs: Vec<Vec<PassID>> = (0..builder.num_data()).map(|_| vec![]).collect();
 
-		for pass_id in (0..builder.operations.len()*2).map(|i| PassID{index:i}) {
+		for pass_id in (0..builder.ops.len()*2).map(|i| PassID{index:i}) {
 			for data_id in &pass_inputs[pass_id.index] {
 				data_outputs[data_id.index].push(pass_id.clone());
 			}
@@ -507,8 +604,9 @@ pub struct Graph{
 	nodes: Vec<NodeID>,
 	node_shapes: Vec<NodeShape>,
 	node_names: OrderMap<String, NodeID>,
-	operations: Vec<Box<Operation>>,
-	static_inputs: OrderMap<DataID, ArrayD<f32>>,
+	ops: Vec<Box<Operation>>,
+
+	filtered_static_inputs: OrderMap<DataID, ArrayD<f32>>,
 
 	required_data: Vec<bool>,
 	required_passes: Vec<bool>,
@@ -553,8 +651,9 @@ impl Graph {
 			node_shapes: builder.node_shapes.clone(),
 			node_names: builder.node_names.clone(),
 
-			operations: builder.operations.clone(),
-			static_inputs: filtered_static_inputs,
+			ops: builder.ops.clone(),
+
+			filtered_static_inputs: filtered_static_inputs,
 
 			required_data: required_data,
 			required_passes: required_passes,
@@ -577,20 +676,20 @@ impl Graph {
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != inputs.len()
 		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.supplied_inputs[i].index].slice()}) {
-			self.shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &inputs, &self.static_inputs)?;
+			self.shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &inputs, &self.filtered_static_inputs)?;
 		}
 
-		let mut storage = Storage::new(&self.required_data, &self.dependencies, &self.static_inputs, &self.supplied_inputs, inputs, &self.shapes);
+		let mut storage = Storage::new(&self.required_data, &self.dependencies, &self.filtered_static_inputs, &self.supplied_inputs, inputs, &self.shapes);
 
 		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
 
 		for pass in &self.pass_order {
 			storage.set_next_pass_debug(Some(pass)); // TODO make optional
 			if pass.is_forward() {
-				self.operations[pass.op_id().index].forward(&mut storage);
+				self.ops[pass.op_id().index].forward(&mut storage)?;
 			}
 			if pass.is_backward() {
-				self.operations[pass.op_id().index].backward(&mut storage);
+				self.ops[pass.op_id().index].backward(&mut storage)?;
 			}
 
 			for data_id in &self.dependencies.pass_inputs[pass.index] {
@@ -606,6 +705,14 @@ impl Graph {
 		storage.set_next_pass_debug(None);
 
 		Ok(storage)
+	}
+
+	pub fn inputs(&self) -> &[DataID]{
+		&self.supplied_inputs
+	}
+
+	pub fn outputs(&self) -> &[DataID]{
+		&self.requested_outputs
 	}
 }
 
@@ -840,22 +947,26 @@ fn find_shapes(graph: &Graph, passes: &[PassID], inputs: &[DataID], input_data: 
 	// for all operation forward passes that are scheduled. call the relevant shape propagation
 	let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
 	for op_id in op_ids {
-		graph.operations[op_id.index].propagate_shape_constraints(&mut shapes);
+		graph.ops[op_id.index].propagate_shape_constraints(&mut shapes)?;
 	}
 
-	shapes.shapes.iter().map(|shape| shape.to_data_shape().map_err(|e| e.into())).collect()
+	shapes.shapes.iter_mut().map(|shape| {
+		shape.collapse_dimensions_to_minimum();
+		shape.to_data_shape().map_err(|e| e.into())
+	}).collect()
 }
 
 
 
-
-
+/// An interface for allowing ops to perform shape propagation
+/// At graph execution time the shape of op inputs may be queried, and new constraints can be applied/merged with outputs.
+#[derive(Debug)]
 pub struct GraphShapes{
 	shapes: Vec<NodeShape>,
 }
 
 impl GraphShapes {
-	pub fn new(graph: &Graph) -> GraphShapes {
+	fn new(graph: &Graph) -> GraphShapes {
 		GraphShapes{
 			shapes: graph.node_shapes.clone(),
 		}
@@ -872,6 +983,14 @@ impl GraphShapes {
 		Ok(())
 	}
 
+	// TODO only allow getting inputs
+	pub fn get_shape(&mut self, id: &NodeID) -> &NodeShape{
+		self.shapes[id.index].collapse_dimensions_to_minimum();
+		debug_assert!(self.shapes[id.index].dimensions().iter().all(|dim| matches!(dim, &NodeDim::Known(_))));
+		&self.shapes[id.index]
+	}
+
+	// TODO only allow merging to outputs
 	pub fn merge_with(&mut self, id: &NodeID, shape: &NodeShape) -> Result<()>{
 		self.shapes[id.index] = self.shapes[id.index].merge(shape)?;
 		Ok(())
@@ -958,14 +1077,14 @@ impl<'a> Storage<'a> {
 			e.set(UNUSED);
 		}
 		self
-	}
-
-	/// Should never be called if a &mut borrow could possibly exist.
+	}	
+		
+	/// Should never be called if a &mut borrow could possibly already exist.
 	unsafe fn get_or_init(&self, id: &DataID) -> Result<*mut ArrayD<f32>>{
 		let ptr = &self.data[id.index] as *const _ as *mut _;
 		match *ptr {
-			DataState::NotRequired => bail!(ErrorKind::OperationAccessedDataNotMarkedRequired),
-			DataState::Deallocated => bail!(ErrorKind::OperationAccessedDeallocatedData),
+			DataState::NotRequired => bail!(ErrorKind::StorageDataMarkedNotRequired),
+			DataState::Deallocated => bail!(ErrorKind::StorageDataDeallocated),
 			DataState::Unallocated => {
 				*ptr = DataState::Allocated(ArrayD::zeros(self.shapes[id.node_id().index].clone()));
 			},
@@ -1014,7 +1133,7 @@ impl<'a> Storage<'a> {
 				let array: &'b ArrayD<f32> = unsafe{&*ptr};
 				Ok(array.view())
 		} else {
-			bail!(ErrorKind::OperationAccessedMutablyBorrowedData)
+			bail!(ErrorKind::StorageDataAlreadyMutablyBorrowed)
 		}
 	}
 
@@ -1032,12 +1151,27 @@ impl<'a> Storage<'a> {
 				let array: &'b mut ArrayD<f32> = unsafe{&mut *ptr};
 				Ok(array.view_mut())
 			},
-			_ => bail!(ErrorKind::OperationMutablyAccessedBorrowedData),
+			WRITING => bail!(ErrorKind::StorageDataAlreadyMutablyBorrowed),
+			_ => bail!(ErrorKind::StorageDataAlreadyBorrowed),
 		}
 	}
 
-	// TODO add method to check if a tensor is marked as "required"
-	// TODO add method to consume self and return a Map from DataID to ArrayDs
+	/// Returns true if a data_id is a required component of the subgraph.
+	/// If false, no attempt should be made to write to that data_id using 'get_mut()'
+	pub fn is_required(&self, data_id: &DataID) -> bool {
+		!matches!(self.data[data_id.index], DataState::NotRequired) //TODO this doesnt perfectly match the required_data vector from graph
+	}
+
+	/// Consume the Storage and convert into a OrderMap containing the owned ndarrays.
+	/// Intended for use after storage is returned from `execute()`.
+	pub fn into_map(self) -> OrderMap<DataID, ArrayD<f32>> {
+		self.data.into_iter().enumerate().filter_map(|(i, entry)|{
+			match entry {
+				DataState::Allocated(arr) => Some((DataID{index: i}, arr)),
+				_ => None,
+			}
+		}).collect()
+	}
 }
 
 
@@ -1067,16 +1201,16 @@ fn _test_build() -> Result<()>{
 
 	let node1 = b.new_node(shape![Unknown, 5, 16], "node1", tag!["input"])?;
 	let node2 = b.new_node(shape![Unknown, 5, 16], "node2", tag![])?;
-	b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2));
+	b.add_operation(dummy::Builder::new().name("first op").input(&node1).output(&node2), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = b.new_node(shape![Unknown, 5, 16], format!("node{}", i), tag![i])?;
-		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node));
+		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node), tag![])?;
 		prev_node = next_node;
 	}
 
-	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node));
+	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node), tag![])?;
 
 	let g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
 	let g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
@@ -1102,24 +1236,24 @@ fn _test_execute() -> Result<()>{
 
 	let node1 = b.new_node(shape![4, 5, 16], "node1", tag!["input"])?;
 	let node2 = b.new_node(shape![4, 5, 16], "node2", tag![])?;
-	b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2).touch_data(true));
+	b.add_operation(dummy::Builder::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = b.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
-		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true));
+		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
 		prev_node = next_node;
 	}
 
-	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true));
+	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
 
 	let mut g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
 	let mut g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
 
 
-	g1.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+	g1.execute(vec![ArrayD::zeros(&[4, 5, 16][..])])?;
 
-	g2.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+	g2.execute(vec![ArrayD::zeros(&[4, 5, 16][..])])?;
 
 	Ok(())
 }
@@ -1137,18 +1271,18 @@ fn _test_execute_deallocation() -> Result<()>{
 
 	let mut b = graph::Builder::new();
 
-	let node1 = b.new_node(shape![4, 5, 16], "node1", tag!["input"])?;
+	let node1 = b.new_node(shape![Unknown, 5, 16], "node1", tag!["input"])?;
 	let node2 = b.new_node(shape![4, 5, 16], "node2", tag![])?;
-	b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2).touch_data(true));
+	b.add_operation(dummy::Builder::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = b.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
-		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true));
+		b.add_operation(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
 		prev_node = next_node;
 	}
 
-	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true));
+	b.add_operation(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
 
 	let mut g1 = Graph::new(&b, &[node2.value_id()], &[prev_node.value_id()])?;
 	let mut g2 = Graph::new(&b, &[node1.value_id()], &[node2.gradient_id()])?;
@@ -1156,17 +1290,16 @@ fn _test_execute_deallocation() -> Result<()>{
 	// Make sure we get the right errors when accessing nodes that should be deallocated or never have been allocated
 	let s1 = g1.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
 	s1.get(&prev_node.value_id()).unwrap();
-	assert!(matches!(s1.get(&node2.value_id()), Err(Error(ErrorKind::OperationAccessedDeallocatedData, _))));
-	assert!(matches!(s1.get(&node2.gradient_id()), Err(Error(ErrorKind::OperationAccessedDataNotMarkedRequired, _))));
+	assert!(matches!(s1.get(&node2.value_id()), Err(Error(ErrorKind::StorageDataDeallocated, _))));
+	assert!(matches!(s1.get(&node2.gradient_id()), Err(Error(ErrorKind::StorageDataMarkedNotRequired, _))));
 
-	let s2 = g2.execute(vec![ArrayBase::zeros(&[4, 5, 16][..])])?;
+	let s2 = g2.execute(vec![ArrayBase::zeros(&[9, 5, 16][..])])?;
 	s2.get(&node2.gradient_id()).unwrap();
-	assert!(matches!(s2.get(&prev_node.value_id()), Err(Error(ErrorKind::OperationAccessedDeallocatedData, _))));
-	assert!(matches!(s2.get(&node1.gradient_id()), Err(Error(ErrorKind::OperationAccessedDataNotMarkedRequired, _))));
+	assert!(matches!(s2.get(&prev_node.value_id()), Err(Error(ErrorKind::StorageDataDeallocated, _))));
+	assert!(matches!(s2.get(&node1.gradient_id()), Err(Error(ErrorKind::StorageDataMarkedNotRequired, _))));
 
 	Ok(())
 }
-
 
 #[test]
 fn test_pass_reordering(){
@@ -1186,12 +1319,12 @@ fn _test_pass_reordering() -> Result<()>{
 	let node3 = b.new_node(shape![Unknown, 5, 16], "node3", tag![])?;
 	let node4 = b.new_node(shape![Unknown, 5, 16], "node4", tag!["output"])?;
 
-	let o4 = b.add_operation(dummy::Builder::new().name("test").input(&node2a).output(&node3));
-	let o2 = b.add_operation(dummy::Builder::new().name("test").input(&node2b).output(&node3));
-	let o1 = b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2b));
-	let o3 = b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2a));
-	let o5 = b.add_operation(dummy::Builder::new().name("test").input(&node3).output(&node4));
-	let o6 = b.add_operation(dummy::Builder::new().name("last op").input(&node4));
+	let o4 = b.add_operation(dummy::Builder::new().input(&node2a).output(&node3), tag![])?;
+	let o2 = b.add_operation(dummy::Builder::new().input(&node2b).output(&node3), tag![])?;
+	let o1 = b.add_operation(dummy::Builder::new().input(&node1).output(&node2b), tag![])?;
+	let o3 = b.add_operation(dummy::Builder::new().input(&node1).output(&node2a), tag![])?;
+	let o5 = b.add_operation(dummy::Builder::new().input(&node3).output(&node4), tag![])?;
+	let o6 = b.add_operation(dummy::Builder::new().input(&node4), tag![])?;
 
 
 	let g_forward = Graph::new(&b, &[node1.value_id()], &[node4.value_id()])?;
@@ -1229,12 +1362,12 @@ fn _test_circular_detection() -> Result<()>{
 	let node5 = b.new_node(shape![Unknown, 5, 16], "node5", tag!["output"])?;
 
 
-	let _o1 = b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node2));
-	let _o2 = b.add_operation(dummy::Builder::new().name("test").input(&node2).output(&node3));
-	let _o3 = b.add_operation(dummy::Builder::new().name("test").input(&node3).output(&node4));
-	let _o4 = b.add_operation(dummy::Builder::new().name("test").input(&node4).output(&node2)); // circular link
-	let _o5 = b.add_operation(dummy::Builder::new().name("test").input(&node4).output(&node5));
-	let _o6 = b.add_operation(dummy::Builder::new().name("last op").input(&node5));
+	let _o1 = b.add_operation(dummy::Builder::new().input(&node1).output(&node2), tag![]);
+	let _o2 = b.add_operation(dummy::Builder::new().input(&node2).output(&node3), tag![]);
+	let _o3 = b.add_operation(dummy::Builder::new().input(&node3).output(&node4), tag![]);
+	let _o4 = b.add_operation(dummy::Builder::new().input(&node4).output(&node2), tag![]); // circular link
+	let _o5 = b.add_operation(dummy::Builder::new().input(&node4).output(&node5), tag![]);
+	let _o6 = b.add_operation(dummy::Builder::new().input(&node5), tag![]);
 
 
 	// Check that the circular link raises an error
@@ -1274,8 +1407,8 @@ fn _test_insufficient_input_detection() -> Result<()>{
 	let node3 = b.new_node(shape![Unknown, 5, 16], "node3", tag!["output"])?;
 
 
-	let _o1 = b.add_operation(dummy::Builder::new().name("test").input(&node1).output(&node3));
-	let _o2 = b.add_operation(dummy::Builder::new().name("test").input(&node2).output(&node3));
+	let _o1 = b.add_operation(dummy::Builder::new().input(&node1).output(&node3), tag![]);
+	let _o2 = b.add_operation(dummy::Builder::new().input(&node2).output(&node3), tag![]);
 
 
 	let g_forward = Graph::new(&b, &[node1.value_id()], &[node3.value_id()]);
