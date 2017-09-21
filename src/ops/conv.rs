@@ -490,7 +490,7 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 		let input_crop = odds::slice_unchecked(input, offset, offset + len);
 		
 		//let mut patch_crop = &mut patch[(start*channels)..][..len];
-		let mut patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
+		let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
 		
 		//patch_crop.copy_from_slice(input_crop);
 		for i in 0..len{
