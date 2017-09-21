@@ -2,7 +2,7 @@ pub mod dummy;
 pub mod broadcast;
 pub mod bias;
 
-use new::graph::{NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, ResultExt, Result};
+use new::graph::{NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
 use new::graph;
 use new::shape::NodeShape;
 use std::any::Any;

@@ -2,8 +2,7 @@ use new::graph::{NodeID, DataID, Storage, GraphShapes, Result};
 use new::graph;
 use new::ops::{op_name_gen, Operation, OperationMetaData, OperationBuilder};
 use new::shape::{NodeShape, NodeDim};
-use ndarray::{ArrayBase, ArrayViewMutD, ArrayViewD};
-
+use ndarray::{ArrayViewMutD, ArrayViewD};
 
 
 pub struct Builder {

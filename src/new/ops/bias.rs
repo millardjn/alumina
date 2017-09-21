@@ -1,8 +1,7 @@
-use new::graph::{NodeID, Storage, GraphShapes, Error, ErrorKind, ResultExt, Result};
+use new::graph::{NodeID, Result};
 use new::graph;
 use new::ops::broadcast::Broadcast;
 use new::ops::*;
-
 
 pub struct Builder {
 	output: NodeID,

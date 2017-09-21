@@ -1,4 +1,4 @@
-use new::graph::{NodeID, Storage, GraphShapes};
+use new::graph::{NodeID, Storage, GraphShapes, Result};
 use new::graph;
 use new::ops::*;
 

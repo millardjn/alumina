@@ -11,6 +11,7 @@ use std::iter::repeat;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use ndarray;
+use new::ops;
 use new::shape;
 use new::shape::{NodeShape, NodeDim};
 use std::cell::{Cell, UnsafeCell};
@@ -85,6 +86,17 @@ error_chain!{
 		}
 		PassAttemptedToAccessDataNotListedAsInputOrOutput{}
 		PassAttemptedToMutablyAccessDataNotListedAsOutput{}
+
+		// Operation Errors
+		ShapePropagationError(message: String){
+			display("{}", message)
+		}
+		ForwardPassError(message: String){
+			display("{}", message)
+		}
+		BackwardPassError(message: String){
+			display("{}", message)
+		}
 	}
 
 	links {
@@ -110,7 +122,7 @@ impl NodeID {
 	}
 }
 
-/// A unique identifier for a tensor (values or gradients) of a node
+/// A unique identifier for a tensor (values or gradients) of a node.
 #[derive(PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Debug)]
 pub struct DataID {
 	index: usize,
@@ -131,7 +143,7 @@ impl DataID {
 	}
 }
 
-/// A unique identifier for a graph operation
+/// A unique identifier for a graph operation.
 #[derive(PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Debug)]
 pub struct OpID {
 	index: usize,
@@ -147,7 +159,7 @@ impl OpID {
 	}
 }
 
-/// A unique identifier for the (forward or backward) pass of an operator
+/// A unique identifier for the (forward or backward) pass of an operator.
 #[derive(PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Debug)]
 pub struct PassID {
 	index: usize,
@@ -167,11 +179,18 @@ impl PassID {
 	}
 }
 
+/// A type used to mark nodes as parameters, or for easy retrival from a graph.
+///
+/// When calling `new_node()` consider using the `tag![]` macro to supply tags.
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum NodeTag{
+	/// Marks a node as a `Parameter`.
 	Parameter,
+	/// A `Tag` which impl `From<NodeID>`. Will only match one node.
 	Id(usize),
+	/// A customisable `Tag` which impl `From<usize>`.
 	Int(usize),
+	/// A customisable `Tag` which impl `From<String>` and `From<&str>`.
 	Str(String),
 }
 
@@ -199,10 +218,16 @@ impl From<String> for NodeTag{
 	}
 }
 
+/// A type used to mark Ops for easy retrival from a graph.
+///
+/// When calling `add_operation()` consider using the `tag![]` macro to supply tags.
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum OpTag{
+	/// A `Tag` which impl `From<OpID>`. Will only match one Op.
 	Id(usize),
+	/// A customisable `Tag` which impl `From<usize>`.
 	Int(usize),
+	/// A customisable `Tag` which impl `From<String>` and `From<&str>`.
 	Str(String),
 }
 
@@ -541,14 +566,16 @@ impl Builder {
 		}
 	}
 
-	/// Returns the number of tensors in the graph
-	/// Currently this is twice the number of nodes (values and gradients)
+	/// Returns the number of tensors in the graph.
+	///
+	/// Currently this is twice the number of nodes (values and gradients).
 	pub fn num_data(&self) -> usize{
 		self.nodes.len()*2
 	}
 
-	/// Returns the number of passes in the graph
-	/// Currently this is twice the number of ops (forward pass and backwards pass)
+	/// Returns the number of passes in the graph.
+	///
+	/// Currently this is twice the number of ops (forward pass and backwards pass).
 	pub fn num_passes(&self) -> usize{
 		self.ops.len()*2
 	}
@@ -597,6 +624,7 @@ impl Dependencies {
 	}
 }
 
+/// 
 #[derive(Clone, Debug)]
 pub struct Graph{
 	dependencies: Dependencies,
@@ -670,6 +698,9 @@ impl Graph {
 		Ok(graph)
 	}
 
+	/// Calling this executes the 
+	///
+	/// 
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
 		assert_eq!(inputs.len(), self.supplied_inputs.len());
 
@@ -684,7 +715,7 @@ impl Graph {
 		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
 
 		for pass in &self.pass_order {
-			storage.set_next_pass_debug(Some(pass)); // TODO make optional
+			storage.set_next_pass_debug(Some(pass));
 			if pass.is_forward() {
 				self.ops[pass.op_id().index].forward(&mut storage)?;
 			}
@@ -803,8 +834,8 @@ fn find_pass_order(builder: &Builder, is_input: &[bool], required_data: &[bool],
 		Unavailable, // propagated if any input for data or a pass is unavailable, but does not overwrite Ready.
 	};
 
-	// Attempts to retire a pass as Ready or Unavailable, return true if sucessful false otherwise
-	// If it returns true this method should never be called again for that pass_id.
+	/// Attempts to retire a pass as Ready or Unavailable, return true if sucessful false otherwise
+	/// If it returns true this method should never be called again for that pass_id.
 	fn try_retire_pass(pass_id: &PassID, pass_order: &mut Vec<PassID>, data_ready: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies) -> bool{
 		if matches!(passes_ready[pass_id.index] , PassState::Ready | PassState:: Unavailable) {
 			panic!("pass has already been retired, try_retire_pass() should not be called")
@@ -958,8 +989,10 @@ fn find_shapes(graph: &Graph, passes: &[PassID], inputs: &[DataID], input_data: 
 
 
 
-/// An interface for allowing ops to perform shape propagation
-/// At graph execution time the shape of op inputs may be queried, and new constraints can be applied/merged with outputs.
+/// The interface through which ops can perform shape propagation.
+///
+/// Immediately prior to each graph execution, the propagation of shape constraints from inputs through the graph takes place.
+/// Each Op can read the shape of its inputs, and new constraints can be applied/merged with the shapes of its outputs.
 #[derive(Debug)]
 pub struct GraphShapes{
 	shapes: Vec<NodeShape>,
@@ -1011,10 +1044,12 @@ enum DataState<T>{
 	Deallocated,
 }
 
-/// A structure which allows for runtime checked borrowing, similar to a RefCell for a Collection of Arrays,
-/// but with some limitations.
+/// This type allows Ops to access the values and gradients of nodes at execution time.
+///
+/// To achieve safe mutable access to multiple nodes this structure uses runtime checked borrowing,
+/// similar to a RefCell for a Collection of Arrays, but with some limitations.
 /// Each element can only be borrowed either once mutably or many times immutably, however,
-/// once borrowed as such it is stuck until DataBorrow is dropped, or by calling reset_all().
+/// once borrowed as such it is stuck until `clear_borrow_flags()` is called (typically after each pass is completed).
 pub struct Storage<'a> {
 	shapes: &'a [IxDyn],
 	input_data: Vec<ArrayD<f32>>,
@@ -1030,7 +1065,7 @@ const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl<'a> Storage<'a> {
 
-	pub fn new(required_data: &[bool], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
+	fn new(required_data: &[bool], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
 		debug_assert_eq!(supplied_inputs.len(), input_data.len());
 
 		let num_nodes = shapes.len();
@@ -1059,19 +1094,19 @@ impl<'a> Storage<'a> {
 		}
 	}
 
-	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass
-	/// This can be useful to ensure that passes dont access anything they shouldn't.
+	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass.
+	/// This can be useful to ensure that passes dont access anything they havent listed as and input or output.
 	fn set_next_pass_debug(&mut self, pass_id: Option<&PassID>){
 		self.next_pass = pass_id.cloned();
 	}
 
-	/// Deallocates the data specified by DataID
+	/// Deallocates the data specified by DataID.
 	fn deallocate(&mut self, data_id: &DataID){
 		mem::replace(&mut self.data[data_id.index], DataState::Deallocated);
 	}
 
-	/// This resets runtime checks, allowing new borrowing patterns
-	/// By taking `self` this forces return of all prior borrows
+	/// This resets runtime borrow checks, allowing for a new round of borrowing patterns.
+	/// By taking `self` this forces return of all prior borrows.
 	pub fn clear_borrow_flags(mut self) -> Self{
 		for e in &mut self.borrow_flags{
 			e.set(UNUSED);
@@ -1121,7 +1156,8 @@ impl<'a> Storage<'a> {
 	}
 
 	/// Immutably borrows data element associated with the given ID
-	/// Will panic if data element is already borrowed mutably
+	/// Will panic if data element is already mutably borrowed.
+	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
 			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput);
@@ -1137,9 +1173,9 @@ impl<'a> Storage<'a> {
 		}
 	}
 
-	/// Mutably borrows data element associated with the given ID
-	/// Will panic if data element is already mutably or immutably borrowed 
-	/// The borrow will stick until
+	/// Mutably borrows data element associated with the given ID.
+	/// Will panic if data element is already mutably or immutably borrowed.
+	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get_mut<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewMutD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
 			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput);
@@ -1156,13 +1192,16 @@ impl<'a> Storage<'a> {
 		}
 	}
 
-	/// Returns true if a data_id is a required component of the subgraph.
-	/// If false, no attempt should be made to write to that data_id using 'get_mut()'
+	/// Returns true if a `DataID` is a required component of the subgraph.
+	///
+	/// Checking this is only required for the outputs of a pass, and only if a pass has multiple outputs.
+	/// If false, no attempt should be made to write to that data_id using 'get_mut()'.
 	pub fn is_required(&self, data_id: &DataID) -> bool {
 		!matches!(self.data[data_id.index], DataState::NotRequired) //TODO this doesnt perfectly match the required_data vector from graph
 	}
 
-	/// Consume the Storage and convert into a OrderMap containing the owned ndarrays.
+	/// Consume the Storage and converts it into a OrderMap.
+	///
 	/// Intended for use after storage is returned from `execute()`.
 	pub fn into_map(self) -> OrderMap<DataID, ArrayD<f32>> {
 		self.data.into_iter().enumerate().filter_map(|(i, entry)|{
