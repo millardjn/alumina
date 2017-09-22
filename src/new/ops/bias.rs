@@ -1,5 +1,4 @@
-use new::graph::{NodeID, Result};
-use new::graph;
+use new::graph::{GraphDef, NodeID, Result};
 use new::ops::broadcast::Broadcast;
 use new::ops::*;
 
@@ -37,15 +36,15 @@ impl Builder {
 	}
 }
 
-impl OperationBuilder for Builder {
-	type OperationType = Broadcast;
+impl OpBuilder for Builder {
+	type OpType = Broadcast;
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
 	}
 
-	fn build(self, builder: &mut graph::Builder) -> Result<Self::OperationType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
 
 		let input = if let Some(input) = self.input {
 			input
@@ -53,17 +52,17 @@ impl OperationBuilder for Builder {
 			let shape = if let Some(shape) = self.param_shape {
 				shape
 			} else {
-				builder.get_node_shape(&self.output)?.collapse_nonfixed_dimensions()
+				graph.node_shape(&self.output)?.collapse_nonfixed_dimensions()
 			};
 			
-			builder.new_node(shape, "TODO", tag![])?
+			graph.new_node(shape, "TODO", tag![])?
 			// make new node
 		};
 
 		let name = if let Some(name) = self.name {
 			name
 		} else {
-			op_name_gen(builder, "Bias", &[input.clone()], &[self.output.clone()])
+			standard_op_name(graph, "Bias", &[input.clone()], &[self.output.clone()])
 		};
 
 

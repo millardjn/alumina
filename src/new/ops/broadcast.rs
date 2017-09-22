@@ -1,6 +1,5 @@
-use new::graph::{NodeID, DataID, Storage, GraphShapes, Result};
-use new::graph;
-use new::ops::{op_name_gen, Operation, OperationMetaData, OperationBuilder};
+use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Result};
+use new::ops::{standard_op_name, Op, OpMetaData, OpBuilder};
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 
@@ -23,20 +22,20 @@ impl Builder {
 
 }
 
-impl OperationBuilder for Builder {
-	type OperationType = Broadcast;
+impl OpBuilder for Builder {
+	type OpType = Broadcast;
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
 	}
 
-	fn build(self, builder: &mut graph::Builder) -> Result<Self::OperationType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
 		// TODO check broadcast at graph define time?
 		let name = if let Some(name) = self.name {
 			name
 		} else {
-			op_name_gen(builder, "Broadcast", &[self.input.clone()], &[self.output.clone()])
+			standard_op_name(graph, "Broadcast", &[self.input.clone()], &[self.output.clone()])
 		};
 
 		Ok(Broadcast{
@@ -50,7 +49,7 @@ impl OperationBuilder for Builder {
 
 
 
-/// Broadcast Operation, the value of the input is added to 
+/// Broadcast Op, the value of the input is added to 
 #[derive(Clone, Debug)] 
 pub struct Broadcast{
 	pub(crate) name: String,
@@ -58,7 +57,7 @@ pub struct Broadcast{
 	pub(crate) output_id: NodeID,
 }
 
-impl Operation for Broadcast {
+impl Op for Broadcast {
 	
 	fn instance_name(&self) -> &str{ &self.name }
 
@@ -73,7 +72,7 @@ impl Operation for Broadcast {
 		shapes.merge_with(&self.output_id, &output_shape)
 	}
 	
-	fn get_meta(&self) -> &OperationMetaData{
+	fn get_meta(&self) -> &OpMetaData{
 		unimplemented!()
 	}
 
@@ -95,7 +94,7 @@ impl Operation for Broadcast {
 		let input: ArrayViewD<f32> = data.get(&self.input_id.value_id())?;
 		let mut output: ArrayViewMutD<f32> = data.get_mut(&self.output_id.value_id())?;
 
-		let input_broadcast = input.broadcast(output.shape()).expect("TODO Handle operation errors rather than panic");
+		let input_broadcast = input.broadcast(output.shape()).expect("TODO Handle op errors rather than panic");
 
 		output += &input_broadcast;
 

@@ -62,7 +62,7 @@ macro_rules! shape(
 	
 	
 	( $( $x:tt ),* ) => {
-		{let slice: &[NodeDim] = &[
+		{let slice: &[$crate::new::shape::NodeDim] = &[
 			$(
 				shape!(@parse $x),
 			)*

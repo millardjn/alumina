@@ -2,14 +2,13 @@ pub mod dummy;
 pub mod broadcast;
 pub mod bias;
 
-use new::graph::{NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
-use new::graph;
+use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
 use new::shape::NodeShape;
 use std::any::Any;
 use std::fmt::Debug;
 
 
-pub fn op_name_gen(builder: &mut graph::Builder, op_type_name: &str, inputs: &[NodeID], outputs: &[NodeID]) -> String {
+pub fn standard_op_name(builder: &mut GraphDef, op_type_name: &str, inputs: &[NodeID], outputs: &[NodeID]) -> String {
 	let mut op_name = op_type_name.to_string();
 	op_name.push_str("(");
 
@@ -33,11 +32,11 @@ pub fn op_name_gen(builder: &mut graph::Builder, op_type_name: &str, inputs: &[N
 	op_name.push_str(")");
 
 	// If name already exists (should be rare), append an integer. Try in ascending order
-	let mut result = builder.get_op_id(&*op_name);
+	let mut result = builder.op_id(&*op_name);
 	let mut i = 1;
 	while matches!(result, Err(Error(ErrorKind::StorageDataMarkedNotRequired, _))){
 		let next_op_name = format!("{}{}", op_name, i);
-		result = builder.get_op_id(&*next_op_name);
+		result = builder.op_id(&*next_op_name);
 		i += 1;
 	}
 	
@@ -45,21 +44,21 @@ pub fn op_name_gen(builder: &mut graph::Builder, op_type_name: &str, inputs: &[N
 }
 
 
-//TODO: remove mutability of operations in favor of state objects that implement Any
-pub trait OperationBuilder: Any {
-	type OperationType: Operation;
+//TODO: remove mutability of Ops in favor of state objects that implement Any
+pub trait OpBuilder: Any {
+	type OpType: Op;
 
-	/// Supply name for operation
+	/// Supply name for Op
 	fn name<T: Into<String>>(self, name: T) -> Self;
 
-	/// Called by graph::Builder to construct the operation instance
+	/// Called by graph::Builder to construct the Op instance
 	/// Arbitrary graph modification occur allowing 
-	/// Used to let Operations create parameter nodes as necessary,
-	/// or to implement operations with are compositions of smaller operations
-	fn build(self, &mut graph::Builder) -> Result<Self::OperationType>;
+	/// Used to let Ops create parameter nodes as necessary,
+	/// or to implement Ops with are compositions of smaller Ops
+	fn build(self, &mut GraphDef) -> Result<Self::OpType>;
 }
 
-pub trait Operation: OperationClone + Any + Debug{
+pub trait Op: OpClone + Any + Debug{
 
 	fn instance_name(&self) -> &str;
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>;
@@ -69,23 +68,23 @@ pub trait Operation: OperationClone + Any + Debug{
 
 	// fn init_params(&mut self, params: &mut [f32]){
 	// 	if self.num_params() == 0 {
-	// 		assert_eq!(0, params.len(), "init_params passed non-zero length slice for an operation with no parameters");
+	// 		assert_eq!(0, params.len(), "init_params passed non-zero length slice for an Op with no parameters");
 	// 	} else {
 	// 		unimplemented!();
 	// 	}
 	// }
 	
 	/// Returns the meta data
-	fn get_meta(&self) -> &OperationMetaData;
+	fn get_meta(&self) -> &OpMetaData;
 	
 	/// Returns the nodeIDs (inputs, outputs) of the nodes
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
 
 	/// Returns the DataIDs of the (inputs, outputs) of the forward pass
-	/// where the inputs are a subset of the operation input nodes values
-	/// and where the outputs are a subset of the operations output node values
+	/// where the inputs are a subset of the Op input nodes values
+	/// and where the outputs are a subset of the Ops output node values
 	fn forward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
-		// the default implementation returns the largest possible set of DataIDs based on the operation dependancies
+		// the default implementation returns the largest possible set of DataIDs based on the Op dependancies
 		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
 		let (op_inputs, op_outputs) = self.dependencies();
 		(
@@ -95,10 +94,10 @@ pub trait Operation: OperationClone + Any + Debug{
 	}
 
 	/// Returns the DataIDs of the (inputs, outputs) of the backward pass
-	/// where the inputs are a subset of the operation input nodes values, and output nodes gradients
-	/// and where the outputs are a subset of the operations input nodes gradients
+	/// where the inputs are a subset of the Op input nodes values, and output nodes gradients
+	/// and where the outputs are a subset of the Ops input nodes gradients
 	fn backward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
-		// the default implementation returns the largest possible set of DataIDs based on the operation dependancies
+		// the default implementation returns the largest possible set of DataIDs based on the Op dependancies
 		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
 		let (op_inputs, op_outputs) = self.dependencies();
 		(
@@ -111,28 +110,28 @@ pub trait Operation: OperationClone + Any + Debug{
 	/// should update output node values based on input node values. Must use += when writing to output node.
 	fn forward (&mut self, data: &mut Storage) -> Result<()>;
 	
-	/// Should calculate error gradient contribution of operation to the input node and parameters based on the output node derivatives.
-	/// Each operation will be passed its relevant slice for params and param_derivs
-	/// Note: all calculations should use += as to not overwrite other operations contributions,
+	/// Should calculate error gradient contribution of Op to the input node and parameters based on the output node derivatives.
+	/// Each Op will be passed its relevant slice for params and param_derivs
+	/// Note: all calculations should use += as to not overwrite other Ops contributions,
 	/// and in the case of data shape n>1 the sum of parameter gradients from all individual examples should be accumulated in param_deriv and error
 	/// the graph will later divide by n to get the mean error and error derivatives.
 	fn backward (&mut self, data: &mut Storage) -> Result<()>;
 }
 
-pub trait SimpleOperationBuilder: OperationBuilder {
+pub trait SimpleOpBuilder: OpBuilder {
 	fn set_output(&mut self, id: &NodeID);
 	fn required_output_shape(&self) -> NodeShape;
-	//fn build_with_output() -> Self::OperationType;
+	//fn build_with_output() -> Self::OpType;
 }
 
-pub trait SimpleOperation: Operation {
+pub trait SimpleOp: Op {
 
 }
 
 
 // based on metadata from: https://github.com/Metadiff/gir
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationMetaData {
+pub struct OpMetaData {
 	pub name: &'static str,
 	//pub arity: Arity,
 	pub num_outputs: usize,
@@ -148,38 +147,38 @@ pub struct OperationMetaData {
 }
 
 // Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
-pub trait OperationClone {
-	fn clone_box(&self) -> Box<Operation>;
+pub trait OpClone {
+	fn clone_box(&self) -> Box<Op>;
 }
 
-impl<T> OperationClone for T where T: 'static + Operation + Clone {
-	fn clone_box(&self) -> Box<Operation> {
+impl<T> OpClone for T where T: 'static + Op + Clone {
+	fn clone_box(&self) -> Box<Op> {
 		Box::new(self.clone())
 	}
 }
 
-impl Clone for Box<Operation> {
-	fn clone(&self) -> Box<Operation> {
+impl Clone for Box<Op> {
+	fn clone(&self) -> Box<Op> {
 		self.clone_box()
 	}
 }
 
 
-/// An operation which does nothing
+/// An Op which does nothing
 /// Can be returned as an 
 #[derive(Clone, Debug)]
-struct NullOperation {
+struct NullOp {
 	
 }
 
-impl Operation for NullOperation {
+impl Op for NullOp {
 	fn instance_name(&self) -> &str {
-		"Null Operation"
+		"Null Op"
 	}
 
 	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 			
-	fn get_meta(&self) -> &OperationMetaData{
+	fn get_meta(&self) -> &OpMetaData{
 		unimplemented!()
 	}
 	
@@ -193,10 +192,26 @@ impl Operation for NullOperation {
 }
 
 
-// mod test {
-// 	use new::graph::{NodeID, Storage, GraphShapes};
-// 	use new::graph;
-// 	use super::*;
+#[test]
+fn test_name_generation(){
+	_test_name_generation().unwrap();
+}
+
+fn _test_name_generation() -> Result<()>{
+	use new::ops::dummy;
+	use new::graph::GraphDef;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![Unknown, 5, 16], "node1", tag![])?;
+	let node2 = g.new_node(shape![Unknown, 5, 16], "node2", tag![])?;
+	let node3 = g.new_node(shape![Unknown, 5, 16], "node3", tag![])?;
+	let node4 = g.new_node(shape![Unknown, 5, 16], "node4", tag![])?;
 
 
-// }
+	let o1 = g.new_op(dummy::Builder::new().input(&node1).input(&node2).output(&node3).output(&node4), tag![])?;
+
+	assert_eq!("Dummy(node1,node2=>node3,node4)", g.op_name(&o1));
+
+	Ok(())
+}

@@ -1,16 +1,15 @@
-use new::graph::{NodeID, Storage, GraphShapes, Result};
-use new::graph;
+use new::graph::{GraphDef, NodeID, Storage, GraphShapes, Result};
 use new::ops::*;
 
 #[derive(Clone, Debug)]
-pub struct DummyOperation {
+pub struct DummyOp {
 	name: String,
 	inputs: Vec<NodeID>,
 	outputs: Vec<NodeID>,
 	touch_data: bool,
 }
 
-impl Operation for DummyOperation {
+impl Op for DummyOp {
 	fn instance_name(&self) -> &str {
 		&self.name
 	}
@@ -19,7 +18,7 @@ impl Operation for DummyOperation {
 		Ok(())
 	}
 			
-	fn get_meta(&self) -> &OperationMetaData{
+	fn get_meta(&self) -> &OpMetaData{
 		unimplemented!()
 	}
 	
@@ -101,22 +100,22 @@ impl Builder {
 	}
 }
 
-impl OperationBuilder for Builder {
-	type OperationType = DummyOperation;
+impl OpBuilder for Builder {
+	type OpType = DummyOp;
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
 	}
 
-	/// Called by graph::Builder to construct the operation instance
-	fn build(self, builder: &mut graph::Builder) -> Result<Self::OperationType> {
+	/// Called by GraphDef::new_op to construct the op instance
+	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
 		let name = if let Some(name) = self.name {
 			name
 		} else {
-			op_name_gen(builder, "Dummy", &self.inputs, &self.outputs)
+			standard_op_name(graph, "Dummy", &self.inputs, &self.outputs)
 		};
-		Ok(DummyOperation{
+		Ok(DummyOp{
 			name: name,
 			inputs: self.inputs.clone(),
 			outputs: self.outputs.clone(),
