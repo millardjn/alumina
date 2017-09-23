@@ -467,13 +467,13 @@ impl GraphDef {
 	}
 
 	// TODO check names
-	pub fn is_node_tagged<T: Into<NodeTag>>(&self, node_id: NodeID, tag: T) -> bool {
+	pub fn is_node_tagged<T: Into<NodeTag>>(&self, node_id: &NodeID, tag: T) -> bool {
 		let tag = tag.into();
 		match tag {
 			NodeTag::Id(ind) => {ind == node_id.index},
 			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
 				match self.node_tags.get(&tag){
-					Some(set) => set.contains_key(&node_id),
+					Some(set) => set.contains_key(node_id),
 					None => false,
 				}
 			}
@@ -481,13 +481,13 @@ impl GraphDef {
 	}
 
 	// TODO check names
-	pub fn is_op_tagged<T: Into<OpTag>>(&self, op_id: OpID, tag: T) -> bool {
+	pub fn is_op_tagged<T: Into<OpTag>>(&self, op_id: &OpID, tag: T) -> bool {
 		let tag = tag.into();
 		match tag {
 			OpTag::Id(ind) => {ind == op_id.index},
 			OpTag::Int(_) | OpTag::Str(_) => {
 				match self.op_tags.get(&tag){
-					Some(set) => set.contains_key(&op_id),
+					Some(set) => set.contains_key(op_id),
 					None => false,
 				}
 			}
@@ -636,7 +636,7 @@ pub struct Dependencies {
 }
 
 impl Dependencies {
-	fn new(graph: &GraphDef) -> Dependencies {
+	pub fn new(graph: &GraphDef) -> Dependencies {
 		let mut pass_inputs: Vec<Vec<DataID>> = (0..graph.num_passes()).map(|_| vec![]).collect();
 		let mut pass_outputs: Vec<Vec<DataID>> = (0..graph.num_passes()).map(|_| vec![]).collect();
 
@@ -667,6 +667,22 @@ impl Dependencies {
 		}
 
 		Dependencies{pass_inputs, pass_outputs, data_inputs, data_outputs}
+	}
+
+	pub fn data_inputs(&self, data_id: DataID) -> &[PassID] {
+		&self.data_inputs[data_id.index]
+	}
+
+	pub fn data_outputs(&self, data_id: DataID) -> &[PassID] {
+		&self.data_outputs[data_id.index]
+	}
+
+	pub fn pass_inputs(&self, pass_id: PassID) -> &[DataID] {
+		&self.pass_inputs[pass_id.index]
+	}
+	
+	pub fn pass_outputs(&self, pass_id: PassID) -> &[DataID] {
+		&self.pass_outputs[pass_id.index]
 	}
 }
 
@@ -872,6 +888,7 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 
 	#[derive(Clone)]
 	enum DataState {
+		Input,
 		Ready, // Data should be marked as ready if 1) it is a graph input, or 2) when the last input pass to it is sucessfully retired as ready
 		Pending(usize), // Indicates the number of remaining input passes before the data can be marked as ready
 		Unavailable, // propagated if any input pass is unavailable, but does not overwrite Ready (to preserve inputs to the graph as ready).
@@ -888,7 +905,7 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 
 	/// Attempts to retire a pass as Ready or Unavailable, return true if sucessful false otherwise
 	/// If it returns true this method should never be called again for that pass_id.
-	fn try_retire_pass(pass_id: &PassID, pass_order: &mut Vec<PassID>, data_ready: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies) -> bool{
+	fn try_retire_pass(pass_id: &PassID, pass_order: &mut Vec<PassID>, data_state: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies) -> bool{
 		if matches!(passes_ready[pass_id.index] , PassState::Ready | PassState:: Unavailable) {
 			panic!("pass has already been retired, try_retire_pass() should not be called")
 		} else if matches!(passes_ready[pass_id.index] , PassState::Pending(0)) {
@@ -898,13 +915,13 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 			for data_id in &dependencies.pass_outputs[pass_id.index] {
 				// If a data outptu of a pass is pending decrement
 				// If that data output can now be marked ready
-				match data_ready[data_id.index] {
-					DataState::Unavailable => {},
+				match data_state[data_id.index] {
+					DataState::Unavailable | DataState::Input => {},
 					DataState::Pending(rem) if rem == 1 => {
-						mark_data_ready(data_id, data_ready, passes_ready, &dependencies)
+						mark_data_ready(data_id, data_state, passes_ready, &dependencies)
 					},
-					DataState::Pending(rem) if rem > 1 => {data_ready[data_id.index] = DataState::Pending(rem - 1)},
-					DataState::Pending(_) => panic!("Data with zero inputs should have already been marked Unavailable or Ready"),
+					DataState::Pending(rem) if rem > 1 => {data_state[data_id.index] = DataState::Pending(rem - 1)},
+					DataState::Pending(_) => panic!("Data with zero inputs should have already been marked Unavailable or Input"),
 					DataState::Ready => panic!("data marked ready before last input pass was processed. graph likely contains a requires pass which writes to a input tensor"), //TODO: create test to confirm this is caused by fan-out ops writing to a subgraph input
 				}
 			}
@@ -912,7 +929,7 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 		} else if matches!(passes_ready[pass_id.index] , PassState::PendingUnavailable) {
 			passes_ready[pass_id.index] = PassState::Unavailable;
 			for data_id in &dependencies.pass_outputs[pass_id.index] {
-				mark_data_unavailable(data_id, data_ready, passes_ready, &dependencies)
+				mark_data_unavailable(data_id, data_state, passes_ready, &dependencies)
 			}
 			true
 		} else {
@@ -922,9 +939,21 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 
 	/// Marks data as ready, and decreases pending count of dependent passes
 	/// Only legal to call this if is_input[]==true or as the last input pass is retired
-	fn mark_data_ready(data_id: &DataID, data_ready: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies){
-		//debug_assert!(is_input[data_id.index] || matches!(data_ready[data_id.index], State::Pending(rem) if rem == 1));
-		data_ready[data_id.index] = DataState::Ready;
+	fn mark_data_input(data_id: &DataID, data_state: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies){
+		data_state[data_id.index] = DataState::Input;
+		for pass_id in &dependencies.data_outputs[data_id.index] {
+			match passes_ready[pass_id.index] {
+				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::Pending(rem - 1)},
+				PassState::Unavailable | PassState::PendingUnavailable =>{},
+				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order"),
+			}
+		}
+	}
+
+	/// Marks data as ready, and decreases pending count of dependent passes
+	/// Only legal to call this if is_input[]==true or as the last input pass is retired
+	fn mark_data_ready(data_id: &DataID, data_state: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies){
+		data_state[data_id.index] = DataState::Ready;
 		for pass_id in &dependencies.data_outputs[data_id.index] {
 			match passes_ready[pass_id.index] {
 				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::Pending(rem - 1)},
@@ -935,9 +964,9 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 	}
 
 	/// Can be called on data in any state, but will only mark data and dependent passes as unavailable if the current data state is Pending
-	fn mark_data_unavailable(data_id: &DataID, data_ready: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies){
-		if matches!(data_ready[data_id.index], DataState::Ready | DataState::Unavailable){return} 
-		data_ready[data_id.index] = DataState::Unavailable;
+	fn mark_data_unavailable(data_id: &DataID, data_state: &mut[DataState], passes_ready: &mut [PassState], dependencies: &Dependencies){
+		if matches!(data_state[data_id.index], DataState::Ready | DataState::Unavailable){return} 
+		data_state[data_id.index] = DataState::Unavailable;
 		for pass_id in &dependencies.data_outputs[data_id.index] {
 			match passes_ready[pass_id.index] {
 				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::PendingUnavailable},
@@ -953,13 +982,13 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 	let mut deferred_passes: VecDeque<PassID> = VecDeque::new();
 	
 	// Setup states
-	let mut passes_ready: Vec<PassState> = (0..graph.num_passes()).map(|i| PassState::Pending(dependencies.pass_inputs[i].len())).collect();
-	let mut data_ready: Vec<DataState> = (0..graph.num_data()).map(|i| DataState::Pending(dependencies.data_inputs[i].len())).collect();
+	let mut passes_state: Vec<PassState> = (0..graph.num_passes()).map(|i| PassState::Pending(dependencies.pass_inputs[i].len())).collect();
+	let mut data_state: Vec<DataState> = (0..graph.num_data()).map(|i| DataState::Pending(dependencies.data_inputs[i].len())).collect();
 	for (i, &is_input) in is_input.iter().enumerate() {
 		if is_input {
-			mark_data_ready(&DataID{index: i}, &mut data_ready, &mut passes_ready, &dependencies)
+			mark_data_input(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies)
 		} else if dependencies.data_inputs[i].len() == 0 {
-			mark_data_unavailable(&DataID{index: i}, &mut data_ready, &mut passes_ready, &dependencies)
+			mark_data_unavailable(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies)
 		}
 	}
 
@@ -974,7 +1003,7 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 	let default_pass_order = forward_required_passes.chain(backward_required_passes.rev());
 	for pass_id in default_pass_order {
 
-		let success = try_retire_pass(&pass_id, &mut pass_order, &mut data_ready, &mut passes_ready, &dependencies);
+		let success = try_retire_pass(&pass_id, &mut pass_order, &mut data_state, &mut passes_state, &dependencies);
 		if !success {
 			deferred_passes.push_back(pass_id.clone());
 			continue;
@@ -984,7 +1013,7 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 		// always try to add deferred passes in order
 		let mut i = 0;
 		while i < deferred_passes.len(){
-			let success = try_retire_pass(&deferred_passes[i], &mut pass_order, &mut data_ready, &mut passes_ready, &dependencies);
+			let success = try_retire_pass(&deferred_passes[i], &mut pass_order, &mut data_state, &mut passes_state, &dependencies);
 			if success {
 				deferred_passes.remove(i);
 				i = 0; // keep trying from the start again
@@ -994,12 +1023,12 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 		}
 	}
 	
-	if (0..graph.num_data()).filter(|&i| required_data[i]).any(|i| matches!(data_ready[i], DataState::Unavailable)) {
+	if (0..graph.num_data()).filter(|&i| required_data[i]).any(|i| matches!(data_state[i], DataState::Unavailable)) {
 		bail!(ErrorKind::InputsInsufficientForRequestedOutputs)
 	}
 
 	if deferred_passes.len() > 0 {
-		bail!(ErrorKind::GraphContainsCircularDependencies(deferred_passes.into_iter().map(|pass| (pass.clone(), dependencies.pass_inputs[pass.index].iter().filter(|data_id| !matches!(data_ready[data_id.index], DataState::Ready)).cloned().collect())).collect()))
+		bail!(ErrorKind::GraphContainsCircularDependencies(deferred_passes.into_iter().map(|pass| (pass.clone(), dependencies.pass_inputs[pass.index].iter().filter(|data_id| !matches!(data_state[data_id.index], DataState::Ready)).cloned().collect())).collect()))
 	}
 
 	Ok(pass_order)
@@ -1105,7 +1134,7 @@ enum DataState<T>{
 pub struct Storage<'a> {
 	shapes: &'a [IxDyn],
 	input_data: Vec<ArrayD<f32>>,
-	error: f32,
+	loss: f32,
 	data: Vec<DataState<ArrayD<f32>>>,
 	borrow_flags: Vec<Cell<usize>>,
 	static_inputs: &'a OrderMap<DataID, ArrayD<f32>>,
@@ -1137,7 +1166,7 @@ impl<'a> Storage<'a> {
 		Storage{
 			shapes: shapes,
 			input_data: input_data,
-			error: 0.0,
+			loss: 0.0,
 			data: data,
 			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
 			static_inputs,
@@ -1201,10 +1230,15 @@ impl<'a> Storage<'a> {
 		}
 	}
 
-	/// Access the error variable.
-	/// Error should only be added to in the backwards passes of ops.
-	pub fn error(&mut self) -> &mut f32 {
-		&mut self.error
+	/// Access the loss variable.
+	pub fn loss(&self) -> &f32 {
+		&self.loss
+	}
+
+	/// Access the loss variable.
+	/// Loss should only be added to in the backwards passes of ops.
+	pub fn loss_mut(&mut self) -> &mut f32 {
+		&mut self.loss
 	}
 
 	/// Immutably borrows data element associated with the given ID
