@@ -192,8 +192,8 @@ impl NodeShape{
 		}
 	}
 	
-	/// Returns a copy of the shape with all nonfixed dimensions set to 1.
-	pub fn collapse_nonfixed_dimensions(&self) -> NodeShape {
+	/// Returns a copy of the shape with all dimensions that arent Known(_) set to 1.
+	pub fn collapse_to_broadcastable_dimension(&self) -> NodeShape {
 		let mut shape = self.clone();
 
 		for i in 0..shape.dimensions.len(){

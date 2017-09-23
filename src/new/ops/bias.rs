@@ -66,15 +66,12 @@ impl OpBuilder for Builder {
 			let shape = if let Some(shape) = self.param_shape {
 				shape
 			} else {
-				graph.node_shape(&self.output)?.collapse_nonfixed_dimensions()
+				graph.node_shape(&self.output)?.collapse_to_broadcastable_dimension()
 			};
 			
 			let param_name = standard_parameter_names(1, &name, graph).remove(0);
 			graph.new_node(shape, param_name, tag![])?
 		};
-
-
-
 
 		Ok(Broadcast{
 			name: name,
