@@ -1,5 +1,5 @@
 use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Result};
-use new::ops::{standard_op_name, Op, OpMetaData, OpBuilder};
+use new::ops::{standard_op_name, Op, OpBuilder};
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 
@@ -25,6 +25,10 @@ impl Builder {
 impl OpBuilder for Builder {
 	type OpType = Broadcast;
 
+	fn type_name(&self) -> &'static str {
+		"Broadcast"
+	}
+
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
@@ -35,7 +39,7 @@ impl OpBuilder for Builder {
 		let name = if let Some(name) = self.name {
 			name
 		} else {
-			standard_op_name(graph, "Broadcast", &[self.input.clone()], &[self.output.clone()])
+			standard_op_name(&self, graph, &[self.input.clone()], &[self.output.clone()])
 		};
 
 		Ok(Broadcast{
@@ -59,6 +63,10 @@ pub struct Broadcast{
 
 impl Op for Broadcast {
 	
+	fn type_name(&self) -> &'static str {
+		"Broadcast"
+	}
+
 	fn instance_name(&self) -> &str{ &self.name }
 
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{
@@ -71,11 +79,6 @@ impl Op for Broadcast {
 		}).into();
 		shapes.merge_with(&self.output_id, &output_shape)
 	}
-	
-	fn get_meta(&self) -> &OpMetaData{
-		unimplemented!()
-	}
-
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(vec![self.input_id.clone()], vec![self.output_id.clone()])

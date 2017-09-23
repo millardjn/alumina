@@ -260,11 +260,12 @@ impl From<String> for OpTag{
 #[derive(Clone, Debug)]
 pub struct GraphDef {
 
-	nodes: Vec<NodeID>,
+	node_ids: Vec<NodeID>,
 	node_shapes: Vec<NodeShape>,
 	node_names: OrderMap<String, NodeID>,
 	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
 
+	op_ids: Vec<OpID>,
 	ops: Vec<Box<Op>>,
 	op_names: OrderMap<String, OpID>,
 	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
@@ -276,11 +277,12 @@ impl GraphDef {
 	
 	pub fn new() -> GraphDef {
 		GraphDef {
-			nodes: vec![],
+			node_ids: vec![],
 			node_shapes: vec![],
 			node_names: OrderMap::new(),
 			node_tags: OrderMap::new(),
 
+			op_ids: vec![],
 			ops: vec![],
 			op_names: OrderMap::new(),
 			op_tags: OrderMap::new(),
@@ -298,8 +300,10 @@ impl GraphDef {
 	}
 
 	/// The default subgraph is a training subgraph.
-	/// All nodes with no input ops are taken to be subgraph inputs (the order of inputs is the order the nodes were created in),
+	/// All nodes with no input ops are taken to be subgraph inputs,
 	/// and all parameters values and parameter gradients are taken to be outputs.
+	/// The ordering of the inputs follows the order of node creation,
+	/// with the additional constraint that non-parameter nodes are strictly before parameter nodes.
 	/// See `subgraph()`.
 	pub fn default_subgraph() -> Result<SubGraph> {
 		unimplemented!()
@@ -342,10 +346,10 @@ impl GraphDef {
 		}
 
 		// all good, so add node
-		let node_id = NodeID{index: self.nodes.len()};
+		let node_id = NodeID{index: self.node_ids.len()};
 		self.node_names.insert(name, node_id.clone());
 		self.node_shapes.push(shape);
-		self.nodes.push(node_id.clone());
+		self.node_ids.push(node_id.clone());
 		
 		for tag in tags{
 			match tag {
@@ -384,6 +388,7 @@ impl GraphDef {
 		let op_id = OpID{index: self.ops.len()};
 		self.op_names.insert(name, op_id.clone());
 		self.ops.push(op);
+		self.op_ids.push(op_id.clone());
 
 		for tag in tags{
 			match tag {
@@ -421,6 +426,14 @@ impl GraphDef {
 
 	pub fn new_write_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
 		unimplemented!()
+	}
+
+	pub fn nodes(&self) -> &[NodeID] {
+		&self.node_ids
+	}
+
+	pub fn ops(&self) -> &[OpID] {
+		&self.op_ids
 	}
 
 	pub fn node_name(&self, node_id: &NodeID) -> &str{
@@ -485,7 +498,7 @@ impl GraphDef {
 	pub fn node_id<T: Into<NodeTag>>(&self, tag: T) -> Result<NodeID> {
 		let tag = tag.into();
 		match tag {
-			NodeTag::Id(ind) => Ok(self.nodes[ind].clone()),
+			NodeTag::Id(ind) => Ok(self.node_ids[ind].clone()),
 			NodeTag::Str(ref string) => {
 				// Check names first, then other string tags
 				if let Some(node_id) = self.node_names.get(string) {
@@ -519,7 +532,7 @@ impl GraphDef {
 	pub fn node_ids<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderMap<NodeID, ()> {
 		let tag = tag.into();
 		match tag {
-			NodeTag::Id(ind) => iter::once((self.nodes[ind].clone(), ())).collect(),
+			NodeTag::Id(ind) => iter::once((self.node_ids[ind].clone(), ())).collect(),
 			NodeTag::Str(ref string) => {
 				// Check names first, then other string tags
 				if let Some(node_id) = self.node_names.get(string) {
@@ -591,26 +604,26 @@ impl GraphDef {
 
 	/// Returns the number of nodes in the graph.
 	pub fn num_nodes(&self) -> usize{
-		self.nodes.len()
+		self.node_ids.len()
 	}
 
 	/// Returns the number of tensors in the graph.
 	///
 	/// Currently this is twice the number of nodes (values and gradients).
 	pub fn num_data(&self) -> usize{
-		self.nodes.len()*2
+		self.node_ids.len()*2
 	}
 
 	/// Returns the number of ops in the graph.
 	pub fn num_ops(&self) -> usize{
-		self.ops.len()
+		self.op_ids.len()
 	}
 
 	/// Returns the number of passes in the graph.
 	///
 	/// Currently this is twice the number of ops (forward pass and backwards pass).
 	pub fn num_passes(&self) -> usize{
-		self.ops.len()*2
+		self.op_ids.len()*2
 	}
 }
 

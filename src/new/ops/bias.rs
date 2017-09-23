@@ -39,12 +39,26 @@ impl Builder {
 impl OpBuilder for Builder {
 	type OpType = Broadcast;
 
+	fn type_name(&self) -> &'static str {
+		"Bias"
+	}
+
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
 	}
 
 	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
+
+		let name = if let Some(name) = self.name {
+			name
+		} else {
+			if let Some(ref input) = self.input {
+				standard_op_name(&self, graph, &[input.clone()], &[self.output.clone()])
+			} else {
+				standard_op_name(&self, graph, &[], &[self.output.clone()])
+			}
+		};
 
 		let input = if let Some(input) = self.input {
 			input
@@ -55,15 +69,11 @@ impl OpBuilder for Builder {
 				graph.node_shape(&self.output)?.collapse_nonfixed_dimensions()
 			};
 			
-			graph.new_node(shape, "TODO", tag![])?
-			// make new node
+			let param_name = standard_parameter_names(1, &name, graph).remove(0);
+			graph.new_node(shape, param_name, tag![])?
 		};
 
-		let name = if let Some(name) = self.name {
-			name
-		} else {
-			standard_op_name(graph, "Bias", &[input.clone()], &[self.output.clone()])
-		};
+
 
 
 		Ok(Broadcast{

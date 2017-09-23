@@ -10,6 +10,10 @@ pub struct DummyOp {
 }
 
 impl Op for DummyOp {
+	fn type_name(&self) -> &'static str {
+		"Dummy"
+	}
+
 	fn instance_name(&self) -> &str {
 		&self.name
 	}
@@ -17,11 +21,7 @@ impl Op for DummyOp {
 	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{
 		Ok(())
 	}
-			
-	fn get_meta(&self) -> &OpMetaData{
-		unimplemented!()
-	}
-	
+				
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(self.inputs.clone(), self.outputs.clone())
 	}
@@ -103,6 +103,10 @@ impl Builder {
 impl OpBuilder for Builder {
 	type OpType = DummyOp;
 
+	fn type_name(&self) -> &'static str {
+		"Dummy"
+	}
+
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
 		self.name = Some(name.into());
 		self
@@ -113,7 +117,7 @@ impl OpBuilder for Builder {
 		let name = if let Some(name) = self.name {
 			name
 		} else {
-			standard_op_name(graph, "Dummy", &self.inputs, &self.outputs)
+			standard_op_name(&self, graph, &self.inputs, &self.outputs)
 		};
 		Ok(DummyOp{
 			name: name,
