@@ -117,3 +117,36 @@ impl Op for Broadcast {
 		Ok(())
 	}
 }
+
+#[test]
+fn test_broadcast(){
+	_broadcast().unwrap();
+}
+
+fn _broadcast() -> Result<()>{
+	use new::ops::dummy;
+	use new::graph::GraphDef;
+	use new::shape;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![1, 1, 16], "broadcast", tag![])?;
+	let node2 = g.new_node(shape![7, 5, 16], "broadcasted", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 16], "target", tag![])?;
+
+
+	let _o1 = g.new_op(Builder::new(&node1, &node2), tag![])?;
+	let _o2 = g.new_op(mse::Builder::new(&node2, &node3), tag![])?;
+
+	let iters = 100;
+	let failures = 2;
+	let tolerance = 0.001;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}

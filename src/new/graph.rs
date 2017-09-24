@@ -770,7 +770,7 @@ impl SubGraph {
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != inputs.len()
-		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.supplied_inputs[i].index].slice()}) {
+		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.supplied_inputs[i].node_id().index].slice()}) {
 			self.shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &inputs, &self.filtered_static_inputs)?;
 		}
 
@@ -1134,7 +1134,7 @@ enum DataState<T>{
 pub struct Storage<'a> {
 	shapes: &'a [IxDyn],
 	input_data: Vec<ArrayD<f32>>,
-	loss: f32,
+	loss: Cell<f32>,
 	data: Vec<DataState<ArrayD<f32>>>,
 	borrow_flags: Vec<Cell<usize>>,
 	static_inputs: &'a OrderMap<DataID, ArrayD<f32>>,
@@ -1166,7 +1166,7 @@ impl<'a> Storage<'a> {
 		Storage{
 			shapes: shapes,
 			input_data: input_data,
-			loss: 0.0,
+			loss: Cell::new(0.0),
 			data: data,
 			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
 			static_inputs,
@@ -1231,14 +1231,14 @@ impl<'a> Storage<'a> {
 	}
 
 	/// Access the loss variable.
-	pub fn loss(&self) -> &f32 {
-		&self.loss
+	pub fn loss(&self) -> f32 {
+		self.loss.get()
 	}
 
 	/// Access the loss variable.
 	/// Loss should only be added to in the backwards passes of ops.
-	pub fn loss_mut(&mut self) -> &mut f32 {
-		&mut self.loss
+	pub fn loss_add(&self, additional_loss: f32){
+		unsafe{*self.loss.as_ptr() += additional_loss;}
 	}
 
 	/// Immutably borrows data element associated with the given ID

@@ -2,6 +2,7 @@ pub mod dummy;
 pub mod broadcast;
 pub mod bias;
 pub mod numeric_check;
+pub mod loss;
 
 use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
 use new::shape::NodeShape;

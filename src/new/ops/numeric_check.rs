@@ -41,28 +41,53 @@ pub fn generate_input_data(graph: &GraphDef, node_ids:&[NodeID], default_varianc
 
 /// Take a stepsize
 pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: &OrderMap<DataID, ArrayD<f32>>) -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>) {	
+		let grad_dot: f32 = node_ids.iter().map(|node_id|{
+				results.get(&node_id.gradient_id()).unwrap().iter().fold(0.0, |acc, d| acc + d*d)
+			}).sum();
+		
 		let input_1 = data.iter().cloned().zip(node_ids)
 			.map(|(mut data, node_id)|{
 				let grad = results.get(&node_id.gradient_id()).unwrap();
-				data.scaled_add(-step_size/grad.iter().fold(0.0, |acc, d| acc + d*d), grad);
+				data.scaled_add(-step_size/grad_dot, grad);
 				data
 			}).collect();
 
 		let input_2 = data.iter().cloned().zip(node_ids)
 			.map(|(mut data, node_id)|{
 				let grad = results.get(&node_id.gradient_id()).unwrap();
-				data.scaled_add(step_size/grad.iter().fold(0.0, |acc, d| acc + d*d), grad);
+				data.scaled_add(step_size/grad_dot, grad);
 				data
 			}).collect();
 
 		(input_1, input_2)
 }
 
+pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<()> {
+	let mut param_count = 0;
+	let mut input_count = 0;
+
+	let mut param_errs = vec![];
+	let mut input_errs = vec![];
+
+	for _ in 0..iters {
+		let (param_err, input_err) = numeric_error(graph, step_size, default_variance, override_distributions)?;
+		param_errs.push(param_err);
+		input_errs.push(input_err);
+		if param_err > tolerance {param_count += 1};
+		if input_err > tolerance {input_count += 1};
+	}
+
+	assert!(param_count < failures, "param error failures: {} \n values:{:?}", param_count, param_errs);
+	assert!(input_count < failures, "input error failures: {} \n values:{:?}", input_count, input_errs);
+
+	Ok(())
+}
+
 
 /// Returns the relative error of the derivatives with respect to parameters and inputs
 ///
 /// (param_err, input_err)
-pub fn test_numeric (graph: GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
+pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
 	let dependencies = Dependencies::new(&graph);
 
 	let input_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(node_id.value_id()).len() == 0 && !graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
@@ -86,10 +111,10 @@ pub fn test_numeric (graph: GraphDef, step_size: f32, default_variance: f32, ove
 		let (params_1, params_2) = step(step_size, &parameter_ids, &params_0, &output_0);
 
 		let data_1 = inputs_0.iter().chain(&params_1).cloned().collect();
-		let loss_1 = *subgraph.execute(data_1)?.loss();
+		let loss_1 = subgraph.execute(data_1)?.loss();
 
 		let data_2 = inputs_0.iter().chain(&params_2).cloned().collect();
-		let loss_2 = *subgraph.execute(data_2)?.loss();
+		let loss_2 = subgraph.execute(data_2)?.loss();
 
 		let expected_diff = 2.0*step_size;
 		let diff = loss_2 - loss_1;
@@ -103,10 +128,10 @@ pub fn test_numeric (graph: GraphDef, step_size: f32, default_variance: f32, ove
 		let (inputs_1, inputs_2) = step(step_size, &input_ids, &inputs_0, &output_0);
 
 		let data_1 = inputs_1.iter().chain(&params_0).cloned().collect();
-		let loss_1 = *subgraph.execute(data_1)?.loss();
+		let loss_1 = subgraph.execute(data_1)?.loss();
 
 		let data_2 = inputs_2.iter().chain(&params_0).cloned().collect();
-		let loss_2 = *subgraph.execute(data_2)?.loss();
+		let loss_2 = subgraph.execute(data_2)?.loss();
 
 		let expected_diff = 2.0*step_size;
 		let diff = loss_2 - loss_1;
