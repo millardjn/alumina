@@ -1,8 +1,8 @@
 pub mod dummy;
-pub mod broadcast;
-pub mod bias;
 pub mod numeric_check;
 pub mod loss;
+pub mod nn;
+pub mod math;
 
 use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
 use new::shape::NodeShape;
@@ -14,7 +14,7 @@ use std::fmt::Debug;
 /// If a name isn't set on an `OpBuilder` a default name will be generated using the `type_name()` and the names of input and output nodes.
 /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), i, node1_name, node2_name, node3_name, node4_name)`
 /// e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until an unused name is found.
-pub fn standard_op_name<B: OpBuilder>(builder: &B, graph: &mut GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
+pub fn standard_op_name<B: Op>(builder: &B, graph: &mut GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
 
 	let mut node_string = "(".to_string();
 	let mut input_names = inputs.iter().map(|id| graph.node_name(id));
@@ -69,8 +69,8 @@ pub fn standard_parameter_names(n: usize, builder_name: &str, graph: &mut GraphD
 	names
 }
 
-pub trait OpBuilder: Any {
-	type OpType: Op;
+pub trait Op: Any {
+	type InstanceType: OpInstance;
 
 	/// The type name of an `OpBuilder` is used to construct the default instance name of the `Op` returned by `build()`.
 	///
@@ -88,11 +88,11 @@ pub trait OpBuilder: Any {
 	///
 	/// Arbitrary graph modification may occur allowing builders to implement high level effects by composing multiple low level `Op`s.
 	/// Also used to let Ops create parameter nodes as necessary.
-	fn build(self, &mut GraphDef) -> Result<Self::OpType>;
+	fn build(self, &mut GraphDef) -> Result<Self::InstanceType>;
 }
 
 //TODO: remove mutability of Ops in favor of state objects that implement Any
-pub trait Op: OpClone + Any + Debug{
+pub trait OpInstance: OpClone + Any + Debug{
 	/// The name of the `Op` type
 	fn type_name(&self) -> &'static str;
 
@@ -102,6 +102,9 @@ pub trait Op: OpClone + Any + Debug{
 	/// TODO
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>;
 	
+	// TODO consider whether non standard order ops may be useful
+	//fn requires_standard_order_inputs(&self) -> bool {true}
+
 	// TODO sort out initilisation
 	// fn num_params(&self) -> usize;
 
@@ -160,29 +163,29 @@ pub trait Op: OpClone + Any + Debug{
 
 /// Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
 pub trait OpClone {
-	fn clone_box(&self) -> Box<Op>;
+	fn clone_box(&self) -> Box<OpInstance>;
 }
 
-impl<T> OpClone for T where T: 'static + Op + Clone {
-	fn clone_box(&self) -> Box<Op> {
+impl<T> OpClone for T where T: 'static + OpInstance + Clone {
+	fn clone_box(&self) -> Box<OpInstance> {
 		Box::new(self.clone())
 	}
 }
 
-impl Clone for Box<Op> {
-	fn clone(&self) -> Box<Op> {
+impl Clone for Box<OpInstance> {
+	fn clone(&self) -> Box<OpInstance> {
 		self.clone_box()
 	}
 }
 
 
-pub trait SimpleOpBuilder: OpBuilder {
+pub trait SimpleOp: Op {
 	fn set_output(&mut self, id: &NodeID);
 	fn required_output_shape(&self) -> NodeShape;
 	//fn build_with_output() -> Self::OpType; TODO
 }
 
-pub trait SimpleOp: Op {
+pub trait SimpleOpInstance: Op {
 
 }
 
@@ -207,16 +210,16 @@ pub trait SimpleOp: Op {
 
 
 
-/// An Op which does nothing
+/// An OpInstance which does nothing
 /// Can be returned as an 
 #[derive(Clone, Debug)]
-pub struct NullOp {
-	name: String
+pub struct NoOpInstance {
+	pub name: String
 }
 
-impl Op for NullOp {
+impl OpInstance for NoOpInstance {
 	fn type_name(&self) -> &'static str {
-		"Null"
+		"NoOp"
 	}
 
 	fn instance_name(&self) -> &str {
@@ -242,7 +245,7 @@ fn test_name_generation(){
 }
 
 fn _test_name_generation() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 
 	let mut g = GraphDef::new();
@@ -253,7 +256,7 @@ fn _test_name_generation() -> Result<()>{
 	let node4 = g.new_node(shape![Unknown, 5, 16], "node4", tag![])?;
 
 
-	let o1 = g.new_op(dummy::Builder::new().input(&node1).input(&node2).output(&node3).output(&node4), tag![])?;
+	let o1 = g.new_op(Dummy::new().input(&node1).input(&node2).output(&node3).output(&node4), tag![])?;
 
 	assert_eq!("Dummy0(node1,node2=>node3,node4)", g.op_name(&o1));
 

@@ -7,17 +7,16 @@ use typenum::{Unsigned, U16};
 use typenum_loops::Loop;
 use odds;
 
-pub struct Mse {
+pub struct L2 {
 	input1: NodeID,
 	input2: NodeID,
 	multiplier: f32,
 	name: Option<String>,
 }
 
-impl Mse {
-
+impl L2 {
 	pub fn new(input1: &NodeID, input2: &NodeID) -> Self {
-		Mse {
+		L2 {
 			input1: input1.clone(),
 			input2: input2.clone(),
 			multiplier: 1.0,
@@ -25,7 +24,7 @@ impl Mse {
 		}
 	}
 
-	/// Loss is of the form `multiplier * x.dot(x)`
+	/// Loss is of the form `multiplier * x.dot(x) / 2.0`
 	pub fn multiplier(mut self, multiplier: f32) -> Self {
 		self.multiplier = multiplier;
 		self
@@ -33,11 +32,11 @@ impl Mse {
 }
 
 
-impl Op for Mse {
-	type InstanceType = MseInstance;
+impl Op for L2 {
+	type InstanceType = L2Instance;
 
 	fn type_name(&self) -> &'static str {
-		"Mse"
+		"L2"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -53,7 +52,7 @@ impl Op for Mse {
 			standard_op_name(&self, graph, &[self.input1.clone(), self.input2.clone()], &[])
 		};
 
-		Ok(MseInstance{
+		Ok(L2Instance{
 			name: name,
 			input1_id: self.input1,
 			input2_id: self.input2,
@@ -67,17 +66,17 @@ impl Op for Mse {
 
 /// Broadcast Op, the value of the input is added to 
 #[derive(Clone, Debug)] 
-pub struct MseInstance{
+pub struct L2Instance{
 	pub(crate) name: String,
 	pub(crate) multiplier: f32,
 	pub(crate) input1_id: NodeID,
 	pub(crate) input2_id: NodeID,
 }
 
-impl OpInstance for MseInstance {
+impl OpInstance for L2Instance {
 	
 	fn type_name(&self) -> &'static str {
-		"Mse"
+		"L2"
 	}
 
 	fn instance_name(&self) -> &str{ &self.name }
@@ -100,7 +99,7 @@ impl OpInstance for MseInstance {
 		ensure!(input2_val.len() == n, ErrorKind::BackwardPassError("".to_string()));
 		assert!(input2_val.len() == n);
 
-		let multiplier = self.multiplier/n as f32;
+		let multiplier = self.multiplier;
 		const SIMD: usize = 16;
 		let mut error = 0.0;
 		let mut errs = [0.;SIMD];
@@ -139,16 +138,16 @@ impl OpInstance for MseInstance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input1_grad[j] +=  2.0*diff*multiplier;
-					input2_grad[j] += -2.0*diff*multiplier;
+					input1_grad[j] += diff*multiplier;
+					input2_grad[j] += -diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input1_grad[j] +=  2.0*diff*multiplier;
-				input2_grad[j] += -2.0*diff*multiplier;
+				input1_grad[j] += diff*multiplier;
+				input2_grad[j] += -diff*multiplier;
 			}
 		} else if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
@@ -171,14 +170,14 @@ impl OpInstance for MseInstance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input1_grad[j] += 2.0*diff*multiplier;
+					input1_grad[j] += diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input1_grad[j] += 2.0*diff*multiplier;
+				input1_grad[j] += diff*multiplier;
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
@@ -201,14 +200,14 @@ impl OpInstance for MseInstance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input2_grad[j] += -2.0*diff*multiplier;
+					input2_grad[j] += -diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input2_grad[j] += -2.0*diff*multiplier;
+				input2_grad[j] += -diff*multiplier;
 			}
 		}
 
@@ -216,7 +215,7 @@ impl OpInstance for MseInstance {
 			error += *e;
 		}
 
-		data.loss_add(error);
+		data.loss_add(error/2.0);
 
 		Ok(())
 	}
@@ -224,11 +223,11 @@ impl OpInstance for MseInstance {
 
 
 #[test]
-fn test_mse_backprop(){
-	_mse_backprop().unwrap();
+fn test_l2_backprop(){
+	_l2_backprop().unwrap();
 }
 
-fn _mse_backprop() -> Result<()>{
+fn _l2_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
@@ -238,12 +237,12 @@ fn _mse_backprop() -> Result<()>{
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
 	let node2 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
 
-	let _o1 = g.new_op(Mse::new(&node1, &node2), tag![])?;
+	let _o1 = g.new_op(L2::new(&node1, &node2), tag![])?;
 
 	let iters = 100;
 	let failures = 1;
 	let tolerance = 0.001;
-	let step_size = 1E-3;
+	let step_size = 1E0;
 	let default_variance = 1.0;
 	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
 

@@ -1,19 +1,19 @@
 use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Result};
-use new::ops::{standard_op_name, Op, OpBuilder};
+use new::ops::{standard_op_name, Op, OpInstance};
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 
 
-pub struct Builder {
+pub struct Add {
 	output: NodeID,
 	input: NodeID,
 	name: Option<String>,
 }
 
-impl Builder {
+impl Add {
 
 	pub fn new(input: &NodeID, output: &NodeID) -> Self {
-		Builder {
+		Add {
 			input: input.clone(),
 			output: output.clone(),
 			name: None,
@@ -22,11 +22,11 @@ impl Builder {
 
 }
 
-impl OpBuilder for Builder {
-	type OpType = Broadcast;
+impl Op for Add {
+	type InstanceType = AddInstance;
 
 	fn type_name(&self) -> &'static str {
-		"Broadcast"
+		"Add"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -34,7 +34,7 @@ impl OpBuilder for Builder {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		// TODO check broadcast at graph define time?
 		let name = if let Some(name) = self.name {
 			name
@@ -42,7 +42,7 @@ impl OpBuilder for Builder {
 			standard_op_name(&self, graph, &[self.input.clone()], &[self.output.clone()])
 		};
 
-		Ok(Broadcast{
+		Ok(AddInstance{
 			name: name,
 			input_id: self.input,
 			output_id: self.output,
@@ -53,18 +53,18 @@ impl OpBuilder for Builder {
 
 
 
-/// Broadcast Op, the value of the input is added to 
+/// Add Op, the value of the input is added to 
 #[derive(Clone, Debug)] 
-pub struct Broadcast{
+pub struct AddInstance{
 	pub(crate) name: String,
 	pub(crate) input_id: NodeID,
 	pub(crate) output_id: NodeID,
 }
 
-impl Op for Broadcast {
+impl OpInstance for AddInstance {
 	
 	fn type_name(&self) -> &'static str {
-		"Broadcast"
+		"Add"
 	}
 
 	fn instance_name(&self) -> &str{ &self.name }
@@ -119,16 +119,16 @@ impl Op for Broadcast {
 }
 
 #[test]
-fn test_broadcast(){
-	_broadcast().unwrap();
+fn test_add_backprop(){
+	_add_backprop().unwrap();
 }
 
-fn _broadcast() -> Result<()>{
+fn _add_backprop() -> Result<()>{
 	use new::ops::dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 	use new::ops::numeric_check::numeric_test;
-	use new::ops::loss::mse;
+	use new::ops::loss::mse::Mse;
 	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
@@ -138,11 +138,11 @@ fn _broadcast() -> Result<()>{
 	let node3 = g.new_node(shape![7, 5, 16], "target", tag![])?;
 
 
-	let _o1 = g.new_op(Builder::new(&node1, &node2), tag![])?;
-	let _o2 = g.new_op(mse::Builder::new(&node2, &node3), tag![])?;
+	let _o1 = g.new_op(Add::new(&node1, &node2), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
-	let failures = 2;
+	let failures = 1;
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;

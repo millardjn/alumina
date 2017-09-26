@@ -1,18 +1,20 @@
 use new::graph::{GraphDef, NodeID, Result};
-use new::ops::broadcast::Broadcast;
+use new::ops::math::add::AddInstance;
 use new::ops::*;
 
-pub struct Builder {
+pub struct Bias {
 	output: NodeID,
 	input: Option<NodeID>,
 	param_shape: Option<NodeShape>,
 	name: Option<String>,
 }
 
-impl Builder {
-
+impl Bias {
+	/// Creates an Op which implements the Bias component of typical neural nets
+	///
+	/// Intended to provide the Bias component associated with convolutions and fully connected layers in neural nets.
 	pub fn new(output: &NodeID) -> Self {
-		Builder {
+		Bias {
 			output: output.clone(),
 			input: None,
 			param_shape: None,
@@ -20,24 +22,26 @@ impl Builder {
 		}
 	}
 
-	/// Provide a node to be broadcast as 
-	/// If input is `None` a new `Parameter` node will be created to use as input
-	/// Default value: None
+	/// Provide a node in place of the bias parameter
+	///
+	/// This node will be added to the output, with broadcasting.
+	/// Any value other than `None` prevents the automatic creation of a `Parameter` node.
+	/// Default value: `None`
 	pub fn input(mut self, node_id: Option<&NodeID>) -> Self {
 		self.input = node_id.cloned();
 		self
 	}
 
 	/// If 'input()' is not set this can be used to control the shape of the parameter node which will be created.
-	/// If both this and `input()` are `None` then the created parameter will use the largest dimension sizes that can be guarenteed to broadcast the output node
+	/// If both this and `input()` are `None` then the created parameter will use the largest dimension sizes that can be guarenteed to broadcast the output node.
 	pub fn parameter_shape(mut self, shape: Option<NodeShape>) -> Self {
 		self.param_shape = shape;
 		self
 	}
 }
 
-impl OpBuilder for Builder {
-	type OpType = Broadcast;
+impl Op for Bias {
+	type InstanceType = AddInstance;
 
 	fn type_name(&self) -> &'static str {
 		"Bias"
@@ -48,7 +52,7 @@ impl OpBuilder for Builder {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let name = if let Some(name) = self.name {
 			name
@@ -73,7 +77,7 @@ impl OpBuilder for Builder {
 			graph.new_node(shape, param_name, tag![])?
 		};
 
-		Ok(Broadcast{
+		Ok(AddInstance{
 			name: name,
 			input_id: input,
 			output_id: self.output,

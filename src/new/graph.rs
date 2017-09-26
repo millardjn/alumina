@@ -266,7 +266,7 @@ pub struct GraphDef {
 	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
 
 	op_ids: Vec<OpID>,
-	ops: Vec<Box<Op>>,
+	ops: Vec<Box<OpInstance>>,
 	op_names: OrderMap<String, OpID>,
 	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
 
@@ -364,9 +364,9 @@ impl GraphDef {
 		Ok(node_id)
 	}
 
-	pub fn new_op<B: OpBuilder>(&mut self, builder: B, tags: Vec<OpTag>) -> Result<OpID> {
+	pub fn new_op<O: Op>(&mut self, op: O, tags: Vec<OpTag>) -> Result<OpID> {
 		
-		let op = Box::new(builder.build(self)?);
+		let op = Box::new(op.build(self)?);
 		
 		let name = op.instance_name().to_string();
 
@@ -462,7 +462,7 @@ impl GraphDef {
 		self.node_ids(NodeTag::Parameter)
 	}
 
-	pub fn op<T: Into<OpTag>>(&self, tag: T) -> Result<&Op> {
+	pub fn op<T: Into<OpTag>>(&self, tag: T) -> Result<&OpInstance> {
 		self.op_id(tag).map(|id| &*self.ops[id.index])
 	}
 
@@ -1318,7 +1318,7 @@ fn test_build(){
 }
 
 fn _test_build() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1326,16 +1326,16 @@ fn _test_build() -> Result<()>{
 
 	let node1 = g.new_node(shape![Unknown, 5, 16], "node1", tag!["input"])?;
 	let node2 = g.new_node(shape![Unknown, 5, 16], "node2", tag![])?;
-	g.new_op(dummy::Builder::new().name("first op").input(&node1).output(&node2), tag![])?;
+	g.new_op(Dummy::new().name("first op").input(&node1).output(&node2), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = g.new_node(shape![Unknown, 5, 16], format!("node{}", i), tag![i])?;
-		g.new_op(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node), tag![])?;
+		g.new_op(Dummy::new().name(format!("op{}", i)).input(&prev_node).output(&next_node), tag![])?;
 		prev_node = next_node;
 	}
 
-	g.new_op(dummy::Builder::new().name("last op").input(&prev_node), tag![])?;
+	g.new_op(Dummy::new().name("last op").input(&prev_node), tag![])?;
 
 	let sg1 = g.subgraph(&[node2.value_id()], &[prev_node.value_id()])?;
 	let sg2 = g.subgraph(&[node1.value_id()], &[node2.gradient_id()])?;
@@ -1353,7 +1353,7 @@ fn test_execute(){
 }
 
 fn _test_execute() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1361,16 +1361,16 @@ fn _test_execute() -> Result<()>{
 
 	let node1 = g.new_node(shape![4, 5, 16], "node1", tag!["input"])?;
 	let node2 = g.new_node(shape![4, 5, 16], "node2", tag![])?;
-	g.new_op(dummy::Builder::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
+	g.new_op(Dummy::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = g.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
-		g.new_op(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
+		g.new_op(Dummy::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
 		prev_node = next_node;
 	}
 
-	g.new_op(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
+	g.new_op(Dummy::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
 
 	let mut sg1 = g.subgraph(&[node2.value_id()], &[prev_node.value_id()])?;
 	let mut sg2 = g.subgraph(&[node1.value_id()], &[node2.gradient_id()])?;
@@ -1390,7 +1390,7 @@ fn test_execute_deallocation(){
 }
 
 fn _test_execute_deallocation() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1398,16 +1398,16 @@ fn _test_execute_deallocation() -> Result<()>{
 
 	let node1 = g.new_node(shape![Unknown, 5, 16], "node1", tag!["input"])?;
 	let node2 = g.new_node(shape![4, 5, 16], "node2", tag![])?;
-	g.new_op(dummy::Builder::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
+	g.new_op(Dummy::new().name("first op").input(&node1).output(&node2).touch_data(true), tag![])?;
 
 	let mut prev_node = node2.clone();
 	for i in 3..10 {
 		let next_node = g.new_node(shape![4, 5, 16], format!("node{}", i), tag![i])?;
-		g.new_op(dummy::Builder::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
+		g.new_op(Dummy::new().name(format!("op{}", i)).input(&prev_node).output(&next_node).touch_data(true), tag![])?;
 		prev_node = next_node;
 	}
 
-	g.new_op(dummy::Builder::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
+	g.new_op(Dummy::new().name("last op").input(&prev_node).touch_data(true), tag![])?;
 
 	let mut sg1 = g.subgraph(&[node2.value_id()], &[prev_node.value_id()])?;
 	let mut sg2 = g.subgraph(&[node1.value_id()], &[node2.gradient_id()])?;
@@ -1432,7 +1432,7 @@ fn test_pass_reordering(){
 }
 
 fn _test_pass_reordering() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1444,12 +1444,12 @@ fn _test_pass_reordering() -> Result<()>{
 	let node3 = g.new_node(shape![Unknown, 5, 16], "node3", tag![])?;
 	let node4 = g.new_node(shape![Unknown, 5, 16], "node4", tag!["output"])?;
 
-	let o4 = g.new_op(dummy::Builder::new().input(&node2a).output(&node3), tag![])?;
-	let o2 = g.new_op(dummy::Builder::new().input(&node2b).output(&node3), tag![])?;
-	let o1 = g.new_op(dummy::Builder::new().input(&node1).output(&node2b), tag![])?;
-	let o3 = g.new_op(dummy::Builder::new().input(&node1).output(&node2a), tag![])?;
-	let o5 = g.new_op(dummy::Builder::new().input(&node3).output(&node4), tag![])?;
-	let o6 = g.new_op(dummy::Builder::new().input(&node4), tag![])?;
+	let o4 = g.new_op(Dummy::new().input(&node2a).output(&node3), tag![])?;
+	let o2 = g.new_op(Dummy::new().input(&node2b).output(&node3), tag![])?;
+	let o1 = g.new_op(Dummy::new().input(&node1).output(&node2b), tag![])?;
+	let o3 = g.new_op(Dummy::new().input(&node1).output(&node2a), tag![])?;
+	let o5 = g.new_op(Dummy::new().input(&node3).output(&node4), tag![])?;
+	let o6 = g.new_op(Dummy::new().input(&node4), tag![])?;
 
 
 	let sg_forward = g.subgraph(&[node1.value_id()], &[node4.value_id()])?;
@@ -1474,7 +1474,7 @@ fn test_circular_detection(){
 }
 
 fn _test_circular_detection() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1487,12 +1487,12 @@ fn _test_circular_detection() -> Result<()>{
 	let node5 = g.new_node(shape![Unknown, 5, 16], "node5", tag!["output"])?;
 
 
-	let _o1 = g.new_op(dummy::Builder::new().input(&node1).output(&node2), tag![])?;
-	let _o2 = g.new_op(dummy::Builder::new().input(&node2).output(&node3), tag![])?;
-	let _o3 = g.new_op(dummy::Builder::new().input(&node3).output(&node4), tag![])?;
-	let _o4 = g.new_op(dummy::Builder::new().input(&node4).output(&node2), tag![])?; // circular link
-	let _o5 = g.new_op(dummy::Builder::new().input(&node4).output(&node5), tag![])?;
-	let _o6 = g.new_op(dummy::Builder::new().input(&node5), tag![])?;
+	let _o1 = g.new_op(Dummy::new().input(&node1).output(&node2), tag![])?;
+	let _o2 = g.new_op(Dummy::new().input(&node2).output(&node3), tag![])?;
+	let _o3 = g.new_op(Dummy::new().input(&node3).output(&node4), tag![])?;
+	let _o4 = g.new_op(Dummy::new().input(&node4).output(&node2), tag![])?; // circular link
+	let _o5 = g.new_op(Dummy::new().input(&node4).output(&node5), tag![])?;
+	let _o6 = g.new_op(Dummy::new().input(&node5), tag![])?;
 
 
 	// Check that the circular link raises an error
@@ -1521,7 +1521,7 @@ fn test_insufficient_input_detection(){
 }
 
 fn _test_insufficient_input_detection() -> Result<()>{
-	use new::ops::dummy;
+	use new::ops::dummy::Dummy;
 	use new::graph::GraphDef;
 	use new::shape;
 
@@ -1532,8 +1532,8 @@ fn _test_insufficient_input_detection() -> Result<()>{
 	let node3 = g.new_node(shape![Unknown, 5, 16], "node3", tag!["output"])?;
 
 
-	let _o1 = g.new_op(dummy::Builder::new().input(&node1).output(&node3), tag![])?;
-	let _o2 = g.new_op(dummy::Builder::new().input(&node2).output(&node3), tag![])?;
+	let _o1 = g.new_op(Dummy::new().input(&node1).output(&node3), tag![])?;
+	let _o2 = g.new_op(Dummy::new().input(&node2).output(&node3), tag![])?;
 
 
 	let g_forward = g.subgraph(&[node1.value_id()], &[node3.value_id()]);

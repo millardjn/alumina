@@ -1,15 +1,92 @@
 use new::graph::{GraphDef, NodeID, Storage, GraphShapes, Result};
 use new::ops::*;
 
+pub struct Dummy{
+	name: Option<String>,
+	inputs: Vec<NodeID>,
+	outputs: Vec<NodeID>,
+	touch_data: bool,
+}
+
+impl Dummy {
+	pub fn new() -> Dummy {
+		Dummy {
+			name: None,
+			inputs: vec![],
+			outputs: vec![],
+			touch_data: false,
+		}
+	}
+
+	/// Access the input and output node data from Storage
+	pub fn touch_data(mut self, touch_data: bool) -> Self{
+		self.touch_data = touch_data;
+		self
+	}
+
+	pub fn input(mut self, node_id: &NodeID) -> Self{
+		self.inputs.push(node_id.clone());
+		self
+	}
+
+	pub fn output(mut self, node_id: &NodeID) -> Self{
+		self.outputs.push(node_id.clone());
+		self
+	}
+
+	pub fn inputs(mut self, ids: &[NodeID]) -> Self{
+		for node_id in ids {
+			self.inputs.push(node_id.clone());
+		}
+		self
+	}
+
+	pub fn outputs(mut self, ids: &[NodeID]) -> Self{
+		for node_id in ids {
+			self.outputs.push(node_id.clone());
+		}
+		self
+	}
+}
+
+impl Op for Dummy {
+	type InstanceType = DummyInstance;
+
+	fn type_name(&self) -> &'static str {
+		"Dummy"
+	}
+
+	fn name<T: Into<String>>(mut self, name: T) -> Self{
+		self.name = Some(name.into());
+		self
+	}
+
+	/// Called by GraphDef::new_op to construct the op instance
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
+		let name = if let Some(name) = self.name {
+			name
+		} else {
+			standard_op_name(&self, graph, &self.inputs, &self.outputs)
+		};
+		Ok(DummyInstance{
+			name: name,
+			inputs: self.inputs.clone(),
+			outputs: self.outputs.clone(),
+			touch_data: self. touch_data,
+		})
+	}
+}
+
+
 #[derive(Clone, Debug)]
-pub struct DummyOp {
+pub struct DummyInstance {
 	name: String,
 	inputs: Vec<NodeID>,
 	outputs: Vec<NodeID>,
 	touch_data: bool,
 }
 
-impl Op for DummyOp {
+impl OpInstance for DummyInstance {
 	fn type_name(&self) -> &'static str {
 		"Dummy"
 	}
@@ -49,81 +126,5 @@ impl Op for DummyOp {
 			}
 		}
 		Ok(())
-	}
-}
-
-pub struct Builder{
-	name: Option<String>,
-	inputs: Vec<NodeID>,
-	outputs: Vec<NodeID>,
-	touch_data: bool,
-}
-
-impl Builder {
-	pub fn new() -> Builder {
-		Builder {
-			name: None,
-			inputs: vec![],
-			outputs: vec![],
-			touch_data: false,
-		}
-	}
-
-	/// Access the input and output node data from Storage
-	pub fn touch_data(mut self, touch_data: bool) -> Self{
-		self.touch_data = touch_data;
-		self
-	}
-
-	pub fn input(mut self, node_id: &NodeID) -> Self{
-		self.inputs.push(node_id.clone());
-		self
-	}
-
-	pub fn output(mut self, node_id: &NodeID) -> Self{
-		self.outputs.push(node_id.clone());
-		self
-	}
-
-	pub fn inputs(mut self, ids: &[NodeID]) -> Self{
-		for node_id in ids {
-			self.inputs.push(node_id.clone());
-		}
-		self
-	}
-
-	pub fn outputs(mut self, ids: &[NodeID]) -> Self{
-		for node_id in ids {
-			self.outputs.push(node_id.clone());
-		}
-		self
-	}
-}
-
-impl OpBuilder for Builder {
-	type OpType = DummyOp;
-
-	fn type_name(&self) -> &'static str {
-		"Dummy"
-	}
-
-	fn name<T: Into<String>>(mut self, name: T) -> Self{
-		self.name = Some(name.into());
-		self
-	}
-
-	/// Called by GraphDef::new_op to construct the op instance
-	fn build(self, graph: &mut GraphDef) -> Result<Self::OpType> {
-		let name = if let Some(name) = self.name {
-			name
-		} else {
-			standard_op_name(&self, graph, &self.inputs, &self.outputs)
-		};
-		Ok(DummyOp{
-			name: name,
-			inputs: self.inputs.clone(),
-			outputs: self.outputs.clone(),
-			touch_data: self. touch_data,
-		})
 	}
 }
