@@ -1,4 +1,4 @@
-use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Result};
+use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, Op, OpInstance};
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
@@ -97,7 +97,11 @@ impl OpInstance for AddInstance {
 		let input: ArrayViewD<f32> = data.get(&self.input_id.value_id())?;
 		let mut output: ArrayViewMutD<f32> = data.get_mut(&self.output_id.value_id())?;
 
-		let input_broadcast = input.broadcast(output.shape()).expect("TODO Handle op errors rather than panic");
+		let input_broadcast = if let Some(view) = input.broadcast(output.shape()) {
+			view
+		} else {
+			bail!(ErrorKind::ForwardPassError(format!("{} Op '{}' could not broadcast input to output shape", self.type_name(), self.instance_name())));
+		};
 
 		output += &input_broadcast;
 
@@ -108,6 +112,11 @@ impl OpInstance for AddInstance {
 	fn backward (&mut self, data: &mut Storage) -> Result<()>{
 		let mut input_grad = data.get_mut(&self.input_id.gradient_id())?;
 		let output_grad = data.get(&self.output_id.gradient_id())?;
+		
+		ensure!(
+			input_grad.broadcast(output_grad.shape()).is_some(), 
+			ErrorKind::BackwardPassError(format!("{} Op '{}' could not broadcast input to output shape", self.type_name(), self.instance_name()))
+		);
 
 		// TODO check that the match shapes before rather than panic
 		for chunk in output_grad.exact_chunks(input_grad.shape()){
