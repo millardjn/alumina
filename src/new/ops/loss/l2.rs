@@ -1,11 +1,12 @@
-use new::graph::{GraphDef, NodeID, Storage, GraphShapes, ErrorKind, Result};
-use new::ops::{standard_op_name, Op, OpInstance};
+use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 use generic_array::GenericArray;
 use typenum::{Unsigned, U16};
 use typenum_loops::Loop;
-use odds;
+use std::any::Any;
+
 
 pub struct L2 {
 	input1: NodeID,
@@ -15,6 +16,7 @@ pub struct L2 {
 }
 
 impl L2 {
+
 	pub fn new(input1: &NodeID, input2: &NodeID) -> Self {
 		L2 {
 			input1: input1.clone(),
@@ -24,7 +26,7 @@ impl L2 {
 		}
 	}
 
-	/// Loss is of the form `multiplier * x.dot(x) / 2.0`
+	/// Loss is of the form `multiplier * x.dot(x)`
 	pub fn multiplier(mut self, multiplier: f32) -> Self {
 		self.multiplier = multiplier;
 		self
@@ -44,52 +46,65 @@ impl Op for L2 {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 		// TODO check broadcast at graph define time?
-		let name = if let Some(name) = self.name {
-			name
-		} else {
-			standard_op_name(&self, graph, &[self.input1.clone(), self.input2.clone()], &[])
-		};
+		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[]);
+
+		let pass_id = graph.add_pass(L2Pass{input1_id: self.input1.clone(), input2_id: self.input2.clone(), multiplier: self.multiplier});
 
 		Ok(L2Instance{
 			name: name,
 			input1_id: self.input1,
 			input2_id: self.input2,
 			multiplier: self.multiplier,
+			pass_id: pass_id,
 		})
 	}
 }
 
 
-
-
 /// Broadcast Op, the value of the input is added to 
 #[derive(Clone, Debug)] 
 pub struct L2Instance{
-	pub(crate) name: String,
-	pub(crate) multiplier: f32,
-	pub(crate) input1_id: NodeID,
-	pub(crate) input2_id: NodeID,
+	name: String,
+	multiplier: f32,
+	input1_id: NodeID,
+	input2_id: NodeID,
+	pass_id: PassID,
 }
 
 impl OpInstance for L2Instance {
+	fn type_name(&self) -> &'static str {"L2"}
 	
-	fn type_name(&self) -> &'static str {
-		"L2"
+	fn instance_name(&self) -> &str {&self.name}
+
+	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input1_id.clone(), self.input2_id.clone()], vec![])}
+
+	fn inner_passes(&self) -> Vec<PassID> {vec![self.pass_id.clone()]}
+
+	fn inner_ops(&self) -> Vec<OpID> {vec![]}
+
+	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
+
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+
+}
+
+
+#[derive(Clone, Debug)]
+struct L2Pass{
+	multiplier: f32,
+	input1_id: NodeID,
+	input2_id: NodeID,
+}
+
+impl Pass for L2Pass {
+	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
+		(vec![self.input1_id.value_id(), self.input2_id.value_id()],
+		vec![self.input1_id.gradient_id(), self.input2_id.gradient_id()])
 	}
 
-	fn instance_name(&self) -> &str{ &self.name }
-
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
-
-	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
-		(vec![self.input1_id.clone(), self.input2_id.clone()], vec![])
-	}
-
-	fn forward (&mut self, _data: &mut Storage) -> Result<()>{Ok(())}
-	
-	fn backward (&mut self, data: &mut Storage) -> Result<()>{
+	fn run (&self, data: &mut Storage) -> Result<Box<Any>>{
 		let input1_val = data.get(&self.input1_id.value_id())?;
 		let input1_val = input1_val.as_slice().unwrap();
 		let input2_val = data.get(&self.input2_id.value_id())?;
@@ -99,7 +114,7 @@ impl OpInstance for L2Instance {
 		ensure!(input2_val.len() == n, ErrorKind::BackwardPassError("".to_string()));
 		assert!(input2_val.len() == n);
 
-		let multiplier = self.multiplier;
+		let multiplier = self.multiplier as f32;
 		const SIMD: usize = 16;
 		let mut error = 0.0;
 		let mut errs = [0.;SIMD];
@@ -138,16 +153,16 @@ impl OpInstance for L2Instance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input1_grad[j] += diff*multiplier;
-					input2_grad[j] += -diff*multiplier;
+					input1_grad[j] +=  2.0*diff*multiplier;
+					input2_grad[j] += -2.0*diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input1_grad[j] += diff*multiplier;
-				input2_grad[j] += -diff*multiplier;
+				input1_grad[j] +=  2.0*diff*multiplier;
+				input2_grad[j] += -2.0*diff*multiplier;
 			}
 		} else if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
@@ -170,14 +185,14 @@ impl OpInstance for L2Instance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input1_grad[j] += diff*multiplier;
+					input1_grad[j] += 2.0*diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input1_grad[j] += diff*multiplier;
+				input1_grad[j] += 2.0*diff*multiplier;
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
@@ -200,14 +215,14 @@ impl OpInstance for L2Instance {
 				for j in 0..SIMD{
 					let diff = input1_val[j]-input2_val[j];
 					errs[j] += diff*diff*multiplier;
-					input2_grad[j] += -diff*multiplier;
+					input2_grad[j] += -2.0*diff*multiplier;
 				}
 			}
 
 			for j in (n/SIMD)*SIMD..n {
 				let diff = input1_val[j]-input2_val[j];
 				error += diff*diff*multiplier;
-				input2_grad[j] += -diff*multiplier;
+				input2_grad[j] += -2.0*diff*multiplier;
 			}
 		}
 
@@ -215,9 +230,9 @@ impl OpInstance for L2Instance {
 			error += *e;
 		}
 
-		data.loss_add(error/2.0);
+		data.loss_add(error);
 
-		Ok(())
+		Ok(Box::new(()))
 	}
 }
 
