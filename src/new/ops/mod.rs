@@ -1,20 +1,24 @@
 pub mod dummy;
-pub mod numeric_check;
-pub mod loss;
-pub mod nn;
-pub mod math;
+// pub mod numeric_check;
+// pub mod loss;
+// pub mod nn;
+// pub mod math;
 
-use new::graph::{GraphDef, NodeID, DataID, Storage, GraphShapes, Error, ErrorKind, Result};
-use new::shape::NodeShape;
+use new::graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, Error, ErrorKind, Result};
 use std::any::Any;
 use std::fmt::Debug;
+
 
 /// Generated default names for `Op`s
 ///
 /// If a name isn't set on an `OpBuilder` a default name will be generated using the `type_name()` and the names of input and output nodes.
 /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), i, node1_name, node2_name, node3_name, node4_name)`
 /// e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until an unused name is found.
-pub fn standard_op_name<B: Op>(builder: &B, graph: &mut GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
+pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &mut GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
+
+	if let Some(name) = name.as_ref() {
+		return name.clone();
+	}
 
 	let mut node_string = "(".to_string();
 	let mut input_names = inputs.iter().map(|id| graph.node_name(id));
@@ -39,7 +43,7 @@ pub fn standard_op_name<B: Op>(builder: &B, graph: &mut GraphDef, inputs: &[Node
 
 	let mut i = 0;
 	loop {
-		let next_op_name = format!("{}{}{}", builder.type_name(), i, node_string);
+		let next_op_name = format!("{}{}{}", op.type_name(), i, node_string);
 		let result = graph.op_id(&*next_op_name);
 		i += 1;
 		if matches!(result, Err(Error(ErrorKind::ZeroOpsMatchTag(_), _))) {
@@ -47,6 +51,7 @@ pub fn standard_op_name<B: Op>(builder: &B, graph: &mut GraphDef, inputs: &[Node
 		}
 	}
 }
+
 
 /// Generated default names for parameter nodes created by `OpBuilder`s
 ///
@@ -69,6 +74,7 @@ pub fn standard_parameter_names(n: usize, builder_name: &str, graph: &mut GraphD
 	names
 }
 
+
 pub trait Op: Any {
 	type InstanceType: OpInstance;
 
@@ -88,76 +94,59 @@ pub trait Op: Any {
 	///
 	/// Arbitrary graph modification may occur allowing builders to implement high level effects by composing multiple low level `Op`s.
 	/// Also used to let Ops create parameter nodes as necessary.
-	fn build(self, &mut GraphDef) -> Result<Self::InstanceType>;
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType>;
 }
 
-//TODO: remove mutability of Ops in favor of state objects that implement Any
-pub trait OpInstance: OpClone + Any + Debug{
+
+pub trait OpInstance: Any + OpClone + Debug{
 	/// The name of the `Op` type
 	fn type_name(&self) -> &'static str;
 
 	/// The name of this instance of the Op
 	fn instance_name(&self) -> &str;
 
-	/// TODO
-	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>;
-	
 	// TODO consider whether non standard order ops may be useful
 	//fn requires_standard_order_inputs(&self) -> bool {true}
-
-	// TODO sort out initilisation
-	// fn num_params(&self) -> usize;
-
-	// fn init_params(&mut self, params: &mut [f32]){
-	// 	if self.num_params() == 0 {
-	// 		assert_eq!(0, params.len(), "init_params passed non-zero length slice for an Op with no parameters");
-	// 	} else {
-	// 		unimplemented!();
-	// 	}
-	// }
-	
-	/// Returns the meta data
-	//fn get_meta(&self) -> &OpMetaData;
 	
 	/// Returns the nodeIDs (inputs, outputs) of the nodes
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
 
-	/// Returns the DataIDs of the (inputs, outputs) of the forward pass
-	/// where the inputs are a subset of the Op input nodes values
-	/// and where the outputs are a subset of the Ops output node values
-	fn forward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
-		// the default implementation returns the largest possible set of DataIDs based on the Op dependancies
-		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
-		let (op_inputs, op_outputs) = self.dependencies();
-		(
-			op_inputs.iter().map(|nodeid| nodeid.value_id()).collect(),
-			op_outputs.iter().map(|nodeid| nodeid.value_id()).collect()
-		)
-	}
+	fn inner_passes(&self) -> Vec<PassID>;
 
-	/// Returns the DataIDs of the (inputs, outputs) of the backward pass
-	/// where the inputs are a subset of the Op input nodes values, and output nodes gradients
-	/// and where the outputs are a subset of the Ops input nodes gradients
-	fn backward_dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
-		// the default implementation returns the largest possible set of DataIDs based on the Op dependancies
-		// if these arent used in the pass then overriding this will allow for earlier deallocation of the tensors
-		let (op_inputs, op_outputs) = self.dependencies();
-		(
-			op_inputs.iter().map(|in_node| in_node.value_id())
-			.chain(op_outputs.iter().map(|out_node| out_node.gradient_id())).collect(),
-			op_inputs.iter().map(|in_node| in_node.gradient_id()).collect()
-		)
-	}
+	fn inner_ops(&self) -> Vec<OpID>;
 
-	/// should update output node values based on input node values. Must use += when writing to output node.
-	fn forward (&mut self, data: &mut Storage) -> Result<()>;
+	fn inner_nodes(&self) -> Vec<NodeID>;
+
+	/// TODO
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>;
+}
+
+
+pub trait Pass: Any + PassClone + Debug {
 	
-	/// Should calculate error gradient contribution of Op to the input node and parameters based on the output node derivatives.
-	/// Each Op will be passed its relevant slice for params and param_derivs
-	/// Note: all calculations should use += as to not overwrite other Ops contributions,
-	/// and in the case of data shape n>1 the sum of parameter gradients from all individual examples should be accumulated in param_deriv and error
-	/// the graph will later divide by n to get the mean error and error derivatives.
-	fn backward (&mut self, data: &mut Storage) -> Result<()>;
+	// TODO consider mutable access so the graph con modify passes:
+	// this would force inputs and outputs to be stored sequentially for all ops. maybe a mut iter is better?
+	// fn dependencies_mut(&mut self) -> (&mut[DataID], &mut[DataID]);
+
+	/// Returns the DataIDs of the (inputs, outputs) of the pass
+	///
+	/// where the inputs are a subset of the Op input nodes values, or internal nodes values
+	/// and where the outputs are a subset of the Ops output node values
+	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>);
+
+	/// Performs the computation and runtime checks
+	///
+	/// This should either:
+	///
+	/// * Update output node values based on input node values, or
+	///
+	/// * Calculate error gradient contribution of Op to the input nodes based on the output node derivatives.
+	///
+	/// Note: all calculations should output using += as to not overwrite other `Pass`'s contributions.
+	///
+	/// The return of Box<Any> can be used to store arbitrary data for retreival from `Storage` by another pass, e.g. a dropout mask.
+	/// Most passes will simply return nothing: `Ok(Box::new(()))`.
+	fn run (&self, data: &mut Storage) -> Result<Box<Any>>;
 }
 
 
@@ -179,63 +168,67 @@ impl Clone for Box<OpInstance> {
 }
 
 
-pub trait SimpleOp: Op {
-	fn set_output(&mut self, id: &NodeID);
-	fn required_output_shape(&self) -> NodeShape;
-	//fn build_with_output() -> Self::OpType; TODO
+/// Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
+pub trait PassClone {
+	fn clone_box(&self) -> Box<Pass>;
 }
 
-pub trait SimpleOpInstance: Op {
+impl<T> PassClone for T where T: 'static + Pass + Clone {
+	fn clone_box(&self) -> Box<Pass> {
+		Box::new(self.clone())
+	}
+}
 
+impl Clone for Box<Pass> {
+	fn clone(&self) -> Box<Pass> {
+		self.clone_box()
+	}
 }
 
 
-// based on metadata from: https://github.com/Metadiff/gir
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub struct OpMetaData {
-// 	pub name: &'static str,
-// 	//pub arity: Arity,
-// 	pub num_outputs: usize,
-// 	pub differential_parents: usize,
-// 	pub ordered_parents: bool,
-// 	pub elementwise: bool,
-// 	pub type_preserving: bool,
-// 	pub reduction: bool,
-// 	pub differentiable: bool,
-// 	pub scalar_output: bool,
-// 	pub shape_operator: bool,
-// 	//pub fixed_output_type: Option<FundamentalType>,
-// }
 
 
+pub struct NoOp {
+	name: Option<String>
+}
 
+impl Op for NoOp {
+	type InstanceType = NoOpInstance;
+
+	fn type_name(&self) -> &'static str {"NoOp"}
+
+	fn name<T: Into<String>>(mut self, name: T) -> Self {
+		self.name = Some(name.into());
+		self
+	}
+
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+		let name = standard_op_name(&self, &self.name, graph, &[], &[]);
+		Ok(NoOpInstance{name})
+	}
+}
 
 /// An OpInstance which does nothing
-/// Can be returned as an 
 #[derive(Clone, Debug)]
 pub struct NoOpInstance {
 	pub name: String
 }
 
 impl OpInstance for NoOpInstance {
-	fn type_name(&self) -> &'static str {
-		"NoOp"
-	}
 
-	fn instance_name(&self) -> &str {
-		&self.name
-	}
-
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
-			
+	fn type_name(&self) -> &'static str {"NoOp"}
 	
-	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
-		(vec![], vec![])
-	}
+	fn instance_name(&self) -> &str {&self.name}
 
-	fn forward (&mut self, _data: &mut Storage) -> Result<()> {Ok(())}
-	
-	fn backward (&mut self, _data: &mut Storage) -> Result<()> {Ok(())}
+	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![], vec![])}
+
+	fn inner_passes(&self) -> Vec<PassID> {vec![]}
+
+	fn inner_ops(&self) -> Vec<OpID> {vec![]}
+
+	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
+
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 }
 
 

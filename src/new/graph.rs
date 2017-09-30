@@ -20,6 +20,8 @@ use std::collections::VecDeque;
 use ordermap::OrderMap;
 use new::ops::*;
 use std::borrow::Borrow;
+use std::rc::Rc;
+use std::any::Any;
 
 error_chain!{
 	errors {
@@ -76,10 +78,21 @@ error_chain!{
 			display("Found more than one ops matching the tag supplied, use the method for multiple OpIDs. {:?}", tag)
 		}
 		/// A topological sort could not be completed, due to circular dependencies.
-		GraphContainsCircularDependencies(deferred_passes: Vec<(PassID, Vec<DataID>)>){
+		GraphContainsCircularOps(deferred_ops: Vec<(OpID, Vec<NodeID>)>){
+			display("The following ops were required, but could not be included in the execution order: {:?}", deferred_ops) //TODO change to print op and node names
+		}
+		/// A topological sort could not be completed, due to circular dependencies.
+		GraphContainsCircularPasses(deferred_passes: Vec<(PassID, Vec<DataID>)>){
 			display("The following passes were required, but could not be included in the execution order: {:?}", deferred_passes) //TODO change to print op and node names
 		}
-		InputsInsufficientForRequestedOutputs{}
+		/// The outputs of the subgraph are not computable from the inputs
+		SubgraphInsufficientInputsForOutputs(unavailable_data: Vec<String>){
+			display("The following data were required, but could not be computed from the inputs: {:?}", unavailable_data)
+		}
+		/// Some `NodeShapes` could not be inferred
+		SubgraphInsufficientInputsForShapeInference(unavailable_nodes: Vec<String>){
+			display("The following node shapes were required, but could not be inferred from the inputs: {:?}", unavailable_nodes)
+		}
 		InputSizeError{}
 		StaticInputBroadcastFailure(id: NodeID, s1: Vec<Ix>, s2: Vec<Ix>){
 			display("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id, s1, s2)
@@ -150,13 +163,13 @@ pub struct OpID {
 }
 
 impl OpID {
-	pub fn forward_id(&self) -> PassID {
-		PassID{index: self.index * 2}
-	}
+	// pub fn forward_id(&self) -> PassID {
+	// 	PassID{index: self.index * 2}
+	// }
 
-	pub fn backward_id(&self) -> PassID {
-		PassID{index: self.index * 2 + 1}
-	}
+	// pub fn backward_id(&self) -> PassID {
+	// 	PassID{index: self.index * 2 + 1}
+	// }
 }
 
 /// A unique identifier for the (forward or backward) pass of an operator.
@@ -166,17 +179,18 @@ pub struct PassID {
 }
 
 impl PassID {
-	pub fn is_forward(&self) -> bool {
-		self.index % 2 == 0
-	}
+	// pub fn is_forward(&self) -> bool {
+	// 	self.forward
+	// }
 
-	pub fn is_backward(&self) -> bool {
-		self.index % 2 == 1
-	}
+	// pub fn is_backward(&self) -> bool {
+	// 	!self.forward
+	// }
 
-	pub fn op_id(&self) -> OpID {
-		OpID{index: self.index / 2}
-	}
+	// pub fn op_id(&self) -> OpID {
+	// 	self.op_id.clone()
+	// 	//OpID{index: self.index / 2}
+	// }
 }
 
 /// A type used to mark nodes as parameters, or for easy retrival from a graph.
@@ -233,7 +247,7 @@ pub enum OpTag{
 
 impl<T: Borrow<OpID>> From<T> for OpTag{
 	fn from(i: T) -> OpTag {
-		OpTag::Int(i.borrow().index)
+		OpTag::Id(i.borrow().index)
 	}
 }
 
@@ -265,8 +279,11 @@ pub struct GraphDef {
 	node_names: OrderMap<String, NodeID>,
 	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
 
+	pass_ids: Vec<PassID>,
+	passes: Vec<Box<Pass>>,
+
 	op_ids: Vec<OpID>,
-	ops: Vec<Box<OpInstance>>,
+	ops: Vec<Rc<OpInstance>>,
 	op_names: OrderMap<String, OpID>,
 	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
 
@@ -281,6 +298,9 @@ impl GraphDef {
 			node_shapes: vec![],
 			node_names: OrderMap::new(),
 			node_tags: OrderMap::new(),
+
+			pass_ids: vec![],
+			passes: vec![],
 
 			op_ids: vec![],
 			ops: vec![],
@@ -366,7 +386,8 @@ impl GraphDef {
 
 	pub fn new_op<O: Op>(&mut self, op: O, tags: Vec<OpTag>) -> Result<OpID> {
 		
-		let op = Box::new(op.build(self)?);
+		let op_id = OpID{index: self.ops.len()};
+		let op = op.build(self, &op_id)?;
 		
 		let name = op.instance_name().to_string();
 
@@ -385,9 +406,8 @@ impl GraphDef {
 		}
 
 		// all good, so add op
-		let op_id = OpID{index: self.ops.len()};
 		self.op_names.insert(name, op_id.clone());
-		self.ops.push(op);
+		self.ops.push(Rc::new(op));
 		self.op_ids.push(op_id.clone());
 
 		for tag in tags{
@@ -403,6 +423,13 @@ impl GraphDef {
 		}
 
 		Ok(op_id)
+	}
+
+	pub fn add_pass<P: Pass>(&mut self, pass: P) -> PassID {
+		let pass_id = PassID{index: self.passes.len()};
+		self.passes.push(Box::new(pass));
+		self.pass_ids.push(pass_id.clone());
+		pass_id
 	}
 
 	// fn new_layer(SimpleOpBuilder and output NodeShape){}
@@ -443,6 +470,10 @@ impl GraphDef {
 			}
 		}
 		panic!("Is this a NodeID from a different GraphDef?")
+	}
+
+	fn data_name(&self, data_id: &DataID) -> String{
+		format!("{}_{}", self.node_name(&data_id.node_id()), if data_id.is_value() {"value"} else {"gradient"})
 	}
 
 	pub fn op_name(&self, op_id: &OpID) -> &str{
@@ -623,7 +654,7 @@ impl GraphDef {
 	///
 	/// Currently this is twice the number of ops (forward pass and backwards pass).
 	pub fn num_passes(&self) -> usize{
-		self.op_ids.len()*2
+		self.passes.len()
 	}
 }
 
@@ -631,33 +662,36 @@ impl GraphDef {
 pub struct Dependencies {
 	pass_inputs: Vec<Vec<DataID>>,
 	pass_outputs: Vec<Vec<DataID>>,
+	pass_is_forward: Vec<bool>,
 	data_inputs: Vec<Vec<PassID>>,
 	data_outputs: Vec<Vec<PassID>>,
+
+	op_inputs: Vec<Vec<NodeID>>,
+	op_outputs: Vec<Vec<NodeID>>,
+	op_shape_outputs: Vec<Vec<NodeID>>,
+	node_inputs: Vec<Vec<OpID>>,
+	node_shape_inputs: Vec<Vec<OpID>>,
+	node_outputs: Vec<Vec<OpID>>,
 }
 
 impl Dependencies {
 	pub fn new(graph: &GraphDef) -> Dependencies {
-		let mut pass_inputs: Vec<Vec<DataID>> = (0..graph.num_passes()).map(|_| vec![]).collect();
-		let mut pass_outputs: Vec<Vec<DataID>> = (0..graph.num_passes()).map(|_| vec![]).collect();
+		let mut pass_inputs = vec![];
+		let mut pass_outputs = vec![];
+		let mut pass_is_forward = vec![];
 
-		for op_id in (0..graph.ops.len()).map(|i| OpID{index:i}) {
-			let op = &*graph.ops[op_id.index];
-
-			let forward_id = op_id.forward_id();
-			let (forward_inputs, forward_outputs) = op.forward_dependencies();
-			pass_inputs[forward_id.index] = forward_inputs;
-			pass_outputs[forward_id.index] = forward_outputs;
-
-			let backward_id = op_id.backward_id();
-			let (backward_inputs, backward_outputs) = op.backward_dependencies();
-			pass_inputs[backward_id.index] = backward_inputs;
-			pass_outputs[backward_id.index] = backward_outputs;
+		for pass_id in &graph.pass_ids {
+			let (inputs, outputs) = graph.passes[pass_id.index].dependencies();
+			let is_forward = inputs.iter().chain(outputs.iter()).all(|data_id| data_id.is_value());
+			pass_inputs.push(inputs);
+			pass_outputs.push(outputs);
+			pass_is_forward.push(is_forward);			
 		}
 
 		let mut data_inputs: Vec<Vec<PassID>> = (0..graph.num_data()).map(|_| vec![]).collect();
 		let mut data_outputs: Vec<Vec<PassID>> = (0..graph.num_data()).map(|_| vec![]).collect();
 
-		for pass_id in (0..graph.ops.len()*2).map(|i| PassID{index:i}) {
+		for pass_id in &graph.pass_ids {
 			for data_id in &pass_inputs[pass_id.index] {
 				data_outputs[data_id.index].push(pass_id.clone());
 			}
@@ -666,63 +700,135 @@ impl Dependencies {
 			}
 		}
 
-		Dependencies{pass_inputs, pass_outputs, data_inputs, data_outputs}
+
+		let mut op_inputs = vec![];
+		let mut op_outputs = vec![];
+		let mut op_shape_outputs = vec![];
+
+		for op_id in &graph.op_ids {
+			let (inputs, outputs) = graph.ops[op_id.index].dependencies();
+			let mut shape_outputs = graph.ops[op_id.index].inner_nodes();
+			shape_outputs.extend_from_slice(&outputs);
+			op_inputs.push(inputs);
+			op_outputs.push(outputs);
+			op_shape_outputs.push(shape_outputs)
+		}
+
+		let mut node_inputs: Vec<Vec<OpID>> = (0..graph.num_nodes()).map(|_| vec![]).collect();
+		let mut node_shape_inputs: Vec<Vec<OpID>> = (0..graph.num_nodes()).map(|_| vec![]).collect();
+		let mut node_outputs: Vec<Vec<OpID>> = (0..graph.num_nodes()).map(|_| vec![]).collect();
+
+		for op_id in &graph.op_ids {
+			for node_id in &op_inputs[op_id.index] {
+				node_outputs[node_id.index].push(op_id.clone());
+			}
+			for node_id in &op_outputs[op_id.index] {
+				node_inputs[node_id.index].push(op_id.clone())
+			}
+			for node_id in &op_shape_outputs[op_id.index] {
+				node_shape_inputs[node_id.index].push(op_id.clone())
+			}
+		}
+
+		Dependencies{pass_inputs, pass_outputs, pass_is_forward, data_inputs, data_outputs, op_inputs, op_outputs, op_shape_outputs, node_inputs, node_shape_inputs, node_outputs}
 	}
 
-	pub fn data_inputs(&self, data_id: DataID) -> &[PassID] {
+	pub fn data_inputs(&self, data_id: &DataID) -> &[PassID] {
 		&self.data_inputs[data_id.index]
 	}
 
-	pub fn data_outputs(&self, data_id: DataID) -> &[PassID] {
+	pub fn data_outputs(&self, data_id: &DataID) -> &[PassID] {
 		&self.data_outputs[data_id.index]
 	}
 
-	pub fn pass_inputs(&self, pass_id: PassID) -> &[DataID] {
+	pub fn pass_inputs(&self, pass_id: &PassID) -> &[DataID] {
 		&self.pass_inputs[pass_id.index]
 	}
 	
-	pub fn pass_outputs(&self, pass_id: PassID) -> &[DataID] {
+	pub fn pass_is_forward(&self, pass_id: &PassID) -> bool {
+		self.pass_is_forward[pass_id.index]
+	}
+
+	pub fn pass_outputs(&self, pass_id: &PassID) -> &[DataID] {
 		&self.pass_outputs[pass_id.index]
+	}
+
+	pub fn node_inputs(&self, node_id: &NodeID) -> &[OpID] {
+		&self.node_inputs[node_id.index]
+	}
+
+	pub fn node_outputs(&self, node_id: &NodeID) -> &[OpID] {
+		&self.node_outputs[node_id.index]
+	}
+
+	pub fn op_inputs(&self, op_id: &OpID) -> &[NodeID] {
+		&self.op_inputs[op_id.index]
+	}
+	
+	pub fn op_outputs(&self, op_id: &OpID) -> &[NodeID] {
+		&self.op_outputs[op_id.index]
+	}
+
+	pub fn op_shape_outputs(&self, op_id: &OpID) -> &[NodeID] {
+		&self.op_shape_outputs[op_id.index]
 	}
 }
 
-/// 
+
+// enum to record the compute status of each data
+#[derive(Clone, Debug)]
+enum DataStatus {
+	Input,
+	Compute,
+	NotIncluded,
+}
+
+/// enum to record the shape status of each node
+#[derive(Clone, Debug)]
+enum NodeStatus {
+	Input,
+	StaticInput,
+	Known,
+	Infer,
+	NotIncluded,
+}
+
 #[derive(Clone, Debug)]
 pub struct SubGraph {
+	graph: GraphDef,
 	dependencies: Dependencies,
 
-	// nodes: Vec<NodeID>,
-	// node_shapes: Vec<NodeShape>,
-	// node_names: OrderMap<String, NodeID>,
-	// ops: Vec<Box<Op>>,
-	graph: GraphDef,
+	subgraph_inputs: Vec<DataID>,
+	subgraph_outputs: Vec<DataID>,
 
+	// Only keep static inputs that dont conflict with a subgraph input
 	filtered_static_inputs: OrderMap<DataID, ArrayD<f32>>,
 
-	required_data: Vec<bool>,
-	required_passes: Vec<bool>,
+	// Ops and nodes included in the subgraph, used to perform shape inference
+	included_nodes: Vec<NodeStatus>,
+	included_ops: Vec<bool>,
+	op_order: Vec<OpID>,
+	shapes: Vec<IxDyn>,
+
+	// passes and data inclded in the subgraph, used to perform graph execution
+	included_data: Vec<DataStatus>,
+	included_passes: Vec<bool>,
 	pass_order: Vec<PassID>,
-
-	supplied_inputs: Vec<DataID>,
-	requested_outputs: Vec<DataID>,
-
 	passes_before_dealloc: Vec<usize>,
 
-	shapes: Vec<IxDyn>,
 }
 
 impl SubGraph {
-	fn new(graph: &GraphDef, inputs: &[DataID], requested_outputs: &[DataID]) -> Result<SubGraph> {
-
-		let is_input = find_inputs(graph.num_data(), inputs, &graph.static_inputs);
+	fn new(graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> Result<SubGraph> {
 
 		let dependencies = Dependencies::new(graph);
 		
-		// Find the minimum set of ops and nodes required to calculate the `required_outputs`
-		let (required_data, required_passes) = find_required(graph.num_passes(), graph.num_data(), &is_input, requested_outputs, &dependencies);
+		// Find the minimum set of data, passes, nodes and ops required to perform shape inference and calculate the `outputs` of the subgraph
+		let (included_data, included_passes, included_nodes, included_ops) = find_included(&graph, inputs, &graph.static_inputs, outputs, &dependencies);
 
 		// Find the order of ops
-		let pass_order = find_pass_order(&graph, &is_input, &required_data, &required_passes, &dependencies)?;
+		let op_order = find_op_order(&graph, &included_nodes, &included_ops, &dependencies)?;
+		let pass_order = find_pass_order(&graph, &included_data, &included_passes, &dependencies)?;
 
 		// remove overlap between static_inpts and inputs
 		let filtered_static_inputs = graph.static_inputs.iter()
@@ -730,33 +836,29 @@ impl SubGraph {
 			.map(|(k, v)| (k.clone(), v.clone())).collect();
 
 		// for each data_id count the number of passes deemed required which depend on it, then add 1 if it is a requested output
-		let mut passes_before_dealloc: Vec<usize> = dependencies.data_outputs.iter().map(|passes| passes.iter().filter(|pass| required_passes[pass.index]).count()).collect();
-		for data_id in requested_outputs {
+		let mut passes_before_dealloc: Vec<usize> = dependencies.data_outputs.iter().map(|passes| passes.iter().filter(|pass| included_passes[pass.index]).count()).collect();
+		for data_id in outputs {
 			passes_before_dealloc[data_id.index] += 1;
 		}
 
 		let graph = SubGraph{
-			dependencies: dependencies,
-
-			// nodes: graph.nodes.clone(),
-			// node_shapes: graph.node_shapes.clone(),
-			// node_names: graph.node_names.clone(),
-
-			// ops: graph.ops.clone(),
 			graph: graph.clone(),
+			dependencies: dependencies,
 
 			filtered_static_inputs: filtered_static_inputs,
 
-			required_data: required_data,
-			required_passes: required_passes,
+			included_nodes: included_nodes,
+			included_ops: included_ops,
+			op_order: op_order,
+			shapes: vec![],
+
+			included_data: included_data,
+			included_passes: included_passes,
 			pass_order: pass_order,
-
-			supplied_inputs: inputs.to_vec(),
-			requested_outputs: requested_outputs.to_vec(),
-
 			passes_before_dealloc: passes_before_dealloc,
 
-			shapes: vec![],
+			subgraph_inputs: inputs.to_vec(),
+			subgraph_outputs: outputs.to_vec(),
 		};
 
 		Ok(graph)
@@ -766,28 +868,23 @@ impl SubGraph {
 	///
 	/// 
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
-		assert_eq!(inputs.len(), self.supplied_inputs.len());
+		assert_eq!(inputs.len(), self.subgraph_inputs.len());
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != inputs.len()
-		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.supplied_inputs[i].node_id().index].slice()}) {
-			self.shapes = find_shapes(&self, &self.pass_order, &self.supplied_inputs, &inputs, &self.filtered_static_inputs)?;
+		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.subgraph_inputs[i].node_id().index].slice()}) {
+			self.shapes = find_shapes(&self, &self.op_order, &self.subgraph_inputs, &inputs, &self.filtered_static_inputs)?;
 		}
 
-		let mut storage = Storage::new(&self.required_data, &self.dependencies, &self.filtered_static_inputs, &self.supplied_inputs, inputs, &self.shapes);
+		let mut storage = Storage::new(&self.included_data, &self.dependencies, &self.filtered_static_inputs, &self.subgraph_inputs, inputs, &self.shapes);
 
 		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
 
-		for pass in &self.pass_order {
-			storage.set_next_pass_debug(Some(pass));
-			if pass.is_forward() {
-				self.graph.ops[pass.op_id().index].forward(&mut storage)?;
-			}
-			if pass.is_backward() {
-				self.graph.ops[pass.op_id().index].backward(&mut storage)?;
-			}
+		for pass_id in &self.pass_order {
+			let pass_data = self.graph.passes[pass_id.index].run(&mut storage)?;
+			storage.set_pass_data(pass_id, pass_data);
 
-			for data_id in &self.dependencies.pass_inputs[pass.index] {
+			for data_id in &self.dependencies.pass_inputs[pass_id.index] {
 				debug_assert!(passes_before_dealloc[data_id.index] > 0);
 				passes_before_dealloc[data_id.index] -= 1;
 				if passes_before_dealloc[data_id.index] == 0 {
@@ -807,40 +904,33 @@ impl SubGraph {
 	}
 
 	pub fn inputs(&self) -> &[DataID]{
-		&self.supplied_inputs
+		&self.subgraph_inputs
 	}
 
 	pub fn outputs(&self) -> &[DataID]{
-		&self.requested_outputs
+		&self.subgraph_outputs
 	}
 }
 
-/// Returns a Vec<bool> indicating whether the array value of a DataID is available as an input or static_input
-fn find_inputs(n_data: usize, inputs: &[DataID], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Vec<bool>{
-	let mut is_input = vec![false; n_data];
+
+/// Work backwards from the requested output data marking data, passes, nodes, and ops as required.
+fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &OrderMap<DataID, ArrayD<f32>>, outputs: &[DataID], dependencies: &Dependencies) -> (Vec<DataStatus>, Vec<bool>, Vec<NodeStatus>, Vec<bool>){
+		
+	let mut included_data: Vec<DataStatus> = vec![DataStatus::NotIncluded; graph.num_data()];
+	let mut included_passes: Vec<bool> = vec![false; graph.num_passes()];
+
+
 	for data_id in inputs.iter().chain(static_inputs.keys()) {
-		is_input[data_id.index] = true;
+		included_data[data_id.index] = DataStatus::Input;
 	}
-	is_input
-}
 
-
-/// Work backwards from the requested output data marking data and op passes as required.
-fn find_required(n_passes: usize, n_data: usize, is_input: &[bool], requested_outputs: &[DataID], dependencies: &Dependencies) -> (Vec<bool>, Vec<bool>){
-	assert_eq!(n_passes, dependencies.pass_inputs.len());
-	assert_eq!(n_data, dependencies.data_inputs.len());
-	assert_eq!(n_data, is_input.len());
-	
-	let mut required_data: Vec<bool> = vec![false; n_data];
-	let mut required_passes: Vec<bool> = vec![false; n_passes];
-	
 	// queues contain locations which should be visited and marked required
 	// if a node is already marked when removed from the queue then nothing happens, otherwise it is marked and its dependencies get added to the queue
 	let mut pass_queue: VecDeque<PassID> = VecDeque::new();
 	let mut data_queue: VecDeque<DataID> = VecDeque::new(); 
 
 	// start with the data requested by the user
-	for data_id in requested_outputs {
+	for data_id in outputs {
 		data_queue.push_back(data_id.clone());
 	}
 
@@ -849,19 +939,22 @@ fn find_required(n_passes: usize, n_data: usize, is_input: &[bool], requested_ou
 	while !(pass_queue.is_empty() && data_queue.is_empty()) {
 
 		if let Some(data_id) = data_queue.pop_front() {
-			if !required_data[data_id.index] {
-				required_data[data_id.index] = true;
-				if !is_input[data_id.index]{
+			let data_status = &mut included_data[data_id.index];
+			match data_status {
+				&mut DataStatus::Input | &mut DataStatus::Compute => {},
+				&mut DataStatus::NotIncluded => {
+					*data_status = DataStatus::Compute;
 					for pass_id in &dependencies.data_inputs[data_id.index] {
 						pass_queue.push_back(pass_id.clone());
 					}
 				}
+				
 			}
 		}
 
 		if let Some(pass_id) = pass_queue.pop_front() {
-			if !required_passes[pass_id.index] {
-				required_passes[pass_id.index] = true;
+			if !included_passes[pass_id.index] {
+				included_passes[pass_id.index] = true;
 				for data_id in &dependencies.pass_inputs[pass_id.index] {
 					data_queue.push_back(data_id.clone());
 				}
@@ -869,21 +962,69 @@ fn find_required(n_passes: usize, n_data: usize, is_input: &[bool], requested_ou
 		}
 
 	}
-	
-	(required_data, required_passes)
+
+	let mut included_nodes = vec![NodeStatus::NotIncluded; graph.num_nodes()];
+	let mut included_ops = vec![false; graph.num_ops()];
+
+	for data_id in static_inputs.keys() {
+		included_nodes[data_id.node_id().index] = NodeStatus::StaticInput;
+	}
+
+	// Input overwrites StaticInput
+	for data_id in inputs.iter() {
+		included_nodes[data_id.node_id().index] = NodeStatus::Input;
+	}
+
+	for (i, data) in included_data.iter().enumerate() {
+		let data_id = DataID{index: i};
+		match data {
+			&DataStatus::Compute => {
+				let node_status = &mut included_nodes[data_id.node_id().index];
+				match node_status{
+					&mut NodeStatus::NotIncluded => {
+						if graph.node_shapes[data_id.node_id().index].is_known() {
+							*node_status = NodeStatus::Known;
+						} else {
+							*node_status = NodeStatus::Infer;
+						}
+					},
+					_ => {}
+				};
+
+			},
+			_ => {},
+		};
+	}
+
+	for op_id in &graph.op_ids {
+		let shape_inputs = &dependencies.op_inputs[op_id.index];
+		let shape_outputs = &dependencies.op_shape_outputs[op_id.index];
+
+		// if outputs are 'Infer' include
+		// if outputs are `StaticInputs` AND no inputs are `NotIncluded` then include
+		if shape_outputs.iter().any(|node_id| matches!(included_nodes[node_id.index], NodeStatus::Infer)) {
+			included_ops[op_id.index] = true
+		} else if shape_outputs.iter().any(|node_id| matches!(included_nodes[node_id.index], NodeStatus::Infer))
+		&& !shape_inputs.iter().any(|node_id| matches!(included_nodes[node_id.index], NodeStatus::NotIncluded)){
+			included_ops[op_id.index] = true
+		}
+	}
+
+
+	(included_data, included_passes, included_nodes, included_ops)
 }
 
 /// Returns the order in which passes should be called such that dependencies are respected.
 /// By default this will order passes in the order that they were added to the graph, and only perform the minimal rearrangement required to ensure dependencies are met.
 /// out of order dependeancies can cause quadratic slow down (this can probably be removed using priority queues)
-fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], required_passes: &[bool], dependencies: &Dependencies) -> Result<Vec<PassID>>{
-	assert_eq!(graph.num_passes(), dependencies.pass_inputs.len());
-	assert_eq!(graph.num_passes(), dependencies.pass_outputs.len());
-	assert_eq!(graph.num_passes(), required_passes.len());
+fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_passes: &[bool], dependencies: &Dependencies) -> Result<Vec<PassID>>{
+	debug_assert_eq!(graph.num_passes(), dependencies.pass_inputs.len());
+	debug_assert_eq!(graph.num_passes(), dependencies.pass_outputs.len());
+	debug_assert_eq!(graph.num_passes(), included_passes.len());
 
-	assert_eq!(graph.num_data(), dependencies.data_inputs.len());
-	assert_eq!(graph.num_data(), dependencies.data_outputs.len());
-	assert_eq!(graph.num_data(), is_input.len());
+	debug_assert_eq!(graph.num_data(), dependencies.data_inputs.len());
+	debug_assert_eq!(graph.num_data(), dependencies.data_outputs.len());
+	debug_assert_eq!(graph.num_data(), included_data.len());
 
 
 	#[derive(Clone)]
@@ -984,11 +1125,19 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 	// Setup states
 	let mut passes_state: Vec<PassState> = (0..graph.num_passes()).map(|i| PassState::Pending(dependencies.pass_inputs[i].len())).collect();
 	let mut data_state: Vec<DataState> = (0..graph.num_data()).map(|i| DataState::Pending(dependencies.data_inputs[i].len())).collect();
-	for (i, &is_input) in is_input.iter().enumerate() {
-		if is_input {
-			mark_data_input(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies)
-		} else if dependencies.data_inputs[i].len() == 0 {
-			mark_data_unavailable(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies)
+	for (i, data_status) in included_data.iter().enumerate() {
+		match data_status {
+			&DataStatus::Input => {
+				mark_data_input(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies);
+			},
+			&DataStatus::Compute => {
+				if dependencies.data_inputs[i].len() == 0  {
+					mark_data_unavailable(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies);
+				}
+			}
+			&DataStatus::NotIncluded => {
+				mark_data_unavailable(&DataID{index: i}, &mut data_state, &mut passes_state, &dependencies);
+			}
 		}
 	}
 
@@ -998,8 +1147,12 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 	// iterate over all required passes,
 	// add to pass order where possible (inputs are ready), otherwise add to deferred queue
 	// the resulting pass order should be as close to the users order while still not being out of order
-	let forward_required_passes = (0..graph.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_forward() && required_passes[id.index]);
-	let backward_required_passes = (0..graph.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_backward() && required_passes[id.index]);
+	// let forward_required_passes = (0..graph.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_forward() && required_passes[id.index]);
+	// let backward_required_passes = (0..graph.num_passes()).map(|i| PassID{index:i}).filter(|id| id.is_backward() && required_passes[id.index]);
+
+	let forward_required_passes = graph.pass_ids.iter().filter(|id| dependencies.pass_is_forward[id.index] && included_passes[id.index]);
+	let backward_required_passes = graph.pass_ids.iter().filter(|id| !dependencies.pass_is_forward[id.index] && included_passes[id.index]);
+
 	let default_pass_order = forward_required_passes.chain(backward_required_passes.rev());
 	for pass_id in default_pass_order {
 
@@ -1023,20 +1176,201 @@ fn find_pass_order(graph: &GraphDef, is_input: &[bool], required_data: &[bool], 
 		}
 	}
 	
-	if (0..graph.num_data()).filter(|&i| required_data[i]).any(|i| matches!(data_state[i], DataState::Unavailable)) {
-		bail!(ErrorKind::InputsInsufficientForRequestedOutputs)
+	let unavailable_data: Vec<String> = (0..graph.num_data())
+		.filter(|&i| !matches!(included_data[i], DataStatus::NotIncluded) && matches!(data_state[i], DataState::Unavailable))
+		.map(|i| graph.data_name(&DataID{index: i})).collect();
+	if unavailable_data.len() > 0 {
+		bail!(ErrorKind::SubgraphInsufficientInputsForOutputs(unavailable_data))
 	}
 
 	if deferred_passes.len() > 0 {
-		bail!(ErrorKind::GraphContainsCircularDependencies(deferred_passes.into_iter().map(|pass| (pass.clone(), dependencies.pass_inputs[pass.index].iter().filter(|data_id| !matches!(data_state[data_id.index], DataState::Ready)).cloned().collect())).collect()))
+		bail!(ErrorKind::GraphContainsCircularPasses(deferred_passes.into_iter().map(|pass| (pass.clone(), dependencies.pass_inputs[pass.index].iter().filter(|data_id| !matches!(data_state[data_id.index], DataState::Ready)).cloned().collect())).collect()))
 	}
 
 	Ok(pass_order)
 }
 
+/// Returns the order in which op should be called such that dependencies are respected.
+/// By default this will order ops in the order that they were added to the graph, and only perform the minimal rearrangement required to ensure dependencies are met.
+/// out of order dependeancies can cause quadratic slow down (this can probably be removed using priority queues)
+fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: &[bool], dependencies: &Dependencies) -> Result<Vec<OpID>>{
+	debug_assert_eq!(graph.num_ops(), dependencies.op_inputs.len());
+	debug_assert_eq!(graph.num_ops(), dependencies.op_shape_outputs.len());
+	debug_assert_eq!(graph.num_ops(), included_ops.len());
+
+	debug_assert_eq!(graph.num_nodes(), dependencies.node_shape_inputs.len());
+	debug_assert_eq!(graph.num_nodes(), dependencies.node_outputs.len());
+	debug_assert_eq!(graph.num_nodes(), included_nodes.len());
 
 
-fn find_shapes(subgraph: &SubGraph, passes: &[PassID], inputs: &[DataID], input_data: &[ArrayD<f32>], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<Vec<IxDyn>> {
+	#[derive(Clone)]
+	enum NodeState {
+		Input,
+		Ready, // Node should be marked as ready if 1) it is a graph input, or 2) when the last input op to it is sucessfully retired as ready
+		Pending(usize), // Indicates the number of remaining input opes before the node can be marked as ready
+		Unavailable, // propagated if any input op is unavailable, but does not overwrite Ready (to preserve inputs to the graph as ready).
+	};
+
+	// states start as pending, if all inputs to a op or node are 'ready' then it is ready, if any inputs to a op or node are unavailable then it is unavailable.
+	#[derive(Clone)]
+	enum OpState {
+		Ready, // Indicates that a op has been retired as ready
+		Pending(usize), // Indicates the number of remaining input node before the op can be marked as ready
+		PendingUnavailable, // an input to the op has marked it as unavailable, but the op has not propagated unavailable to its outputs yet
+		Unavailable, // propagated if any input for node or a op is unavailable, but does not overwrite Ready.
+	};
+
+	/// Attempts to retire a op as Ready or Unavailable, return true if sucessful false otherwise
+	/// If it returns true this method should never be called again for that op_id.
+	fn try_retire_op(op_id: &OpID, op_order: &mut Vec<OpID>, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies) -> bool{
+		if matches!(ops_ready[op_id.index] , OpState::Ready | OpState:: Unavailable) {
+			panic!("op has already been retired, try_retire_op() should not be called")
+		} else if matches!(ops_ready[op_id.index] , OpState::Pending(0)) {
+			// add to op order and update output node locations readiness
+			op_order.push(op_id.clone());
+			ops_ready[op_id.index] = OpState::Ready;
+			for node_id in &dependencies.op_shape_outputs[op_id.index] {
+				// If a node outptu of a op is pending decrement
+				// If that node output can now be marked ready
+				match node_state[node_id.index] {
+					NodeState::Unavailable | NodeState::Input => {},
+					NodeState::Pending(rem) if rem == 1 => {
+						mark_node_ready(node_id, node_state, ops_ready, &dependencies)
+					},
+					NodeState::Pending(rem) if rem > 1 => {node_state[node_id.index] = NodeState::Pending(rem - 1)},
+					NodeState::Pending(_) => panic!("node with zero inputs should have already been marked Unavailable or Input"),
+					NodeState::Ready => panic!("node marked ready before last input op was processed. graph likely contains a requires op which writes to a input tensor"), //TODO: create test to confirm this is caused by fan-out ops writing to a subgraph input
+				}
+			}
+			true
+		} else if matches!(ops_ready[op_id.index] , OpState::PendingUnavailable) {
+			ops_ready[op_id.index] = OpState::Unavailable;
+			for node_id in &dependencies.op_shape_outputs[op_id.index] {
+				mark_node_unavailable(node_id, node_state, ops_ready, &dependencies)
+			}
+			true
+		} else {
+			false
+		}
+	}
+
+	/// Marks node as ready, and decreases pending count of dependent ops
+	/// Only legal to call this if is_input[]==true or as the last input op is retired
+	fn mark_node_input(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+		node_state[node_id.index] = NodeState::Input;
+		for op_id in &dependencies.node_outputs[node_id.index] {
+			match ops_ready[op_id.index] {
+				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::Pending(rem - 1)},
+				OpState::Unavailable | OpState::PendingUnavailable =>{},
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+			}
+		}
+	}
+
+	/// Marks node as ready, and decreases pending count of dependent ops
+	/// Only legal to call this if is_input[]==true or as the last input op is retired
+	fn mark_node_ready(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+		node_state[node_id.index] = NodeState::Ready;
+		for op_id in dependencies.node_outputs(node_id) {
+			match ops_ready[op_id.index] {
+				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::Pending(rem - 1)},
+				OpState::Unavailable | OpState::PendingUnavailable =>{},
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+			}
+		}
+	}
+
+	/// Can be called on node in any state, but will only mark node and dependent ops as unavailable if the current node state is Pending
+	fn mark_node_unavailable(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+		if matches!(node_state[node_id.index], NodeState::Ready | NodeState::Unavailable){return} 
+		node_state[node_id.index] = NodeState::Unavailable;
+		for op_id in &dependencies.node_outputs[node_id.index] {
+			match ops_ready[op_id.index] {
+				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::PendingUnavailable},
+				OpState::Unavailable | OpState::PendingUnavailable =>{},
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+			}
+		}
+	}
+
+
+
+	let mut op_order: Vec<OpID> = vec![];
+	let mut deferred_ops: VecDeque<OpID> = VecDeque::new();
+	
+	// Setup states
+	let mut op_state: Vec<OpState> = (0..graph.num_ops()).map(|i| OpState::Pending(dependencies.op_inputs[i].len())).collect();
+	let mut node_state: Vec<NodeState> = (0..graph.num_nodes()).map(|i| NodeState::Pending(dependencies.node_shape_inputs[i].len())).collect();
+	for (i, node_status) in included_nodes.iter().enumerate() {
+		match node_status{
+			&NodeStatus::Input | &NodeStatus::Known => {
+				mark_node_input(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+			},
+			&NodeStatus::StaticInput => {
+				if !dependencies.node_shape_inputs[i].iter().all(|op_id| included_ops[op_id.index]) {
+					mark_node_input(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+				}
+			},
+			&NodeStatus::Infer => {
+				if dependencies.node_shape_inputs[i].len() == 0 {
+					mark_node_unavailable(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+				}
+			},
+			&NodeStatus::NotIncluded => {
+				mark_node_unavailable(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+			},
+		}
+	}
+
+
+
+
+	// iterate over all required ops,
+	// add to op order where possible (inputs are ready), otherwise add to deferred queue
+	// the resulting op order should be as close to the users order while still not being out of order
+	// let forward_required_ops = (0..graph.num_ops()).map(|i| opID{index:i}).filter(|id| id.is_forward() && required_ops[id.index]);
+	// let backward_required_ops = (0..graph.num_ops()).map(|i| opID{index:i}).filter(|id| id.is_backward() && required_ops[id.index]);
+
+	let required_ops = graph.op_ids.iter().filter(|id| included_ops[id.index]);
+
+	for op_id in required_ops {
+
+		let success = try_retire_op(&op_id, &mut op_order, &mut node_state, &mut op_state, &dependencies);
+		if !success {
+			deferred_ops.push_back(op_id.clone());
+			continue;
+		}
+
+		// Attempt to empty deferred queue
+		// always try to add deferred ops in order
+		let mut i = 0;
+		while i < deferred_ops.len(){
+			let success = try_retire_op(&deferred_ops[i], &mut op_order, &mut node_state, &mut op_state, &dependencies);
+			if success {
+				deferred_ops.remove(i);
+				i = 0; // keep trying from the start again
+			} else {
+				i += 1;
+			}
+		}
+	}
+
+	let unavailable_nodes: Vec<String> = (0..graph.num_nodes())
+		.filter(|&i| !matches!(included_nodes[i], NodeStatus::NotIncluded) && matches!(node_state[i], NodeState::Unavailable))
+		.map(|i| graph.node_name(&NodeID{index: i}).to_string()).collect();
+	if unavailable_nodes.len() > 0 {
+		bail!(ErrorKind::SubgraphInsufficientInputsForShapeInference(unavailable_nodes))
+	}
+
+	if deferred_ops.len() > 0 {
+		bail!(ErrorKind::GraphContainsCircularOps(deferred_ops.into_iter().map(|op_id| (op_id.clone(), dependencies.op_inputs[op_id.index].iter().filter(|node_id| !matches!(node_state[node_id.index], NodeState::Ready)).cloned().collect())).collect()))
+	}
+
+	Ok(op_order)
+}
+
+
+fn find_shapes(subgraph: &SubGraph, op_order: &[OpID], inputs: &[DataID], input_data: &[ArrayD<f32>], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<Vec<IxDyn>> {
 	// if inputs are present along with static_inputs the inputs should add
 
 	let mut shapes = GraphShapes::new(subgraph);
@@ -1057,8 +1391,8 @@ fn find_shapes(subgraph: &SubGraph, passes: &[PassID], inputs: &[DataID], input_
 	}
 
 	// for all op forward passes that are scheduled. call the relevant shape propagation
-	let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
-	for op_id in op_ids {
+	//let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
+	for op_id in op_order {
 		subgraph.graph.ops[op_id.index].propagate_shape_constraints(&mut shapes)?;
 	}
 
@@ -1139,19 +1473,25 @@ pub struct Storage<'a> {
 	borrow_flags: Vec<Cell<usize>>,
 	static_inputs: &'a OrderMap<DataID, ArrayD<f32>>,
 	dependencies: &'a Dependencies,
-	next_pass: Option<PassID>
+	next_pass: Option<PassID>,
+	pass_data: Vec<Option<Box<Any>>>,
 }
 
 const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl<'a> Storage<'a> {
 
-	fn new(required_data: &[bool], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
+	fn new(included_data: &[DataStatus], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
 		debug_assert_eq!(supplied_inputs.len(), input_data.len());
 
-		let num_nodes = shapes.len();
+		let num_nodes = dependencies.node_inputs.len();
+		let num_data = dependencies.data_inputs.len();
+		let num_passes = dependencies.pass_inputs.len();
+		
+		debug_assert_eq!(num_nodes, shapes.len());
+		debug_assert_eq!(num_data, included_data.len());
 
-		let mut data: Vec<DataState<ArrayD<f32>>> = required_data.iter().map(|&r| if r {DataState::Unallocated} else {DataState::NotRequired}).collect();
+		let mut data: Vec<DataState<ArrayD<f32>>> = included_data.iter().map(|r| if matches!(r, &DataStatus::NotIncluded) {DataState::NotRequired} else {DataState::Unallocated}).collect();
 
 		for (i, (data_id, input_data)) in supplied_inputs.iter().zip(&input_data).enumerate() {
 			debug_assert!(shapes[data_id.node_id().index].slice() == input_data.shape());
@@ -1168,11 +1508,20 @@ impl<'a> Storage<'a> {
 			input_data: input_data,
 			loss: Cell::new(0.0),
 			data: data,
-			borrow_flags: vec![Cell::new(UNUSED); num_nodes * 2],
+			borrow_flags: vec![Cell::new(UNUSED); num_data],
 			static_inputs,
 			dependencies,
 			next_pass: None,
+			pass_data: (0..num_passes).map(|_| None).collect(),
 		}
+	}
+
+	fn set_pass_data(&mut self, pass_id: &PassID, pass_data: Box<Any>){
+		self.pass_data[pass_id.index] = Some(pass_data);
+	}
+
+	pub fn get_pass_data(&self, pass_id: &PassID) -> Option<&Any>{
+		self.pass_data[pass_id.index].as_ref().map(|x| &**x)
 	}
 
 	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass.
@@ -1453,15 +1802,22 @@ fn _test_pass_reordering() -> Result<()>{
 
 
 	let sg_forward = g.subgraph(&[node1.value_id()], &[node4.value_id()])?;
-	let expected_order: Vec<PassID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|op| op.forward_id()).collect();
+	let expected_order: Vec<OpID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|&op_id| op_id.clone()).collect();
+	assert_eq!(&sg_forward.op_order, &expected_order);
+	let expected_order: Vec<PassID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|&op_id| g.op(op_id)).collect::<Result<Vec<_>>>()?
+		.iter().map(|op| op.inner_passes()[0].clone()).collect();
 	assert_eq!(&sg_forward.pass_order, &expected_order);
 
 	let sg_forward_backward = g.subgraph(&[node1.value_id()], &[node1.gradient_id()])?;
+	let expected_order: Vec<OpID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|&op_id| op_id.clone()).collect();
+	assert_eq!(&sg_forward_backward.op_order, &expected_order);
 	// backward pass prefers to run in the opposite order to the order of ops being added
 	// this results in o2 and o1 firing before o4 and o3
 	// if you read the op order above bottom to top, you can see this is correct.
-	let expected_order: Vec<PassID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|op| op.forward_id()).chain(
-				[&o6, &o5, &o2, &o1, &o4, &o3].iter().map(|op| op.backward_id())).collect();
+	let expected_order: Vec<PassID> = [&o1, &o2, &o3, &o4, &o5].iter().map(|&op_id| g.op(op_id)).collect::<Result<Vec<_>>>()?
+		.iter().map(|op| op.inner_passes()[0].clone())
+		.chain([&o6, &o5, &o2, &o1, &o4, &o3].iter().map(|&op_id| g.op(op_id)).collect::<Result<Vec<_>>>()?
+		.iter().map(|op| op.inner_passes()[1].clone())).collect();
 	assert_eq!(&sg_forward_backward.pass_order, &expected_order);
 
 	Ok(())
@@ -1497,19 +1853,21 @@ fn _test_circular_detection() -> Result<()>{
 
 	// Check that the circular link raises an error
 	let sg_forward = g.subgraph(&[node1.value_id()], &[node5.value_id()]);
-	assert!(matches!(sg_forward, Err(Error(ErrorKind::GraphContainsCircularDependencies(_), _))));
+	assert!(matches!(sg_forward, Err(Error(ErrorKind::GraphContainsCircularOps(_), _))), "{:?}", sg_forward);
 
 	let sg_forward_backward = g.subgraph(&[node1.value_id()], &[node1.gradient_id()]);
-	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::GraphContainsCircularDependencies(_), _))));
+	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::GraphContainsCircularOps(_), _))), "{:?}", sg_forward_backward);
 
 
 	// Check that setting node2 as an input means that _o4 is not required, resulting in a non circular graph
 	let sg_forward = g.subgraph(&[node2.value_id()], &[node5.value_id()]);
-	assert!(matches!(sg_forward, Ok(_)));
+	assert!(matches!(sg_forward, Ok(_)), "{:?}", sg_forward);
 
 	// However the circular dependencies in the backward passes still exists
 	let sg_forward_backward = g.subgraph(&[node2.value_id()], &[node2.gradient_id()]);
-	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::GraphContainsCircularDependencies(_), _))));
+	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::GraphContainsCircularPasses(_), _))), "{:?}", sg_forward_backward);
+
+	// TODO check Graph ContainsCircularPass
 
 	Ok(())
 }
@@ -1536,14 +1894,16 @@ fn _test_insufficient_input_detection() -> Result<()>{
 	let _o2 = g.new_op(Dummy::new().input(&node2).output(&node3), tag![])?;
 
 
-	let g_forward = g.subgraph(&[node1.value_id()], &[node3.value_id()]);
-	assert!(matches!(g_forward, Err(Error(ErrorKind::InputsInsufficientForRequestedOutputs, _))));
+	let sg_forward = g.subgraph(&[node1.value_id()], &[node3.value_id()]);
+	assert!(matches!(sg_forward, Err(Error(ErrorKind::SubgraphInsufficientInputsForShapeInference(_), _))), "{:?}", sg_forward);
 
-	let g_forward_backward = g.subgraph(&[node1.value_id()], &[node1.gradient_id()]);
-	assert!(matches!(g_forward_backward, Err(Error(ErrorKind::InputsInsufficientForRequestedOutputs, _))));
+	let sg_forward_backward = g.subgraph(&[node1.value_id()], &[node1.gradient_id()]);
+	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::SubgraphInsufficientInputsForShapeInference(_), _))), "{:?}", sg_forward_backward);
 
 	Ok(())
 }
+
+
 
 // TODO detect required ops which want to write to input data
 

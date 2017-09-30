@@ -1,7 +1,8 @@
 use new::graph::{GraphDef, NodeID, Storage, GraphShapes, Result};
 use new::ops::*;
+use std::rc::Rc;
 
-pub struct Dummy{
+pub struct Dummy {
 	name: Option<String>,
 	inputs: Vec<NodeID>,
 	outputs: Vec<NodeID>,
@@ -62,17 +63,23 @@ impl Op for Dummy {
 	}
 
 	/// Called by GraphDef::new_op to construct the op instance
-	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
-		let name = if let Some(name) = self.name {
-			name
-		} else {
-			standard_op_name(&self, graph, &self.inputs, &self.outputs)
-		};
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+		let name = standard_op_name(&self, &self.name, graph, &self.inputs, &self.outputs);
+
+		
 		Ok(DummyInstance{
 			name: name,
 			inputs: self.inputs.clone(),
 			outputs: self.outputs.clone(),
-			touch_data: self. touch_data,
+			touch_data: self.touch_data,
+			forward_id: graph.add_pass(DummyForward{
+					inputs: self.inputs.clone(),
+					outputs: self.outputs.clone(),
+					touch_data: self.touch_data}),
+			backward_id: graph.add_pass(DummyBackward{
+					inputs: self.inputs.clone(),
+					outputs: self.outputs.clone(),
+					touch_data: self.touch_data}),
 		})
 	}
 }
@@ -84,26 +91,52 @@ pub struct DummyInstance {
 	inputs: Vec<NodeID>,
 	outputs: Vec<NodeID>,
 	touch_data: bool,
+	forward_id: PassID,
+	backward_id: PassID,
 }
 
 impl OpInstance for DummyInstance {
-	fn type_name(&self) -> &'static str {
-		"Dummy"
+	fn type_name(&self) -> &'static str {"Dummy"}
+	
+	fn instance_name(&self) -> &str {&self.name}
+
+	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(self.inputs.clone(), self.outputs.clone())}
+
+	fn inner_passes(&self) -> Vec<PassID> {vec![self.forward_id.clone(), self.backward_id.clone()]}
+
+	fn inner_ops(&self) -> Vec<OpID> {vec![]}
+
+	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
+
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+}
+
+#[derive(Clone, Debug)]
+pub struct DummyForward {
+	inputs: Vec<NodeID>,
+	outputs: Vec<NodeID>,
+	touch_data: bool,
+}
+
+
+/// Backward pass of the Dummy Op
+///
+/// Note that the inputs of this pass are the inputs of the Dummy Op, not the input dependencies of the pass.
+#[derive(Clone, Debug)]
+pub struct DummyBackward {
+	inputs: Vec<NodeID>,
+	outputs: Vec<NodeID>,
+	touch_data: bool,
+}
+
+
+impl Pass for DummyForward {
+	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
+		(self.inputs.iter().map(|node_id| node_id.value_id()).collect(),
+		self.outputs.iter().map(|node_id| node_id.value_id()).collect())
 	}
 
-	fn instance_name(&self) -> &str {
-		&self.name
-	}
-
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{
-		Ok(())
-	}
-				
-	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
-		(self.inputs.clone(), self.outputs.clone())
-	}
-
-	fn forward (&mut self, data: &mut Storage) -> Result<()>{
+	fn run (&self, data: &mut Storage) -> Result<Box<Any>>{
 		if self.touch_data {
 			for id in &self.inputs {
 				let _x = data.get(&id.value_id());
@@ -112,10 +145,18 @@ impl OpInstance for DummyInstance {
 				let _x = data.get_mut(&id.value_id());
 			}
 		}
-		Ok(())
+		Ok(Box::new(()))
 	}
-	
-	fn backward (&mut self, data: &mut Storage) -> Result<()>{
+}
+
+impl Pass for DummyBackward {
+	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
+		(self.inputs.iter().map(|node_id| node_id.value_id())
+		.chain(self.outputs.iter().map(|node_id| node_id.gradient_id())).collect(),
+		self.inputs.iter().map(|node_id| node_id.gradient_id()).collect())
+	}
+
+	fn run (&self, data: &mut Storage) -> Result<Box<Any>> {
 		if self.touch_data {
 			for id in &self.inputs {
 				let _x = data.get(&id.value_id());
@@ -125,6 +166,6 @@ impl OpInstance for DummyInstance {
 				let _x = data.get(&id.gradient_id());
 			}
 		}
-		Ok(())
+		Ok(Box::new(()))
 	}
 }
