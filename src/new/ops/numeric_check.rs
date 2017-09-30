@@ -90,8 +90,8 @@ pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &Graph
 pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
 	let dependencies = Dependencies::new(&graph);
 
-	let input_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(node_id.value_id()).len() == 0 && !graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
-	let parameter_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(node_id.value_id()).len() == 0 && graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+	let input_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+	let parameter_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
 
 	let inputs_0 = generate_input_data(&graph, &input_ids, default_variance, override_distributions)?;
 	let params_0 = generate_input_data(&graph, &parameter_ids, default_variance, override_distributions)?;

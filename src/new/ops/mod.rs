@@ -1,5 +1,5 @@
 pub mod dummy;
-// pub mod numeric_check;
+pub mod numeric_check;
 // pub mod loss;
 // pub mod nn;
 // pub mod math;
