@@ -315,8 +315,8 @@ impl GraphDef {
 	///
 	/// * inputs - this must be an in order slice of the nodes which will be supplied by the data stream used when evaluating the graph.
 	/// * outputs - the order of the output DataIDs does not currently matter
-	pub fn subgraph(&self, inputs: &[DataID], outputs: &[DataID]) -> Result<SubGraph> {
-		SubGraph::new(&self, inputs, outputs)
+	pub fn subgraph(&self, inputs: &[DataID], outputs: &[DataID]) -> Result<Subgraph> {
+		Subgraph::new(&self, inputs, outputs)
 	}
 
 	/// The default subgraph is a training subgraph.
@@ -325,7 +325,7 @@ impl GraphDef {
 	/// The ordering of the inputs follows the order of node creation,
 	/// with the additional constraint that non-parameter nodes are strictly before parameter nodes.
 	/// See `subgraph()`.
-	pub fn default_subgraph() -> Result<SubGraph> {
+	pub fn default_subgraph() -> Result<Subgraph> {
 		unimplemented!()
 	}
 
@@ -794,7 +794,7 @@ enum NodeStatus {
 }
 
 #[derive(Clone, Debug)]
-pub struct SubGraph {
+pub struct Subgraph {
 	graph: GraphDef,
 	dependencies: Dependencies,
 
@@ -818,8 +818,11 @@ pub struct SubGraph {
 
 }
 
-impl SubGraph {
-	fn new(graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> Result<SubGraph> {
+impl Subgraph {
+	/// An executable subgraph derived from a `GraphDef`.
+	///
+	/// todo
+	fn new(graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> Result<Subgraph> {
 
 		let dependencies = Dependencies::new(graph);
 		
@@ -841,7 +844,7 @@ impl SubGraph {
 			passes_before_dealloc[data_id.index] += 1;
 		}
 
-		let graph = SubGraph{
+		let graph = Subgraph{
 			graph: graph.clone(),
 			dependencies: dependencies,
 
@@ -864,7 +867,7 @@ impl SubGraph {
 		Ok(graph)
 	}
 
-	/// Calling this executes the 
+	/// Calling this executes the subgraph and returns a Storage which contains the outputs of the subgraph.
 	///
 	/// 
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
@@ -1370,7 +1373,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 }
 
 
-fn find_shapes(subgraph: &SubGraph, op_order: &[OpID], inputs: &[DataID], input_data: &[ArrayD<f32>], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<Vec<IxDyn>> {
+fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_data: &[ArrayD<f32>], static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<Vec<IxDyn>> {
 	// if inputs are present along with static_inputs the inputs should add
 
 	let mut shapes = GraphShapes::new(subgraph);
@@ -1414,7 +1417,7 @@ pub struct GraphShapes{
 }
 
 impl GraphShapes {
-	fn new(subgraph: &SubGraph) -> GraphShapes {
+	fn new(subgraph: &Subgraph) -> GraphShapes {
 		GraphShapes{
 			shapes: subgraph.graph.node_shapes.clone(),
 		}
@@ -1524,7 +1527,7 @@ impl<'a> Storage<'a> {
 		self.pass_data[pass_id.index].as_ref().map(|x| &**x)
 	}
 
-	/// If this value is set, all subsequent accesses will be checked against the dependency list for the Pass.
+	/// If this value is not `None`, all subsequent accesses will be checked against the dependency list for the Pass.
 	/// This can be useful to ensure that passes dont access anything they havent listed as and input or output.
 	fn set_next_pass_debug(&mut self, pass_id: Option<&PassID>){
 		self.next_pass = pass_id.cloned();

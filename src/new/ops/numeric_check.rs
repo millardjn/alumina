@@ -1,4 +1,4 @@
-use new::graph::{GraphDef, SubGraph, DataID, NodeID, NodeTag, Result, Dependencies};
+use new::graph::{GraphDef, Subgraph, DataID, NodeID, NodeTag, Result, Dependencies};
 use ndarray::ArrayD;
 use rand::thread_rng;
 use rand::distributions::{Normal, Sample};
