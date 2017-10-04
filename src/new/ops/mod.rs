@@ -1,20 +1,20 @@
 pub mod dummy;
 pub mod numeric_check;
 pub mod loss;
-// pub mod nn;
-// pub mod math;
+pub mod nn;
+pub mod math;
 
 use new::graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, Error, ErrorKind, Result};
 use std::any::Any;
 use std::fmt::Debug;
 
 
-/// Generated default names for `Op`s
+/// Generated default unique names for `Op`s
 ///
 /// If a name isn't set on an `OpBuilder` a default name will be generated using the `type_name()` and the names of input and output nodes.
 /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), i, node1_name, node2_name, node3_name, node4_name)`
-/// e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until an unused name is found.
-pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &mut GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
+/// e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until a unique/unused name is found.
+pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, inputs: &[NodeID], outputs: &[NodeID]) -> String {
 
 	if let Some(name) = name.as_ref() {
 		return name.clone();
@@ -52,33 +52,64 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &mut GraphD
 	}
 }
 
+/// Generated default names for `Pass`s
+///
+/// Names for passes may no be unique.
+/// A default name will be generated using the `type_name()` and the names of input and output data.
+/// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), data1_name, data2_name, data3_name, data4_name)`
+pub fn standard_pass_name(pass: &Pass, graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> String {
+
+	let mut name_string = pass.type_name().to_string();
+	name_string.push_str("(");
+	let mut input_names = inputs.iter().map(|id| graph.data_name(id));
+	if let Some(name) = input_names.next(){
+		name_string.push_str(&name);
+		for name in input_names {
+			name_string.push_str(",");
+			name_string.push_str(&name);
+		}
+	}
+	name_string.push_str("=>");
+	let mut output_names = outputs.iter().map(|id| graph.data_name(id));
+	if let Some(name) = output_names.next(){
+		name_string.push_str(&name);
+		for name in output_names {
+			name_string.push_str(",");
+			name_string.push_str(&name);
+		}
+	}
+	name_string.push_str(")");
+	name_string
+}
 
 /// Generated default names for parameter nodes created by `OpBuilder`s
 ///
 /// Names are generated from the name of the `Op` returned by the `OpBuilder`, using the following: `format!("P{}_{}", i, builder_name)`
 /// e.g. `P0_Dummy0(node1,node2=>node3,node4)`, where `i` is incremented until an unused name is found.
-pub fn standard_parameter_names(n: usize, builder_name: &str, graph: &mut GraphDef) -> Vec<String> {
-
-	let mut names = vec![];
+pub fn standard_parameter_name(builder_name: &str, graph: &mut GraphDef) -> String {
 
 	let mut i = 0;
-	while names.len() < n {
+	loop {
 		let next_param_name = format!("P{}_{}", i, builder_name);
 		let result = graph.node_id(&*next_param_name);
 		i += 1;
 		if matches!(result, Err(Error(ErrorKind::ZeroNodesMatchTag(_), _))) {
-			names.push(next_param_name);
+			return next_param_name;
 		}
 	}
 
-	names
 }
 
-
+/// The `Op` trait provides a builder interface for differentible operations to be added to a `GraphDef`.
+///
+/// The `Op` Trait is responsible for:
+/// * providing a builder interface
+/// * producing an `OpInstance` which provides shape inference
+/// * modifying the `GraphDef` by adding `Pass`s, `Op`s, and `Node`s to ensure the correct value and gradient calculations take place
 pub trait Op: Any {
 	type InstanceType: OpInstance;
 
-	/// The type name of an `OpBuilder` is used to construct the default instance name of the `Op` returned by `build()`.
+	/// The type name of an `Op` is used to construct the default instance name of the `OpInstance` returned by `build()`.
 	///
 	/// This should be the same as the part of the type name that comes before "Builder".
 	/// This name may not match the `type_name()` of the `Op` returned by `build()`
@@ -93,14 +124,14 @@ pub trait Op: Any {
 	/// Called by `GraphDef` to construct the `Op` instance.
 	///
 	/// Arbitrary graph modification may occur allowing builders to implement high level effects by composing multiple low level `Op`s.
-	/// Also used to let Ops create parameter nodes as necessary.
+	/// Also used to let an `Op` create parameter nodes as necessary.
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType>;
 }
 
-
+/// The `OpInstance` trait is used to record each `Op` that has been added to a `GraphDef`.
+///
+/// An OpInstance is produced when `build()` is called on an Op
 pub trait OpInstance: Any + OpClone + Debug{
-	/// The name of the `Op` type
-	fn type_name(&self) -> &'static str;
 
 	/// The name of this instance of the Op
 	fn instance_name(&self) -> &str;
@@ -108,13 +139,16 @@ pub trait OpInstance: Any + OpClone + Debug{
 	// TODO consider whether non standard order ops may be useful
 	//fn requires_standard_order_inputs(&self) -> bool {true}
 	
-	/// Returns the nodeIDs (inputs, outputs) of the nodes
+	/// Returns the (input, output) nodeIDs of the nodes use when creating this Op. This does not include nodes created by this Op which are returns in `inner_nodes()`.
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
 
+	/// Returns the `Pass`s used directly to implement this Op
 	fn inner_passes(&self) -> Vec<PassID>;
 
+	/// Returns the Ops used to implement this Op, passes created by these ops are not returned by `inner_passes()`
 	fn inner_ops(&self) -> Vec<OpID>;
 
+	/// Returns the Nodes used directly to implement this Op
 	fn inner_nodes(&self) -> Vec<NodeID>;
 
 	/// TODO
@@ -123,7 +157,36 @@ pub trait OpInstance: Any + OpClone + Debug{
 
 
 pub trait Pass: Any + PassClone + Debug {
-	
+	/// The name of the `Pass` type
+	fn type_name(&self) -> &'static str;
+
+	/// This name may not be unique, unlike node and op names
+	fn instance_name(&self, graph: &GraphDef) -> String where Self:Pass{
+		let (inputs, outputs) = self.dependencies();
+
+		let mut name_string = self.type_name().to_string();
+		name_string.push_str("(");
+		let mut input_names = inputs.iter().map(|id| graph.data_name(id));
+		if let Some(name) = input_names.next(){
+			name_string.push_str(&name);
+			for name in input_names {
+				name_string.push_str(",");
+				name_string.push_str(&name);
+			}
+		}
+		name_string.push_str("=>");
+		let mut output_names = outputs.iter().map(|id| graph.data_name(id));
+		if let Some(name) = output_names.next(){
+			name_string.push_str(&name);
+			for name in output_names {
+				name_string.push_str(",");
+				name_string.push_str(&name);
+			}
+		}
+		name_string.push_str(")");
+		name_string
+	}
+
 	// TODO consider mutable access so the graph con modify passes:
 	// this would force inputs and outputs to be stored sequentially for all ops. maybe a mut iter is better?
 	// fn dependencies_mut(&mut self) -> (&mut[DataID], &mut[DataID]);
@@ -146,7 +209,7 @@ pub trait Pass: Any + PassClone + Debug {
 	///
 	/// The return of Box<Any> can be used to store arbitrary data for retreival from `Storage` by another pass, e.g. a dropout mask.
 	/// Most passes will simply return nothing: `Ok(Box::new(()))`.
-	fn run (&self, data: &mut Storage) -> Result<Box<Any>>;
+	fn run (&self, data: &Storage) -> Result<Box<Any>>;
 }
 
 
@@ -187,9 +250,14 @@ impl Clone for Box<Pass> {
 
 
 
-
 pub struct NoOp {
 	name: Option<String>
+}
+
+impl NoOp {
+	pub fn new() -> Self {
+		NoOp{name: None}
+	}
 }
 
 impl Op for NoOp {
@@ -202,7 +270,7 @@ impl Op for NoOp {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[], &[]);
 		Ok(NoOpInstance{name})
 	}
@@ -216,8 +284,6 @@ pub struct NoOpInstance {
 
 impl OpInstance for NoOpInstance {
 
-	fn type_name(&self) -> &'static str {"NoOp"}
-	
 	fn instance_name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![], vec![])}
@@ -228,9 +294,29 @@ impl OpInstance for NoOpInstance {
 
 	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
 
-	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 }
 
+#[derive(Clone, Debug)]
+pub struct NoOpPass {}
+
+impl NoOpPass {
+	pub fn new() -> Self {
+		NoOpPass {}
+	}
+}
+
+impl Pass for NoOpPass {
+	fn type_name(&self) -> &'static str {"NoOpPass"}
+
+	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
+		(vec![], vec![])
+	}
+
+	fn run (&self, _data: &Storage) -> Result<Box<Any>>{
+		Ok(Box::new(()))
+	}
+}
 
 #[test]
 fn test_name_generation(){
@@ -247,7 +333,6 @@ fn _test_name_generation() -> Result<()>{
 	let node2 = g.new_node(shape![Unknown, 5, 16], "node2", tag![])?;
 	let node3 = g.new_node(shape![Unknown, 5, 16], "node3", tag![])?;
 	let node4 = g.new_node(shape![Unknown, 5, 16], "node4", tag![])?;
-
 
 	let o1 = g.new_op(Dummy::new().input(&node1).input(&node2).output(&node3).output(&node4), tag![])?;
 

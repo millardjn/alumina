@@ -1,6 +1,7 @@
-use new::graph::{GraphDef, NodeID, Result};
-use new::ops::math::add::AddInstance;
-use new::ops::*;
+use new::graph::{GraphDef, NodeID, OpID, PassID, NodeTag, Result};
+use new::ops::math::add::{AddInstance, Add};
+use new::ops::{standard_op_name, standard_parameter_name, Op, OpInstance, Pass};
+use new::shape::{NodeShape, NodeDim};
 
 pub struct Bias {
 	output: NodeID,
@@ -52,16 +53,12 @@ impl Op for Bias {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
-		let name = if let Some(name) = self.name {
-			name
+		let name = if let Some(ref input) = self.input {
+			standard_op_name(&self, &self.name, graph, &[input.clone()], &[self.output.clone()])
 		} else {
-			if let Some(ref input) = self.input {
-				standard_op_name(&self, graph, &[input.clone()], &[self.output.clone()])
-			} else {
-				standard_op_name(&self, graph, &[], &[self.output.clone()])
-			}
+			standard_op_name(&self, &self.name, graph, &[], &[self.output.clone()])
 		};
 
 		let input = if let Some(input) = self.input {
@@ -73,14 +70,10 @@ impl Op for Bias {
 				graph.node_shape(&self.output)?.collapse_to_broadcastable_dimension()
 			};
 			
-			let param_name = standard_parameter_names(1, &name, graph).remove(0);
-			graph.new_node(shape, param_name, tag![])?
+			let param_name = standard_parameter_name(&name, graph);
+			graph.new_node(shape, param_name, tag![NodeTag::Parameter, "test"])?
 		};
 
-		Ok(AddInstance{
-			name: name,
-			input_id: input,
-			output_id: self.output,
-		})
+		Add::new(&input, &self.output).name(name).build(graph, op_id)
 	}
 }

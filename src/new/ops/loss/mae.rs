@@ -50,14 +50,15 @@ impl Op for Mae {
 		// TODO check broadcast at graph define time?
 		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[]);
 
-		let pass_id = graph.add_pass(MaePass{input1_id: self.input1.clone(), input2_id: self.input2.clone(), multiplier: self.multiplier});
-
 		Ok(MaeInstance{
 			name: name,
-			input1_id: self.input1,
-			input2_id: self.input2,
+			input1_id: self.input1.clone(),
+			input2_id: self.input2.clone(),
 			multiplier: self.multiplier,
-			pass_id: pass_id,
+			pass_id: graph.add_pass(MaePass::new(
+				self.multiplier,
+				self.input1.clone(),
+				self.input2.clone())),
 		})
 	}
 }
@@ -74,8 +75,7 @@ pub struct MaeInstance{
 }
 
 impl OpInstance for MaeInstance {
-	fn type_name(&self) -> &'static str {"Mae"}
-	
+
 	fn instance_name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input1_id.clone(), self.input2_id.clone()], vec![])}
@@ -86,7 +86,7 @@ impl OpInstance for MaeInstance {
 
 	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
 
-	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 
 }
 
@@ -98,13 +98,25 @@ struct MaePass{
 	input2_id: NodeID,
 }
 
+impl MaePass {
+	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID) -> Self {
+		MaePass {
+			multiplier,
+			input1_id,
+			input2_id,
+		}
+	}
+}
+
 impl Pass for MaePass {
+	fn type_name(&self) -> &'static str {"MaePass"}
+
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(vec![self.input1_id.value_id(), self.input2_id.value_id()],
 		vec![self.input1_id.gradient_id(), self.input2_id.gradient_id()])
 	}
 
-	fn run (&self, data: &mut Storage) -> Result<Box<Any>>{
+	fn run (&self, data: &Storage) -> Result<Box<Any>>{
 		let input1_val = data.get(&self.input1_id.value_id())?;
 		let input1_val = input1_val.as_slice().unwrap();
 		let input2_val = data.get(&self.input2_id.value_id())?;

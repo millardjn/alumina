@@ -1,10 +1,10 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, Op, OpInstance, Pass};
-use new::shape::{NodeShape, NodeDim};
+use new::shape::{NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
-use generic_array::GenericArray;
-use typenum::{Unsigned, U16};
-use typenum_loops::Loop;
+// use generic_array::GenericArray;
+// use typenum::{Unsigned, U16};
+// use typenum_loops::Loop;
 use std::any::Any;
 
 
@@ -46,18 +46,18 @@ impl Op for L2 {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
-		// TODO check broadcast at graph define time?
+	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[]);
-
-		let pass_id = graph.add_pass(L2Pass{input1_id: self.input1.clone(), input2_id: self.input2.clone(), multiplier: self.multiplier});
 
 		Ok(L2Instance{
 			name: name,
-			input1_id: self.input1,
-			input2_id: self.input2,
+			input1_id: self.input1.clone(),
+			input2_id: self.input2.clone(),
 			multiplier: self.multiplier,
-			pass_id: pass_id,
+			pass_id: graph.add_pass(L2Pass::new(
+				self.multiplier, 
+				self.input1.clone(), 
+				self.input2.clone())),
 		})
 	}
 }
@@ -73,9 +73,9 @@ pub struct L2Instance{
 	pass_id: PassID,
 }
 
+
 impl OpInstance for L2Instance {
-	fn type_name(&self) -> &'static str {"L2"}
-	
+
 	fn instance_name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input1_id.clone(), self.input2_id.clone()], vec![])}
@@ -86,7 +86,7 @@ impl OpInstance for L2Instance {
 
 	fn inner_nodes(&self) -> Vec<NodeID> {vec![]}
 
-	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 
 }
 
@@ -98,13 +98,25 @@ struct L2Pass{
 	input2_id: NodeID,
 }
 
+impl L2Pass {
+	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID) -> Self {
+		L2Pass {
+			multiplier,
+			input1_id,
+			input2_id,
+		}
+	}
+}
+
 impl Pass for L2Pass {
+	fn type_name(&self) -> &'static str {"L2Pass"}
+
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(vec![self.input1_id.value_id(), self.input2_id.value_id()],
 		vec![self.input1_id.gradient_id(), self.input2_id.gradient_id()])
 	}
 
-	fn run (&self, data: &mut Storage) -> Result<Box<Any>>{
+	fn run (&self, data: &Storage) -> Result<Box<Any>>{
 		let input1_val = data.get(&self.input1_id.value_id())?;
 		let input1_val = input1_val.as_slice().unwrap();
 		let input2_val = data.get(&self.input2_id.value_id())?;

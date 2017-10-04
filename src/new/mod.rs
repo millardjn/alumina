@@ -12,7 +12,7 @@ macro_rules! tag(
         ($v).into()
     };
     
-    ( $( $x:tt ),* ) => {
+    ( $( $x:expr ),* ) => {
         vec![
             $(
                 tag!(@parse $x),

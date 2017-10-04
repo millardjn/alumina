@@ -384,9 +384,16 @@ impl GraphDef {
 		Ok(node_id)
 	}
 
+
+
 	pub fn new_op<O: Op>(&mut self, op: O, tags: Vec<OpTag>) -> Result<OpID> {
 		
+		// A noop is pushed in place of the real op to reserve a place before
 		let op_id = OpID{index: self.ops.len()};
+		let noop = Rc::new(NoOp::new().build(self, &op_id)?);
+		self.ops.push(noop);
+
+
 		let op = op.build(self, &op_id)?;
 		
 		let name = op.instance_name().to_string();
@@ -407,7 +414,7 @@ impl GraphDef {
 
 		// all good, so add op
 		self.op_names.insert(name, op_id.clone());
-		self.ops.push(Rc::new(op));
+		self.ops[op_id.index] = Rc::new(op);
 		self.op_ids.push(op_id.clone());
 
 		for tag in tags{
@@ -472,7 +479,8 @@ impl GraphDef {
 		panic!("Is this a NodeID from a different GraphDef?")
 	}
 
-	fn data_name(&self, data_id: &DataID) -> String{
+	/// Returns the associated node name with '_value' or '_gradient' appended as appropriate.
+	pub fn data_name(&self, data_id: &DataID) -> String {
 		format!("{}_{}", self.node_name(&data_id.node_id()), if data_id.is_value() {"value"} else {"gradient"})
 	}
 
@@ -483,6 +491,10 @@ impl GraphDef {
 			}
 		}
 		panic!("Is this a OpID from a different GraphDef?")
+	}
+
+	pub fn pass_name(&self, pass_id: &PassID) -> String {
+		self.passes[pass_id.index].instance_name(self)
 	}
 
 	pub fn node_shape<T: Into<NodeTag>>(&self, tag: T) -> Result<&NodeShape> {
@@ -869,7 +881,7 @@ impl Subgraph {
 
 	/// Calling this executes the subgraph and returns a Storage which contains the outputs of the subgraph.
 	///
-	/// 
+	/// todo
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
 		assert_eq!(inputs.len(), self.subgraph_inputs.len());
 
@@ -879,7 +891,7 @@ impl Subgraph {
 			self.shapes = find_shapes(&self, &self.op_order, &self.subgraph_inputs, &inputs, &self.filtered_static_inputs)?;
 		}
 
-		let mut storage = Storage::new(&self.included_data, &self.dependencies, &self.filtered_static_inputs, &self.subgraph_inputs, inputs, &self.shapes);
+		let mut storage = Storage::new(&self.included_data, &self.dependencies, &self.filtered_static_inputs, &self.subgraph_inputs, inputs, &self.shapes, &self.graph);
 
 		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
 
@@ -1089,7 +1101,7 @@ fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_pass
 			match passes_ready[pass_id.index] {
 				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::Pending(rem - 1)},
 				PassState::Unavailable | PassState::PendingUnavailable =>{},
-				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order"),
+				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order. pass_id: {:?}", pass_id),
 			}
 		}
 	}
@@ -1102,7 +1114,7 @@ fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_pass
 			match passes_ready[pass_id.index] {
 				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::Pending(rem - 1)},
 				PassState::Unavailable | PassState::PendingUnavailable =>{},
-				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order"),
+				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order. pass_id: {:?}", pass_id),
 			}
 		}
 	}
@@ -1115,7 +1127,7 @@ fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_pass
 			match passes_ready[pass_id.index] {
 				PassState::Pending(rem) if rem > 0 => {passes_ready[pass_id.index] = PassState::PendingUnavailable},
 				PassState::Unavailable | PassState::PendingUnavailable =>{},
-				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order"),
+				PassState::Pending(_) | PassState::Ready => panic!("Something has happened out of order. pass_id: {:?}", pass_id),
 			}
 		}
 	}
@@ -1225,7 +1237,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 
 	/// Attempts to retire a op as Ready or Unavailable, return true if sucessful false otherwise
 	/// If it returns true this method should never be called again for that op_id.
-	fn try_retire_op(op_id: &OpID, op_order: &mut Vec<OpID>, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies) -> bool{
+	fn try_retire_op(graph: &GraphDef, op_id: &OpID, op_order: &mut Vec<OpID>, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies) -> bool{
 		if matches!(ops_ready[op_id.index] , OpState::Ready | OpState:: Unavailable) {
 			panic!("op has already been retired, try_retire_op() should not be called")
 		} else if matches!(ops_ready[op_id.index] , OpState::Pending(0)) {
@@ -1238,7 +1250,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 				match node_state[node_id.index] {
 					NodeState::Unavailable | NodeState::Input => {},
 					NodeState::Pending(rem) if rem == 1 => {
-						mark_node_ready(node_id, node_state, ops_ready, &dependencies)
+						mark_node_ready(graph, node_id, node_state, ops_ready, &dependencies)
 					},
 					NodeState::Pending(rem) if rem > 1 => {node_state[node_id.index] = NodeState::Pending(rem - 1)},
 					NodeState::Pending(_) => panic!("node with zero inputs should have already been marked Unavailable or Input"),
@@ -1249,7 +1261,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 		} else if matches!(ops_ready[op_id.index] , OpState::PendingUnavailable) {
 			ops_ready[op_id.index] = OpState::Unavailable;
 			for node_id in &dependencies.op_shape_outputs[op_id.index] {
-				mark_node_unavailable(node_id, node_state, ops_ready, &dependencies)
+				mark_node_unavailable(graph, node_id, node_state, ops_ready, &dependencies)
 			}
 			true
 		} else {
@@ -1259,42 +1271,44 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 
 	/// Marks node as ready, and decreases pending count of dependent ops
 	/// Only legal to call this if is_input[]==true or as the last input op is retired
-	fn mark_node_input(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+	fn mark_node_input(graph: &GraphDef, node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
 		node_state[node_id.index] = NodeState::Input;
 		for op_id in &dependencies.node_outputs[node_id.index] {
 			match ops_ready[op_id.index] {
 				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::Pending(rem - 1)},
 				OpState::Unavailable | OpState::PendingUnavailable =>{},
-				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order. node_id: {:?} op_id: {:?} op_name: {}", node_id, op_id, graph.op_name(op_id)),
 			}
 		}
 	}
 
 	/// Marks node as ready, and decreases pending count of dependent ops
 	/// Only legal to call this if is_input[]==true or as the last input op is retired
-	fn mark_node_ready(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+	fn mark_node_ready(graph: &GraphDef, node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
 		node_state[node_id.index] = NodeState::Ready;
 		for op_id in dependencies.node_outputs(node_id) {
 			match ops_ready[op_id.index] {
 				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::Pending(rem - 1)},
 				OpState::Unavailable | OpState::PendingUnavailable =>{},
-				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order. node_id: {:?} op_id: {:?} op_name: {}", node_id, op_id, graph.op_name(op_id)),
 			}
 		}
 	}
 
 	/// Can be called on node in any state, but will only mark node and dependent ops as unavailable if the current node state is Pending
-	fn mark_node_unavailable(node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
+	fn mark_node_unavailable(graph: &GraphDef, node_id: &NodeID, node_state: &mut[NodeState], ops_ready: &mut [OpState], dependencies: &Dependencies){
 		if matches!(node_state[node_id.index], NodeState::Ready | NodeState::Unavailable){return} 
 		node_state[node_id.index] = NodeState::Unavailable;
 		for op_id in &dependencies.node_outputs[node_id.index] {
 			match ops_ready[op_id.index] {
 				OpState::Pending(rem) if rem > 0 => {ops_ready[op_id.index] = OpState::PendingUnavailable},
 				OpState::Unavailable | OpState::PendingUnavailable =>{},
-				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order"),
+				OpState::Pending(_) | OpState::Ready => panic!("Something has happened out of order. node_id: {:?} op_id: {:?} op_name: {}", node_id, op_id, graph.op_name(op_id)),
 			}
 		}
 	}
+
+	println!("{:#?}", dependencies);
 
 
 
@@ -1307,20 +1321,20 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 	for (i, node_status) in included_nodes.iter().enumerate() {
 		match node_status{
 			&NodeStatus::Input | &NodeStatus::Known => {
-				mark_node_input(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+				mark_node_input(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
 			},
 			&NodeStatus::StaticInput => {
 				if !dependencies.node_shape_inputs[i].iter().all(|op_id| included_ops[op_id.index]) {
-					mark_node_input(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+					mark_node_input(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
 				}
 			},
 			&NodeStatus::Infer => {
 				if dependencies.node_shape_inputs[i].len() == 0 {
-					mark_node_unavailable(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+					mark_node_unavailable(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
 				}
 			},
 			&NodeStatus::NotIncluded => {
-				mark_node_unavailable(&NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
+				mark_node_unavailable(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
 			},
 		}
 	}
@@ -1338,7 +1352,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 
 	for op_id in required_ops {
 
-		let success = try_retire_op(&op_id, &mut op_order, &mut node_state, &mut op_state, &dependencies);
+		let success = try_retire_op(graph, &op_id, &mut op_order, &mut node_state, &mut op_state, &dependencies);
 		if !success {
 			deferred_ops.push_back(op_id.clone());
 			continue;
@@ -1348,7 +1362,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 		// always try to add deferred ops in order
 		let mut i = 0;
 		while i < deferred_ops.len(){
-			let success = try_retire_op(&deferred_ops[i], &mut op_order, &mut node_state, &mut op_state, &dependencies);
+			let success = try_retire_op(graph, &deferred_ops[i], &mut op_order, &mut node_state, &mut op_state, &dependencies);
 			if success {
 				deferred_ops.remove(i);
 				i = 0; // keep trying from the start again
@@ -1478,13 +1492,14 @@ pub struct Storage<'a> {
 	dependencies: &'a Dependencies,
 	next_pass: Option<PassID>,
 	pass_data: Vec<Option<Box<Any>>>,
+	graph: &'a GraphDef,
 }
 
 const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl<'a> Storage<'a> {
 
-	fn new(included_data: &[DataStatus], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn]) -> Storage<'a> {
+	fn new(included_data: &[DataStatus], dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, supplied_inputs: &[DataID], input_data: Vec<ArrayD<f32>>, shapes: &'a[IxDyn], graph: &'a GraphDef) -> Storage<'a> {
 		debug_assert_eq!(supplied_inputs.len(), input_data.len());
 
 		let num_nodes = dependencies.node_inputs.len();
@@ -1516,7 +1531,13 @@ impl<'a> Storage<'a> {
 			dependencies,
 			next_pass: None,
 			pass_data: (0..num_passes).map(|_| None).collect(),
+			graph: graph,
 		}
+	}
+
+	/// Return the `OpInstance` associated with the `OpID`
+	pub fn graph(&self) -> &GraphDef {
+		self.graph
 	}
 
 	fn set_pass_data(&mut self, pass_id: &PassID, pass_data: Box<Any>){
