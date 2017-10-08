@@ -4,8 +4,8 @@ use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, 
 use new::shape::{NodeShape, NodeDim};
 
 pub struct Bias {
-	output: NodeID,
-	input: Option<NodeID>,
+	output_id: NodeID,
+	parameter_id: Option<NodeID>,
 	param_shape: Option<NodeShape>,
 	name: Option<String>,
 }
@@ -16,8 +16,8 @@ impl Bias {
 	/// Intended to provide the Bias component associated with convolutions and fully connected layers in neural nets.
 	pub fn new(output: &NodeID) -> Self {
 		Bias {
-			output: output.clone(),
-			input: None,
+			output_id: output.clone(),
+			parameter_id: None,
 			param_shape: None,
 			name: None,
 		}
@@ -28,8 +28,8 @@ impl Bias {
 	/// This node will be added to the output, with broadcasting.
 	/// Any value other than `None` prevents the automatic creation of a `Parameter` node.
 	/// Default value: `None`
-	pub fn input(mut self, node_id: Option<&NodeID>) -> Self {
-		self.input = node_id.cloned();
+	pub fn parameter(mut self, node_id: Option<&NodeID>) -> Self {
+		self.parameter_id = node_id.cloned();
 		self
 	}
 
@@ -55,25 +55,25 @@ impl Op for Bias {
 
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
-		let name = if let Some(ref input) = self.input {
-			standard_op_name(&self, &self.name, graph, &[input.clone()], &[self.output.clone()])
+		let name = if let Some(ref input) = self.parameter_id {
+			standard_op_name(&self, &self.name, graph, &[input.clone()], &[self.output_id.clone()])
 		} else {
-			standard_op_name(&self, &self.name, graph, &[], &[self.output.clone()])
+			standard_op_name(&self, &self.name, graph, &[], &[self.output_id.clone()])
 		};
 
-		let input = if let Some(input) = self.input {
+		let input = if let Some(input) = self.parameter_id {
 			input
 		} else {
 			let shape = if let Some(shape) = self.param_shape {
 				shape
 			} else {
-				graph.node_shape(&self.output)?.collapse_to_broadcastable_dimension()
+				graph.node_shape(&self.output_id)?.collapse_to_broadcastable_dimension()
 			};
 			
 			let param_name = standard_inner_parameter_name(&name, graph);
 			graph.new_node(shape, param_name, tag![NodeTag::Parameter])?
 		};
 
-		Add::new(&input, &self.output).name(name).build(graph, op_id)
+		Add::new(&input, &self.output_id).name(name).build(graph, op_id)
 	}
 }
