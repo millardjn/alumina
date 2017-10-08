@@ -97,8 +97,12 @@ error_chain!{
 		StaticInputBroadcastFailure(id: NodeID, s1: Vec<Ix>, s2: Vec<Ix>){
 			display("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id, s1, s2)
 		}
-		PassAttemptedToAccessDataNotListedAsInputOrOutput{}
-		PassAttemptedToMutablyAccessDataNotListedAsOutput{}
+		PassAttemptedToAccessDataNotListedAsInputOrOutput(pass_name: String, data_name: String){
+			display("Pass '{}' attemped to access '{}' but did not have it listed as an input or output dependency", pass_name, data_name)
+		}
+		PassAttemptedToMutablyAccessDataNotListedAsOutput(pass_name: String, data_name: String){
+			display("Pass '{}' attemped to mutably access '{}' but did not have it listed as an output dependency", pass_name, data_name)
+		}
 
 		// Op Errors
 		ShapePropagationError(message: String){
@@ -896,6 +900,7 @@ impl Subgraph {
 		let mut passes_before_dealloc = self.passes_before_dealloc.clone();
 
 		for pass_id in &self.pass_order {
+			storage.set_current_pass(Some(pass_id.clone()));
 			let pass_data = self.graph.passes[pass_id.index].run(&mut storage)?;
 			storage.set_pass_data(pass_id, pass_data);
 
@@ -909,7 +914,7 @@ impl Subgraph {
 			
 			storage = storage.clear_borrow_flags();
 		}
-		storage.set_next_pass_debug(None);
+		storage.set_current_pass(None);
 
 		Ok(storage)
 	}
@@ -1308,9 +1313,6 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 		}
 	}
 
-	println!("{:#?}", dependencies);
-
-
 
 	let mut op_order: Vec<OpID> = vec![];
 	let mut deferred_ops: VecDeque<OpID> = VecDeque::new();
@@ -1550,8 +1552,12 @@ impl<'a> Storage<'a> {
 
 	/// If this value is not `None`, all subsequent accesses will be checked against the dependency list for the Pass.
 	/// This can be useful to ensure that passes dont access anything they havent listed as and input or output.
-	fn set_next_pass_debug(&mut self, pass_id: Option<&PassID>){
-		self.next_pass = pass_id.cloned();
+	fn set_current_pass(&mut self, pass_id: Option<PassID>){
+		self.next_pass = pass_id;
+	}
+
+	pub fn get_current_pass(&self) -> &Option<PassID>{
+		&self.next_pass
 	}
 
 	/// Deallocates the data specified by DataID.
@@ -1619,7 +1625,7 @@ impl<'a> Storage<'a> {
 	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput);
+			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
 		}
 
 		if self.borrow_flags[data_id.index].get() != WRITING {
@@ -1637,7 +1643,7 @@ impl<'a> Storage<'a> {
 	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get_mut<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewMutD<f32>> {
 		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput);
+			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
 		}
 		match self.borrow_flags[data_id.index].get() {
 			UNUSED => {
