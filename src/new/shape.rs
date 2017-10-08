@@ -160,6 +160,8 @@ impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 				}
 			})
 			.collect();
+		if dimensions.len() == 0 {panic!("Node shape must have at least 1 dimension.")}
+		// TODO this may not be necessary or true:
 		if let NodeDim::Known(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of Known size")}
 		NodeShape{dimensions}
 	}
