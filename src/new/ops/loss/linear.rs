@@ -30,7 +30,6 @@ impl Linear {
 	}
 }
 
-
 impl Op for Linear {
 	type InstanceType = LinearInstance;
 

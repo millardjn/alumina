@@ -6,7 +6,7 @@ use ndarray::{IxDyn, Dimension};
 use std::any::Any;
 use matrixmultiply;
 
-/// Calculate C += A*B
+/// Calculate C += α A B
 #[derive(Debug, Clone)]
 pub struct MatMul {
 	name: Option<String>,
@@ -254,6 +254,11 @@ impl OpInstance for MatMulInstance {
 
 
 /// Calculate C += α A B
+///
+/// If one or more of M, N, or K are known the others can be found at run time.
+/// If none of M, N or K are known, a guess will be made based on any argumets having 2 dimensions.
+/// Shapes may be n-dimensional, however they must split cleanly along an axis into M, N, K shapes.
+/// An error will be returned if any inconsistencies are found.
 #[derive(Debug, Clone)]
 pub struct MatMulPass{
 	mat_A: DataID,
@@ -478,6 +483,68 @@ fn _matmul_backprop() -> Result<()>{
 	let node4 = g.new_node(shape![7, 16], "target", tag![])?;
 
 	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.001;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}
+
+#[test]
+fn test_matmul_a_trans_backprop(){
+	_matmul_a_trans_backprop().unwrap();
+}
+
+fn _matmul_a_trans_backprop() -> Result<()>{
+	use new::graph::GraphDef;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse::Mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![5, 7], "input1", tag![])?;
+	let node2 = g.new_node(shape![5, 16], "input2", tag![])?;
+	let node3 = g.new_node(shape![7, 16], "output", tag![])?;
+	let node4 = g.new_node(shape![7, 16], "target", tag![])?;
+
+	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3).a_trans(true), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.001;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}
+
+#[test]
+fn test_matmul_c_trans_backprop(){
+	_matmul_c_trans_backprop().unwrap();
+}
+
+fn _matmul_c_trans_backprop() -> Result<()>{
+	use new::graph::GraphDef;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse::Mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![7, 5], "input1", tag![])?;
+	let node2 = g.new_node(shape![5, 16], "input2", tag![])?;
+	let node3 = g.new_node(shape![16, 7], "output", tag![])?;
+	let node4 = g.new_node(shape![16, 7], "target", tag![])?;
+
+	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3).c_trans(true), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
 
 	let iters = 100;

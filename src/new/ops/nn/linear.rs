@@ -3,6 +3,11 @@ use new::ops::{standard_op_name, standard_inner_parameter_name, Op, Pass};
 use new::shape::{NodeShape, NodeDim};
 use new::ops::math::matmul::{MatMul, MatMulInstance};
 
+/// The Linear portion of a fully connected layer
+///
+/// Creates an Op which implements the differentiable matrix multiplication component of typical neural nets.
+/// Calculates C += A B, where B is a parameter matrix, A is the input node, and C is the output node.
+/// Does not include bias.
 pub struct Linear {
 	input_id: NodeID,
 	output_id: NodeID,
@@ -11,8 +16,7 @@ pub struct Linear {
 }
 
 impl Linear {
-	/// Creates an Op which implements the fully connected (matrix multiplication) component of typical neural nets
-	/// Does not include bias
+	/// Constructs a new `Linear` Op.
 	pub fn new(input: &NodeID, output: &NodeID) -> Self {
 		Linear {
 			input_id: input.clone(),
@@ -22,9 +26,8 @@ impl Linear {
 		}
 	}
 
-	/// Provide a node in place of the bias parameter
+	/// Provide a node to replace the parameter matrix, B
 	///
-	/// This node will be added to the output, with broadcasting.
 	/// Any value other than `None` prevents the automatic creation of a `Parameter` node.
 	/// Default value: `None`
 	pub fn parameter(mut self, node_id: Option<&NodeID>) -> Self {
@@ -69,16 +72,14 @@ impl Op for Linear {
 		if let Some(param) = self.parameter_id {
 			// TODO check that dimensions of param works
 			// currently any errors will be picked up at graph execution time.
-
-			MatMul::new(&self.input_id, &param, &self.output_id).build(graph, op_id)
+			MatMul::new(&self.input_id, &param, &self.output_id).name(name).build(graph, op_id)
 		} else {
 			let n = get_inner(graph.node_shape(&self.output_id)?);
 			let k = get_inner(graph.node_shape(&self.input_id)?);
 			
 			let param_name = standard_inner_parameter_name(&name, graph);
 			let param = graph.new_node(shape![k, n], param_name, tag![NodeTag::Parameter])?;
-			MatMul::new(&self.input_id, &param, &self.output_id).n(n).k(k).build(graph, op_id)
+			MatMul::new(&self.input_id, &param, &self.output_id).n(n).k(k).name(name).build(graph, op_id)
 		}
-		
 	}
 }
