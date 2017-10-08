@@ -116,11 +116,11 @@ impl MulForward {
 }
 
 impl Pass for MulForward {
-	fn type_name(&self) -> &'static str {"AddBackward"}
+	fn type_name(&self) -> &'static str {"MulForward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(
-			vec![self.input1_id.value_id(), self.input1_id.value_id()],
+			vec![self.input1_id.value_id(), self.input2_id.value_id()],
 			vec![self.output_id.value_id()]
 		)
 	}
@@ -172,11 +172,11 @@ impl MulBackward {
 }
 
 impl Pass for MulBackward {
-	fn type_name(&self) -> &'static str {"AddBackward"}
+	fn type_name(&self) -> &'static str {"MulBackward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(
-			vec![self.input1_id.value_id(), self.input1_id.value_id(), self.output_id.gradient_id()],
+			vec![self.input1_id.value_id(), self.input2_id.value_id(), self.output_id.gradient_id()],
 			vec![self.input1_id.gradient_id(),self.input2_id.gradient_id()]
 		)
 	}
