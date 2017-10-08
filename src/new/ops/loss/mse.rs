@@ -1,5 +1,5 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
-use new::ops::{standard_op_name, Op, OpInstance, Pass};
+use new::ops::{standard_op_name, standard_inner_node_name, Op, OpInstance, Pass};
 use new::ops::loss::linear::Linear;
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
@@ -91,7 +91,8 @@ impl Op for Mse {
 					output_id.clone())),
 			}
 		} else if self.separate_loss {
-			let output_id = graph.new_node(shape![1], "todo", tag![])?;
+			let output_name = standard_inner_node_name(&name, graph);
+			let output_id = graph.new_node(shape![1], output_name, tag![])?;
 			let loss_id = graph.new_op(Linear::new(&output_id), tag![])?;
 
 			MseType::Separate{

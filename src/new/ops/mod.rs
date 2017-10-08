@@ -54,7 +54,7 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, 
 
 /// Generated default names for `Pass`s
 ///
-/// Names for passes may no be unique.
+/// Names for passes may not be unique.
 /// A default name will be generated using the `type_name()` and the names of input and output data.
 /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), data1_name, data2_name, data3_name, data4_name)`
 pub fn standard_pass_name(pass: &Pass, graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> String {
@@ -86,11 +86,27 @@ pub fn standard_pass_name(pass: &Pass, graph: &GraphDef, inputs: &[DataID], outp
 ///
 /// Names are generated from the name of the `Op` returned by the `OpBuilder`, using the following: `format!("P{}_{}", i, builder_name)`
 /// e.g. `P0_Dummy0(node1,node2=>node3,node4)`, where `i` is incremented until an unused name is found.
-pub fn standard_parameter_name(builder_name: &str, graph: &mut GraphDef) -> String {
-
+pub fn standard_inner_parameter_name(builder_name: &str, graph: &mut GraphDef) -> String {
 	let mut i = 0;
 	loop {
 		let next_param_name = format!("P{}_{}", i, builder_name);
+		let result = graph.node_id(&*next_param_name);
+		i += 1;
+		if matches!(result, Err(Error(ErrorKind::ZeroNodesMatchTag(_), _))) {
+			return next_param_name;
+		}
+	}
+
+}
+
+/// Generated default names for non-parameter nodes created by `OpBuilder`s
+///
+/// Names are generated from the name of the `Op` returned by the `OpBuilder`, using the following: `format!("N{}_{}", i, builder_name)`
+/// e.g. `N0_Dummy0(node1,node2=>node3,node4)`, where `i` is incremented until an unused name is found.
+pub fn standard_inner_node_name(builder_name: &str, graph: &mut GraphDef) -> String {
+	let mut i = 0;
+	loop {
+		let next_param_name = format!("N{}_{}", i, builder_name);
 		let result = graph.node_id(&*next_param_name);
 		i += 1;
 		if matches!(result, Err(Error(ErrorKind::ZeroNodesMatchTag(_), _))) {

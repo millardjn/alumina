@@ -1,6 +1,6 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, NodeTag, Result};
 use new::ops::math::add::{AddInstance, Add};
-use new::ops::{standard_op_name, standard_parameter_name, Op, OpInstance, Pass};
+use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
 use new::shape::{NodeShape, NodeDim};
 
 pub struct Bias {
@@ -70,8 +70,8 @@ impl Op for Bias {
 				graph.node_shape(&self.output)?.collapse_to_broadcastable_dimension()
 			};
 			
-			let param_name = standard_parameter_name(&name, graph);
-			graph.new_node(shape, param_name, tag![NodeTag::Parameter, "test"])?
+			let param_name = standard_inner_parameter_name(&name, graph);
+			graph.new_node(shape, param_name, tag![NodeTag::Parameter])?
 		};
 
 		Add::new(&input, &self.output).name(name).build(graph, op_id)
