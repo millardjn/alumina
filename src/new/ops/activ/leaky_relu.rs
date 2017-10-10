@@ -3,43 +3,52 @@ use new::ops::Op;
 use new::ops::activ::elementwise::{ActivationFunc, ElementwiseInstance, elementwise_build};
 
 #[derive(Clone, Debug)] 
-pub struct ReLUFunc{}
+pub struct LeakyReLUFunc{
+	alpha: f32,
+}
 
-impl ActivationFunc for ReLUFunc {
+impl ActivationFunc for LeakyReLUFunc {
 	fn value(&self, input: f32) -> f32{
-		(input.abs() + input)*0.5 // vectorises, but pretty questionable
+		 (input + input.abs())*0.5 + (input - input.abs())*0.5*self.alpha
 	}
 
 	fn gradient(&self, input: f32, output_grad: f32) -> f32{
 		let sign = input.signum();
-		output_grad * (sign+sign.abs())*0.5 //x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
+		output_grad*0.5*((sign + 1.0) + (sign - 1.0)*self.alpha)
 	}
 
 	fn backprop_requires_input_value() -> bool {true}
 }
 
 #[derive(Clone, Debug)] 
-pub struct ReLU {
+pub struct LeakyReLU {
 	output: NodeID,
 	input: NodeID,
 	name: Option<String>,
+	alpha: f32,
 }
 
-impl ReLU {
+impl LeakyReLU {
 	pub fn new(input: &NodeID, output: &NodeID) -> Self {
-		ReLU {
+		LeakyReLU {
 			input: input.clone(),
 			output: output.clone(),
 			name: None,
+			alpha: 0.3,
 		}
+	}
+
+	pub fn alpha(mut self, alpha: f32) -> Self{
+		self.alpha = alpha;
+		self
 	}
 }
 
-impl Op for ReLU {
-	type InstanceType = ElementwiseInstance<ReLUFunc>;
+impl Op for LeakyReLU {
+	type InstanceType = ElementwiseInstance<LeakyReLUFunc>;
 
 	fn type_name(&self) -> &'static str {
-		"ReLU"
+		"LeakyReLU"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -48,6 +57,6 @@ impl Op for ReLU {
 	}
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
-		elementwise_build(graph, &self, &self.name, &self.input, &self.output, ReLUFunc{})
+		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LeakyReLUFunc{alpha: self.alpha})
 	}
 }
