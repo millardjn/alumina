@@ -4,7 +4,7 @@ use new::shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 use std::any::Any;
 
-
+#[derive(Clone, Debug)] 
 pub struct Add {
 	output: NodeID,
 	input: NodeID,

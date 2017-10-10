@@ -1,1 +1,2 @@
-mod elementwise;
+pub mod elementwise;
+pub mod relu;
