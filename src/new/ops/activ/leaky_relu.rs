@@ -9,13 +9,13 @@ pub struct LeakyReLUFunc{
 
 impl ActivationFunc for LeakyReLUFunc {
 	fn value(&self, input: f32) -> f32{
-		 (input + input.abs())*0.5 + (input - input.abs())*0.5*self.alpha
+		 (input + input.abs())*0.5 + (input - input.abs())*(0.5*self.alpha)
 	}
 
 	fn gradient(&self, input: f32, output_grad: f32) -> f32{
 		let sign = input.signum();
 		//output_grad*0.5*((sign + 1.0) - (sign - 1.0)*self.alpha) // 3 mults and 3 adds
-		output_grad* (sign*(0.5 - 0.5*self.alpha) + 0.5 + 0.5*self.alpha) // after optimisation this should have 2 mults and 1 add
+		output_grad* (sign*(0.5 - 0.5*self.alpha) + (0.5 + 0.5*self.alpha)) // after optimisation this should have 2 mults and 1 add
 	}
 
 	fn backprop_requires_input_value() -> bool {true}
