@@ -83,3 +83,5 @@ impl Op for Linear {
 		}
 	}
 }
+
+// TODO currently no shape inference is performed by MatMul. This should be implemented there or implemented here.
