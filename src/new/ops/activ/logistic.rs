@@ -3,53 +3,44 @@ use new::ops::Op;
 use new::ops::activ::elementwise::{ActivationFunc, ElementwiseInstance, elementwise_build};
 
 #[derive(Clone, Debug)] 
-pub struct LeakyReLUFunc{
-	alpha: f32,
-}
+pub struct LogisticFunc{}
 
-impl ActivationFunc for LeakyReLUFunc {
+impl ActivationFunc for LogisticFunc {
 	fn value(&self, input: f32) -> f32{
-		 (input + input.abs())*0.5 + (input - input.abs())*0.5*self.alpha
+		let exp = input.exp();
+		1.0/(1.0 + 1.0/exp)
 	}
 
 	fn gradient(&self, input: f32, output_grad: f32) -> f32{
-		let sign = input.signum();
-		//output_grad*0.5*((sign + 1.0) - (sign - 1.0)*self.alpha) // 3 mults and 3 adds
-		output_grad* (sign*(0.5 - 0.5*self.alpha) + 0.5 + 0.5*self.alpha) // after optimisation this should have 2 mults and 1 add
+		let exp = input.exp();
+		output_grad * exp/((exp+1.0)*(exp+1.0))
 	}
 
 	fn backprop_requires_input_value() -> bool {true}
 }
 
 #[derive(Clone, Debug)] 
-pub struct LeakyReLU {
+pub struct Logistic {
 	output: NodeID,
 	input: NodeID,
 	name: Option<String>,
-	alpha: f32,
 }
 
-impl LeakyReLU {
+impl Logistic {
 	pub fn new(input: &NodeID, output: &NodeID) -> Self {
-		LeakyReLU {
+		Logistic {
 			input: input.clone(),
 			output: output.clone(),
 			name: None,
-			alpha: 0.3,
 		}
-	}
-
-	pub fn alpha(mut self, alpha: f32) -> Self{
-		self.alpha = alpha;
-		self
 	}
 }
 
-impl Op for LeakyReLU {
-	type InstanceType = ElementwiseInstance<LeakyReLUFunc>;
+impl Op for Logistic {
+	type InstanceType = ElementwiseInstance<LogisticFunc>;
 
 	fn type_name(&self) -> &'static str {
-		"LeakyReLU"
+		"Logistic"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -58,17 +49,17 @@ impl Op for LeakyReLU {
 	}
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
-		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LeakyReLUFunc{alpha: self.alpha})
+		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LogisticFunc{})
 	}
 }
 
 
 #[test]
-fn test_leaky_relu_backprop(){
-	_leaky_relu_backprop().unwrap();
+fn test_logistic_backprop(){
+	_logistic_backprop().unwrap();
 }
 
-fn _leaky_relu_backprop() -> Result<()>{
+fn _logistic_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use new::ops::loss::mse::Mse;
@@ -81,7 +72,7 @@ fn _leaky_relu_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![7, 5, 16], "target", tag![])?;
 
 
-	let _o1 = g.new_op(LeakyReLU::new(&node1, &node2), tag![])?;
+	let _o1 = g.new_op(Logistic::new(&node1, &node2), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
