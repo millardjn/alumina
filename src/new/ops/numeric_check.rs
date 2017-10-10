@@ -77,8 +77,8 @@ pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &Graph
 		if input_err > tolerance {input_count += 1};
 	}
 
-	assert!(param_count < failures, "param error failures: {} \n values:{:?}", param_count, param_errs);
-	assert!(input_count < failures, "input error failures: {} \n values:{:?}", input_count, input_errs);
+	assert!(param_count <= failures, "param error failures: {} \n values:{:?}", param_count, param_errs);
+	assert!(input_count <= failures, "input error failures: {} \n values:{:?}", input_count, input_errs);
 
 	Ok(())
 }
