@@ -76,7 +76,7 @@ fn _relu_backprop() -> Result<()>{
 
 	let iters = 100;
 	let failures = 1;
-	let tolerance = 0.001;
+	let tolerance = 0.002;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
 	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
