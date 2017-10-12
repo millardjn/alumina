@@ -168,10 +168,17 @@ impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 }
 
 impl NodeShape{
+	pub fn ndims(&self) -> usize {
+		self.dimensions.len()
+	}
+
 	pub fn dimensions(&self) -> &[NodeDim] {
 		&self.dimensions
 	}
 
+	pub fn dimensions_mut(&mut self) -> &mut [NodeDim] {
+		&mut self.dimensions
+	}
 
 	// TODO consider removing
 	pub fn channels(&self) -> usize {
