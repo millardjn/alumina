@@ -3,6 +3,7 @@ use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::ops::loss::linear::Linear;
 use new::shape::{NodeShape, NodeDim};
 use ndarray::{IxDyn, Dimension};
+use std::cmp;
 use std::any::Any;
 use matrixmultiply;
 
@@ -97,8 +98,8 @@ impl Op for MatMul {
 			B_id: self.B_id.clone(),
 			C_id: self.C_id.clone(),
 			A_trans: self.A_trans,
-			B_trans: self.A_trans,
-			C_trans: self.A_trans,
+			B_trans: self.B_trans,
+			C_trans: self.C_trans,
 			M: self.M,
 			N: self.N,
 			K: self.K,
@@ -180,74 +181,154 @@ impl OpInstance for MatMulInstance {
 		// Use the shape of A and B to try and inffer a single unknown dimension of C
 		// if shape of C has more than 1 unknown then throw error
 
-		// let A_shape = shapes.get_shape(&self.A_id).to_data_shape()?;
-		// let B_shape = shapes.get_shape(&self.A_id).to_data_shape()?;
-		// let A_shape = A_shape.slice();
-		// let B_shape = B_shape.slice();
+		// no free dims -> exit
+		// one free dim -> calculate or throw error
+		// two adjacent free dims -> calculate or throw error
+		// else -> error
+
+		let (A_shape, B_shape, mut C_shape) = {
+			(shapes.get_shape(&self.A_id).to_data_shape()?, shapes.get_shape(&self.B_id).to_data_shape()?, shapes.get_output_shape(&self.C_id).clone())
+		};
+
+		if C_shape.is_known() {return Ok(());}
+
+		#[allow(non_snake_case)]
+		let mut M = self.M.clone();
+		#[allow(non_snake_case)]
+		let mut N = self.N.clone();
+		#[allow(non_snake_case)]
+		let mut K = self.K.clone();
+
+		// If no matrix dimensions are known, guess based on any of the inputs having 2 dimensions.
+		if let (None, None, None) = (M, N, K){
+			if A_shape.ndim() == 2 {
+				if self.A_trans {
+					K = Some(A_shape[0]);
+					M = Some(A_shape[1]);
+				} else {
+					M = Some(A_shape[0]);
+					K = Some(A_shape[1]);
+				}
+			} else if B_shape.ndim() == 2 {
+				if self.B_trans {
+					N = Some(B_shape[0]);
+					K = Some(B_shape[1]);
+				} else {
+					K = Some(B_shape[0]);
+					N = Some(B_shape[1]);
+				}
+			} else if C_shape.dimensions().len() == 2 {
+				if self.C_trans {
+					N = match C_shape.dimensions()[0] {NodeDim::Known(x) => Some(x), _ => None};
+					M = match C_shape.dimensions()[1] {NodeDim::Known(x) => Some(x), _ => None};
+				} else {
+					M = match C_shape.dimensions()[0] {NodeDim::Known(x) => Some(x), _ => None};
+					N = match C_shape.dimensions()[1] {NodeDim::Known(x) => Some(x), _ => None};
+				}
+			} else {
+				return Err("MatMulInstance could not infer matrix shapes. M, N, K are all None and no inputs have 2 dimensions.".to_string().into());
+			}
+		}
+
+		// If you know one, you can find the others
+		let (m, n) = if M.is_some() {
+			let m = M.unwrap();
+
+			let k = get_inner(m, K, A_shape.slice(), self.A_trans)?;
+			let n = get_inner(k, N, B_shape.slice(), self.B_trans)?;
+			(m, n)
+		} else if N.is_some() {
+			let n = N.unwrap();
+
+			let k = get_outer(n, K, B_shape.slice(), self.B_trans)?;
+			let m = get_outer(k, M, A_shape.slice(), self.A_trans)?;
+			(m, n)
+		} else if K.is_some() {
+			let k = K.unwrap();
+
+			let m = get_outer(k, M, A_shape.slice(), self.A_trans)?;
+			let n = get_inner(k, N, B_shape.slice(), self.B_trans)?;
+			(m, n)
+		} else {
+			unreachable!()
+		};
 		
-		// #[allow(non_snake_case)]
-		// let mut M = self.M.clone();
-		// #[allow(non_snake_case)]
-		// let mut N = self.N.clone();
-		// #[allow(non_snake_case)]
-		// let mut K = self.K.clone();
 
-		// // If no matrix dimensions are known, guess based on any of the inputs having 2 dimensions.
-		// if let (None, None, None) = (M, N, K){
-		// 	if A_shape.len() == 2 {
-		// 		if self.A_trans {
-		// 			K = Some(A_shape[0]);
-		// 			M = Some(A_shape[1]);
-		// 		} else {
-		// 			M = Some(A_shape[0]);
-		// 			K = Some(A_shape[1]);
-		// 		}
-		// 	} else if B_shape.len() == 2 {
-		// 		if self.B_trans {
-		// 			N = Some(B_shape[0]);
-		// 			K = Some(B_shape[1]);
-		// 		} else {
-		// 			K = Some(B_shape[0]);
-		// 			N = Some(B_shape[1]);
-		// 		}
-		// 	} else if C_shape.len() == 2 {
-		// 		if self.C_trans {
-		// 			N = Some(C_shape[0]);
-		// 			M = Some(C_shape[1]);
-		// 		} else {
-		// 			M = Some(C_shape[0]);
-		// 			N = Some(C_shape[1]);
-		// 		}
-		// 	} else {
-		// 		return Err("MatMulPass could not infer matrix shapes. M, N, K are all None and no inputs or outputs have 2 dimensions.".to_string());
-		// 	}
-		// }
+		let (outer_mat_dim, inner_mat_dim) = if self.C_trans {
+			(n, m)
+		} else {
+			(m, n)
+		};
 
-		// if M.is_some() {
-		// 	let m = M.unwrap();
 
-		// 	let k = get_inner(m, K, A_shape, self.A_trans)?;
-		// 	let n = get_inner(m, N, C_shape, self.C_trans)?;
-		// 	let _k = get_outer(n, Some(k), B_shape, self.B_trans)?; // check
-		// 	return Ok((m, n, k));
-		// } else if N.is_some() {
-		// 	let n = N.unwrap();
-
-		// 	let k = get_outer(n, K, B_shape, self.B_trans)?;
-		// 	let m = get_outer(n, M, C_shape, self.C_trans)?;
-		// 	let _k = get_inner(m, Some(k), A_shape, self.A_trans)?; // check
-		// 	return Ok((m, n, k));
-		// } else if K.is_some() {
-		// 	let k = K.unwrap();
-
-		// 	let m = get_outer(k, M, A_shape, self.A_trans)?;
-		// 	let n = get_inner(k, N, B_shape, self.B_trans)?;
-		// 	let _n = get_inner(m, N, C_shape, self.C_trans)?; // check
-		// 	return Ok((m, n, k));
-		// } else {
-		// 	unreachable!();
-		// }
+		// Locate the unknowns in the shape of C, and the strides (product of dims) before and after them
+		let mut outer_stride = 1;
+		let mut inner_stride = 1;
 		
+		let mut outer_ind = 0;
+		let mut inner_ind = C_shape.dimensions().len() - 1;
+
+		for dim in C_shape.dimensions(){
+			match dim {
+				&NodeDim::Known(x) => {
+					outer_stride *= x;
+					outer_ind += 1;
+					},
+				_ => break,
+			}
+		}
+
+		for dim in C_shape.dimensions().iter().rev(){
+			match dim {
+				&NodeDim::Known(x) => {
+					inner_stride *= x;
+					inner_ind -= 1;
+					},
+				_ => break,
+			}
+		}
+
+
+		let outer_val = outer_mat_dim/outer_stride;
+		let inner_val = inner_mat_dim/inner_stride;
+
+		if outer_mat_dim - outer_val * outer_stride != 0
+		|| inner_mat_dim - inner_val * inner_stride != 0 {
+			bail!(ErrorKind::ShapePropagationError(format!(
+				"{} could not infer shape of output. \
+				The M({}) and N({}) dimensions of the matrix multiplication, \
+				are not divisible by the product of the output dimensions before({}) and after({}) \
+				the unknown dimensions in the output shape ({:?}, transpose:{}). \
+				These must be divisible to allow inference of the unknowns", 
+				self.instance_name(), m, n, outer_stride, inner_stride, C_shape, self.C_trans
+			)))
+		}
+
+		if outer_ind == inner_ind { // one unknown
+			ensure!(cmp::min(inner_val, outer_val) == 1, ErrorKind::ShapePropagationError(format!(
+				"{} could not infer shape of output. \
+				One of either the M({}) or N({}) dimensions of the matrix multiplication, \
+				must be exactly equal to the product of the output dimensions before({}) and after({}) \
+				the unknown dimension in the output shape ({:?}, transpose:{}).", 
+				self.instance_name(), m, n, outer_stride, inner_stride, C_shape, self.C_trans
+			)));
+			C_shape.dimensions_mut()[outer_ind] = NodeDim::Known(cmp::max(outer_val, inner_val));
+			shapes.merge_with(&self.C_id, &C_shape)?;
+		} else if outer_ind + 1 == inner_ind { // two unknowns, adjacent
+			C_shape.dimensions_mut()[outer_ind] = NodeDim::Known(outer_val);
+			C_shape.dimensions_mut()[inner_ind] = NodeDim::Known(inner_val);
+			shapes.merge_with(&self.C_id, &C_shape)?;
+		} else {
+			bail!(ErrorKind::ShapePropagationError(format!(
+				"{} could not infer shape of output. \
+				The output shape contains non-adjacent unknown dimensions. This creates ambiguity.",
+				self.instance_name()
+			)))
+		}
+
+
+		
+
 		Ok(())
 	}
 }
@@ -542,6 +623,99 @@ fn _matmul_c_trans_backprop() -> Result<()>{
 	let node1 = g.new_node(shape![7, 5], "input1", tag![])?;
 	let node2 = g.new_node(shape![5, 16], "input2", tag![])?;
 	let node3 = g.new_node(shape![16, 7], "output", tag![])?;
+	let node4 = g.new_node(shape![16, 7], "target", tag![])?;
+
+	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3).c_trans(true), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.002;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}
+
+#[test]
+fn test_matmul_inference_outer_backprop(){
+	_matmul_inference_outer_backprop().unwrap();
+}
+
+fn _matmul_inference_outer_backprop() -> Result<()>{
+	use new::graph::GraphDef;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse::Mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![7, 5], "input1", tag![])?;
+	let node2 = g.new_node(shape![5, 16], "input2", tag![])?;
+	let node3 = g.new_node(shape![Unknown, 16], "output", tag![])?;
+	let node4 = g.new_node(shape![7, 16], "target", tag![])?;
+
+	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.001;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}
+
+#[test]
+fn test_matmul_inference_inner_backprop(){
+	_matmul_inference_inner_backprop().unwrap();
+}
+
+fn _matmul_inference_inner_backprop() -> Result<()>{
+	use new::graph::GraphDef;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse::Mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![3, 5, 2], "input1", tag![])?;
+	let node2 = g.new_node(shape![2, 16], "input2", tag![])?;
+	let node3 = g.new_node(shape![15, Unknown], "output", tag![])?;
+	let node4 = g.new_node(shape![15, 16], "target", tag![])?;
+
+	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3), tag![])?;
+	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.002;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+
+	Ok(())
+}
+
+#[test]
+fn test_matmul_inference_dual_backprop(){
+	_matmul_inference_dual_backprop().unwrap();
+}
+
+fn _matmul_inference_dual_backprop() -> Result<()>{
+	use new::graph::GraphDef;
+	use new::ops::numeric_check::numeric_test;
+	use new::ops::loss::mse::Mse;
+	use ordermap::OrderMap;
+
+	let mut g = GraphDef::new();
+
+	let node1 = g.new_node(shape![7, 3], "input1", tag![])?;
+	let node2 = g.new_node(shape![3, 4, 4], "input2", tag![])?;
+	let node3 = g.new_node(shape![Unknown, Unknown], "output", tag![])?;
 	let node4 = g.new_node(shape![16, 7], "target", tag![])?;
 
 	let _o1 = g.new_op(MatMul::new(&node1, &node2, &node3).c_trans(true), tag![])?;
