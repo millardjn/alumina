@@ -1457,6 +1457,13 @@ impl GraphShapes {
 		&self.shapes[id.index]
 	}
 
+	// TODO only allow getting outputs
+	pub fn get_output_shape(&mut self, id: &NodeID) -> &NodeShape{
+		// self.shapes[id.index].collapse_dimensions_to_minimum();
+		// debug_assert!(self.shapes[id.index].dimensions().iter().all(|dim| matches!(dim, &NodeDim::Known(_))));
+		&self.shapes[id.index]
+	}
+
 	// TODO only allow merging to outputs
 	pub fn merge_with(&mut self, id: &NodeID, shape: &NodeShape) -> Result<()>{
 		self.shapes[id.index] = self.shapes[id.index].merge(shape)?;
