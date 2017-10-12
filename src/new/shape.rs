@@ -162,7 +162,7 @@ impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 			.collect();
 		if dimensions.len() == 0 {panic!("Node shape must have at least 1 dimension.")}
 		// TODO this may not be necessary or true:
-		if let NodeDim::Known(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of Known size")}
+		//if let NodeDim::Known(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of Known size")}
 		NodeShape{dimensions}
 	}
 }
@@ -181,12 +181,12 @@ impl NodeShape{
 	}
 
 	// TODO consider removing
-	pub fn channels(&self) -> usize {
-		match self.dimensions[self.dimensions.len() - 1] {
-			NodeDim::Known(dim) => dim,
-			_ => unreachable!(),
-		}
-	}
+	// pub fn channels(&self) -> usize {
+	// 	match self.dimensions[self.dimensions.len() - 1] {
+	// 		NodeDim::Known(dim) => dim,
+	// 		_ => unreachable!(),
+	// 	}
+	// }
 	
 	/// Should be called and only called by operations prior to propagating shape constraints
 	/// The NodeDim::Interval0 are collapsed to the lower bound, and any NodeDim::Unknown entries will be replaced with 0
@@ -266,8 +266,8 @@ impl NodeShape{
 
 		if self.is_known() && other.is_known() {
 			self.merge_known(other)	
-		} else if self.channels() != other.channels() {
-			bail!(ErrorKind::MergeIncompatibleChannelDimension)
+		// } else if self.channels() != other.channels() {
+		// 	bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else if self.ndim() != other.ndim() {
 			bail!(ErrorKind::MergeIncompatibleRank)
 		} else {
@@ -293,8 +293,8 @@ impl NodeShape{
 			Ok(self.clone())
 		} else if self.ndim() != other.ndim() {
 			bail!(ErrorKind::MergeIncompatibleRank)
-		} else if self.channels() != other.channels() {	
-			bail!(ErrorKind::MergeIncompatibleChannelDimension)
+		// } else if self.channels() != other.channels() {	
+		// 	bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else {
 			let mut vec = SmallVec::new();
 			for (s, o) in self.dimensions.iter().zip(&other.dimensions){
