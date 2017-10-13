@@ -1,22 +1,17 @@
-use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
 use new::ops::{standard_op_name, Op, OpInstance, Pass};
-use new::shape::{NodeShape, NodeDim};
-use ndarray::{ArrayViewMutD, ArrayViewD};
-use generic_array::GenericArray;
-use typenum::{Unsigned, U16};
-use typenum_loops::Loop;
 use std::any::Any;
 
-/// This `Op` applies a linear loss to every element of the input.
-pub struct Linear {
+/// This `Op` applies a Proportional loss to every element of the input.
+pub struct Proportional {
 	input_id: NodeID,
 	multiplier: f32,
 	name: Option<String>,
 }
 
-impl Linear {
+impl Proportional {
 	pub fn new(input_id: &NodeID) -> Self {
-		Linear {
+		Proportional {
 			input_id: input_id.clone(),
 			multiplier: 1.0,
 			name: None,
@@ -30,11 +25,11 @@ impl Linear {
 	}
 }
 
-impl Op for Linear {
-	type InstanceType = LinearInstance;
+impl Op for Proportional {
+	type InstanceType = ProportionalInstance;
 
 	fn type_name(&self) -> &'static str {
-		"Linear"
+		"Proportional"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -42,15 +37,15 @@ impl Op for Linear {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		// TODO check broadcast at graph define time?
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[]);
 
-		Ok(LinearInstance{
+		Ok(ProportionalInstance{
 			name: name,
 			input_id: self.input_id.clone(),
 			multiplier: self.multiplier,
-			pass_id: graph.add_pass(LinearBackward::new(
+			pass_id: graph.add_pass(ProportionalBackward::new(
 				self.multiplier,
 				self.input_id.clone())),
 		})
@@ -59,14 +54,14 @@ impl Op for Linear {
 
 
 #[derive(Clone, Debug)] 
-pub struct LinearInstance{
+pub struct ProportionalInstance{
 	name: String,
 	multiplier: f32,
 	input_id: NodeID,
 	pass_id: PassID,
 }
 
-impl OpInstance for LinearInstance {
+impl OpInstance for ProportionalInstance {
 
 	fn instance_name(&self) -> &str {&self.name}
 
@@ -84,22 +79,22 @@ impl OpInstance for LinearInstance {
 
 
 #[derive(Clone, Debug)]
-struct LinearBackward {
+struct ProportionalBackward {
 	multiplier: f32,
 	input_id: NodeID,
 }
 
-impl LinearBackward {
+impl ProportionalBackward {
 	pub fn new(multiplier: f32, input_id: NodeID) -> Self {
-		LinearBackward {
+		ProportionalBackward {
 			multiplier,
 			input_id,
 		}
 	}
 }
 
-impl Pass for LinearBackward {
-	fn type_name(&self) -> &'static str {"LinearBackward"}
+impl Pass for ProportionalBackward {
+	fn type_name(&self) -> &'static str {"ProportionalBackward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(vec![self.input_id.value_id()],
@@ -167,11 +162,11 @@ impl Pass for LinearBackward {
 
 
 #[test]
-fn test_linear_backprop(){
-	_linear_backprop().unwrap();
+fn test_proportional_backprop(){
+	_proportional_backprop().unwrap();
 }
 
-fn _linear_backprop() -> Result<()>{
+fn _proportional_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
@@ -180,7 +175,7 @@ fn _linear_backprop() -> Result<()>{
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
 
-	let _o1 = g.new_op(Linear::new(&node1).multiplier(3.14), tag![])?;
+	let _o1 = g.new_op(Proportional::new(&node1).multiplier(3.14), tag![])?;
 
 	let iters = 100;
 	let failures = 1;

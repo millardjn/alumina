@@ -1,7 +1,7 @@
-use new::graph::{GraphDef, NodeID, OpID, PassID, NodeTag, Result};
+use new::graph::{GraphDef, NodeID, OpID, NodeTag, Result};
 use new::ops::math::add::{AddInstance, Add};
-use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
-use new::shape::{NodeShape, NodeDim};
+use new::ops::{standard_op_name, standard_inner_parameter_name, Op};
+use new::shape::{NodeShape};
 
 pub struct Bias {
 	output_id: NodeID,

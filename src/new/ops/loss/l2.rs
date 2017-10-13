@@ -1,7 +1,5 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, Op, OpInstance, Pass};
-use new::shape::{NodeDim};
-use ndarray::{ArrayViewMutD, ArrayViewD};
 // use generic_array::GenericArray;
 // use typenum::{Unsigned, U16};
 // use typenum_loops::Loop;

@@ -1,8 +1,9 @@
+#![allow(non_snake_case)]
+
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, Op, OpInstance, Pass};
-use new::ops::loss::linear::Linear;
-use new::shape::{NodeShape, NodeDim};
-use ndarray::{IxDyn, Dimension};
+use new::shape::NodeDim;
+use ndarray::Dimension;
 use std::cmp;
 use std::any::Any;
 use matrixmultiply;
@@ -89,7 +90,7 @@ impl Op for MatMul {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.A_id.clone(), self.B_id.clone()], &[self.C_id.clone()]);
 		
 		Ok(MatMulInstance{
@@ -192,11 +193,8 @@ impl OpInstance for MatMulInstance {
 
 		if C_shape.is_known() {return Ok(());}
 
-		#[allow(non_snake_case)]
 		let mut M = self.M.clone();
-		#[allow(non_snake_case)]
 		let mut N = self.N.clone();
-		#[allow(non_snake_case)]
 		let mut K = self.K.clone();
 
 		// If no matrix dimensions are known, guess based on any of the inputs having 2 dimensions.

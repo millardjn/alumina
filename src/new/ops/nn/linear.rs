@@ -1,5 +1,5 @@
 use new::graph::{GraphDef, NodeID, OpID,  NodeTag, Result};
-use new::ops::{standard_op_name, standard_inner_parameter_name, Op, Pass};
+use new::ops::{standard_op_name, standard_inner_parameter_name, Op};
 use new::shape::{NodeShape, NodeDim};
 use new::ops::math::matmul::{MatMul, MatMulInstance};
 

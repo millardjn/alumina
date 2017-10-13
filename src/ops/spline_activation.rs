@@ -307,11 +307,12 @@ impl Operation for Spline {
 }
 
 
-use ops::loss::MseLoss;
+
 
 #[test]
 #[allow(non_snake_case)]
 fn test_Spline_backprop(){
+	use ops::loss::MseLoss;
 	for _ in 1..100{
 		let mut graph = Graph::new();
 	
@@ -334,6 +335,7 @@ fn test_Spline_backprop(){
 #[test]
 #[allow(non_snake_case)]
 fn test_Spline_sharing_full_backprop(){
+	use ops::loss::MseLoss;
 	for _ in 1..100{
 		let mut graph = Graph::new();
 	
@@ -356,6 +358,7 @@ fn test_Spline_sharing_full_backprop(){
 #[test]
 #[allow(non_snake_case)]
 fn test_Spline_sharing_spatial_backprop(){
+	use ops::loss::MseLoss;
 	for _ in 1..100{
 		let mut graph = Graph::new();
 	

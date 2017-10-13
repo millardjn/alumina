@@ -77,7 +77,7 @@ impl<'a> CainBuilder<'a> {
 		self
 	}
 
-	pub fn finish(mut self) -> Cain<'a>{
+	pub fn finish(self) -> Cain<'a>{
 		let num_params = self.graph.num_params();
 		Cain{
 			graph: self.graph,
