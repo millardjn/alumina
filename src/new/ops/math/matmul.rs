@@ -104,7 +104,7 @@ impl Op for MatMul {
 			M: self.M,
 			N: self.N,
 			K: self.K,
-			forward_id: graph.add_pass(MatMulPass::new(
+			forward_id: graph.add_pass(MatMulPass::new( // C += A B
 				self.A_id.value_id(),
 				self.B_id.value_id(),
 				self.C_id.value_id(),
@@ -116,7 +116,7 @@ impl Op for MatMul {
 				self.K,
 				self.alpha,
 			)),
-			backward1_id: graph.add_pass(MatMulPass::new( // B' = At C
+			backward1_id: graph.add_pass(MatMulPass::new( // B' += At C
 				self.A_id.value_id(),
 				self.C_id.gradient_id(),
 				self.B_id.gradient_id(),
@@ -128,7 +128,7 @@ impl Op for MatMul {
 				self.M, // k = m
 				self.alpha,
 			)),
-			backward2_id: graph.add_pass(MatMulPass::new( // A' = C' Bt
+			backward2_id: graph.add_pass(MatMulPass::new( // A' += C' Bt
 				self.C_id.gradient_id(),
 				self.B_id.value_id(),
 				self.A_id.gradient_id(),
@@ -182,7 +182,7 @@ impl OpInstance for MatMulInstance {
 		// Use the shape of A and B to try and inffer a single unknown dimension of C
 		// if shape of C has more than 1 unknown then throw error
 
-		// no free dims -> exit
+		// no free dims -> exit, passes will check for errors
 		// one free dim -> calculate or throw error
 		// two adjacent free dims -> calculate or throw error
 		// else -> error
@@ -323,9 +323,6 @@ impl OpInstance for MatMulInstance {
 				self.instance_name()
 			)))
 		}
-
-
-		
 
 		Ok(())
 	}
@@ -490,7 +487,6 @@ impl Pass for MatMulPass {
 
 
 fn get_inner(outer: usize, inner: Option<usize>, shape: &[usize], trans: bool) -> ::std::result::Result<usize, String> {
-
 	if trans {
 		return get_outer(outer, inner, shape, false);
 	};
@@ -508,7 +504,6 @@ fn get_inner(outer: usize, inner: Option<usize>, shape: &[usize], trans: bool) -
 		return Err(format!("Could not determine inner (outer if transposed) dimension of matrix. Outer matrix dimension: '{}' did not equal the product of outer dimensions in shape{:?}", outer, shape))
 	}
 
-
 	match inner {
 		None => Ok(i),
 		Some(existing) if existing == i => Ok(i),
@@ -517,7 +512,6 @@ fn get_inner(outer: usize, inner: Option<usize>, shape: &[usize], trans: bool) -
 }
 
 fn get_outer(inner: usize, outer: Option<usize>, shape: &[usize], trans: bool) -> ::std::result::Result<usize, String> {
-
 	if trans {
 		return get_inner(inner, outer, shape, false);
 	};
