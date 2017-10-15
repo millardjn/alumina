@@ -1,7 +1,0 @@
-trait IndexableData {
-
-}
-
-trait DataStream {
-	
-}
