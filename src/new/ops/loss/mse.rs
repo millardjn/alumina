@@ -1,6 +1,7 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, standard_inner_node_name, Op, OpInstance, Pass};
 use new::ops::loss::proportional::Proportional;
+use new::ops::loss::LossType;
 // use generic_array::GenericArray;
 // use typenum::{Unsigned, U16};
 // use typenum_loops::Loop;
@@ -10,14 +11,14 @@ use std::any::Any;
 ///
 /// The outer dimension of the inputs is taken to be the batch size and is excluded from the denominator of the Mean,
 /// i.e a larger batch size corresponds to a larger error.
-/// By default this `Op` has no output and will generate gradients.
+/// By default this `Op` has no output and will generate loss and gradients.
 ///
-/// If `output()` is set, the Mse will be written every element of that Node, and the gradient will be backprop'd from the output node.
+/// If `output()` is set to a node of size 1, the Cross Entropy will be written to that Node, and the gradient will be backprop'd from the output node.
 ///
 /// If `separate_loss()` is set a scalar node will be added to the graph, and a `Loss` Op attached to it.
 pub struct Mse {
-	input1: NodeID,
-	input2: NodeID,
+	input1_id: NodeID,
+	input2_id: NodeID,
 	separate_loss: bool,
 	output: Option<NodeID>,
 	multiplier: f32,
@@ -27,8 +28,8 @@ pub struct Mse {
 impl Mse {
 	pub fn new(input1: &NodeID, input2: &NodeID) -> Self {
 		Mse {
-			input1: input1.clone(),
-			input2: input2.clone(),
+			input1_id: input1.clone(),
+			input2_id: input2.clone(),
 			separate_loss: false,
 			output: None,
 			multiplier: 1.0,
@@ -37,13 +38,14 @@ impl Mse {
 	}
 
 	/// If true (and output is None) a scalar output node is created along with a `Loss` Op. This allows the loss from this Op to be queries separately while still
+	/// The output node must have size 1.
 	/// Default: false
 	pub fn separate_loss(mut self, separate_loss: bool) -> Self {
 		self.separate_loss = separate_loss;
 		self
 	}
 
-	/// If set this `Op` will output to a 
+	/// If set this `Op` will output to the supplied node, any rely no other use ops to generate loss and gradients
 	/// Default: None.
 	pub fn output(mut self, output: &NodeID) -> Self {
 		self.output = Some(output.clone());
@@ -72,20 +74,24 @@ impl Op for Mse {
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		// TODO check broadcast at graph define time?
-		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[]);
+		let name =  if let Some(ref output_id) = self.output {
+			standard_op_name(&self, &self.name, graph, &[self.input1_id.clone(), self.input2_id.clone()], &[output_id.clone()])
+		} else {
+			standard_op_name(&self, &self.name, graph, &[self.input1_id.clone(), self.input2_id.clone()], &[])
+		};
 
 		let loss_type = if let Some(output_id) = self.output {
-			MseType::Output{
+			LossType::Output{
 				output_id: output_id.clone(),
 				forward_id: graph.add_pass(MseForward::new(
 					self.multiplier,
-					self.input1.clone(),
-					self.input2.clone(),
+					self.input1_id.clone(),
+					self.input2_id.clone(),
 					output_id.clone())),
 				backward_id: graph.add_pass(MseBackward::new(
 					self.multiplier,
-					self.input1.clone(),
-					self.input2.clone(),
+					self.input1_id.clone(),
+					self.input2_id.clone(),
 					output_id.clone())),
 			}
 		} else if self.separate_loss {
@@ -93,56 +99,39 @@ impl Op for Mse {
 			let output_id = graph.new_node(shape![1], output_name, tag![])?;
 			let loss_id = graph.new_op(Proportional::new(&output_id), tag![])?;
 
-			MseType::Separate{
+			LossType::Separate{
 				output_id: output_id.clone(),
 				loss_id: loss_id,
 				forward_id: graph.add_pass(MseForward::new(
 					self.multiplier,
-					self.input1.clone(),
-					self.input2.clone(),
+					self.input1_id.clone(),
+					self.input2_id.clone(),
 					output_id.clone())),
 				backward_id: graph.add_pass(MseBackward::new(
 					self.multiplier,
-					self.input1.clone(),
-					self.input2.clone(),
+					self.input1_id.clone(),
+					self.input2_id.clone(),
 					output_id.clone())),
 			}
 		} else {
-			MseType::Joint{
+			LossType::Joint{
 				pass_id: graph.add_pass(MseJointPass::new(
 					self.multiplier,
-					self.input1.clone(),
-					self.input2.clone()))
+					self.input1_id.clone(),
+					self.input2_id.clone()))
 			}
 		};
 
 		Ok(MseInstance{
 			name: name,
 			multiplier: self.multiplier,
-			input1_id: self.input1.clone(),
-			input2_id: self.input2.clone(),
+			input1_id: self.input1_id.clone(),
+			input2_id: self.input2_id.clone(),
 			loss_type: loss_type,
 		})
 	}
 }
 
-#[derive(Clone, Debug)] 
-enum MseType {
-	Joint { // No output node, losses are applied to the graph
-		pass_id: PassID
-	},
-	Output {
-		output_id: NodeID,
-		forward_id: PassID,
-		backward_id: PassID
-	},
-	Separate {
-		output_id: NodeID,
-		loss_id: OpID,
-		forward_id: PassID,
-		backward_id: PassID
-	},
-}
 
 #[derive(Clone, Debug)] 
 pub struct MseInstance {
@@ -150,7 +139,7 @@ pub struct MseInstance {
 	multiplier: f32,
 	input1_id: NodeID,
 	input2_id: NodeID,
-	loss_type: MseType,
+	loss_type: LossType,
 }
 
 impl OpInstance for MseInstance {
@@ -159,29 +148,29 @@ impl OpInstance for MseInstance {
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {
-			&MseType::Joint{..} | &MseType::Separate{..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![]),
-			&MseType::Output{ref output_id, ..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![output_id.clone()]),
+			&LossType::Joint{..} | &LossType::Separate{..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![]),
+			&LossType::Output{ref output_id, ..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![output_id.clone()]),
 		}
 	}
 
 	fn inner_passes(&self) -> Vec<PassID> {
 		match &self.loss_type {
-			&MseType::Joint{ref pass_id} => vec![pass_id.clone()],
-			&MseType::Separate{ref forward_id, ref backward_id, ..} | &MseType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
+			&LossType::Joint{ref pass_id} => vec![pass_id.clone()],
+			&LossType::Separate{ref forward_id, ref backward_id, ..} | &LossType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
 		}
 	}
 
 	fn inner_ops(&self) -> Vec<OpID> {
 		match &self.loss_type {
-			&MseType::Joint{..} | &MseType::Output{..} => vec![],
-			&MseType::Separate{ref loss_id, ..} => (vec![loss_id.clone()]),
+			&LossType::Joint{..} | &LossType::Output{..} => vec![],
+			&LossType::Separate{ref loss_id, ..} => (vec![loss_id.clone()]),
 		}
 	}
 
 	fn inner_nodes(&self) -> Vec<NodeID> {
 		match &self.loss_type {
-			&MseType::Joint{..} | &MseType::Output{..} => vec![],
-			&MseType::Separate{ref output_id, ..} => (vec![output_id.clone()]),
+			&LossType::Joint{..} | &LossType::Output{..} => vec![],
+			&LossType::Separate{ref output_id, ..} => (vec![output_id.clone()]),
 		}
 	}
 
@@ -227,6 +216,7 @@ impl Pass for MseJointPass {
 		let input2_val = input2_val.as_slice().unwrap();
 
 		let n = input1_val.len();
+		assert!(input2_val.len() == n);
 		
 		let multiplier = self.multiplier/avg_denom as f32;
 		const SIMD: usize = 16;
@@ -393,6 +383,9 @@ impl Pass for MseForward {
 		let output_val = output_val.as_slice_mut().unwrap();
 
 		let n = input1_val.len();
+		assert!(input2_val.len() == n);
+		assert!(output_val.len() == 1);
+
 
 		let multiplier = self.multiplier/avg_denom as f32;
 		const SIMD: usize = 16;
@@ -486,14 +479,9 @@ impl Pass for MseBackward {
 
 
 		let n = input1_val.len();
-		let multiplier = output_grad * self.multiplier/avg_denom as f32;
+		assert!(input2_val.len() == n);
 
-		
-		// type SIMD = U16;
-		// let mut errs = <GenericArray<f32, SIMD>>::default();
-		// let mut iv1 = <GenericArray<f32, SIMD>>::default();
-		// let mut iv2 = <GenericArray<f32, SIMD>>::default();
-		// let mut diff = <GenericArray<f32, SIMD>>::default();
+		let multiplier = output_grad * self.multiplier/avg_denom as f32;
 
 		if data.is_required(&self.input1_id.gradient_id()) && data.is_required(&self.input2_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;

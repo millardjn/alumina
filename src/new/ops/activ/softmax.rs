@@ -232,7 +232,7 @@ impl Pass for SoftMaxBackward {
 			let sum = in_chunk.iter().fold(0., |sum, &v| sum + (v-max).exp());
 
 			for (dim, og) in out_grad_chunk.indexed_iter() {
-				if og.abs() > 0. {
+				if og.abs() > 0. {// hopefully output gradients are sparse, eg from cross entropy loss
 					let a = in_chunk[&dim] - max;
 					let denom = sum*sum;
 
