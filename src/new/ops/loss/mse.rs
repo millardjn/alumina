@@ -38,7 +38,6 @@ impl Mse {
 	}
 
 	/// If true (and output is None) a scalar output node is created along with a `Loss` Op. This allows the loss from this Op to be queries separately while still
-	/// The output node must have size 1.
 	/// Default: false
 	pub fn separate_loss(mut self, separate_loss: bool) -> Self {
 		self.separate_loss = separate_loss;
@@ -46,6 +45,7 @@ impl Mse {
 	}
 
 	/// If set this `Op` will output to the supplied node, any rely no other use ops to generate loss and gradients
+	/// The output node must have size 1.
 	/// Default: None.
 	pub fn output(mut self, output: &NodeID) -> Self {
 		self.output = Some(output.clone());
