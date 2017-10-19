@@ -1,3 +1,5 @@
+pub mod mnist;
+
 use ndarray::{ArrayD, IxDyn};
 use std::mem;
 

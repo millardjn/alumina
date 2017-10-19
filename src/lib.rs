@@ -9,6 +9,7 @@ extern crate walkdir;
 extern crate smallvec;
 extern crate rand;
 extern crate matrixmultiply_mt as matrixmultiply;
+extern crate byteorder;
 
 extern crate num_cpus;
 extern crate threadpool;
