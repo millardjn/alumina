@@ -7,12 +7,17 @@ use std::mem;
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
 pub trait DataSet: Sized {
+
+	/// Returns the `i`th element of the `Dataset`
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>>;
 
+	/// Returns the number of elements in the `Dataset`
 	fn length(&self) -> usize;
 
+	/// Returns the number of components
 	fn width(&self) -> usize;
 
+	/// Returns the names of components
 	fn components(&self) -> Vec<String>;
 
 	// fn into_iter(self: 'static) -> Box<Iterator<Item=Vec<ArrayD<f32>>>>{
@@ -148,6 +153,7 @@ impl<S: DataSet> DataSet for ReorderElements<S> {
 }
 
 /// Concatenate two `DataSet`s in the width direction
+///
 /// The new dataset has the same number of elements (length) as the two inputs,
 /// but the number of components in each element increases.
 pub struct ConcatComponents<S1: DataSet, S2: DataSet> {
@@ -190,6 +196,7 @@ impl<S1: DataSet, S2: DataSet> DataSet for ConcatComponents<S1, S2> {
 }
 
 /// Concatenate two `DataSet`s in the length direction
+///
 /// The new dataset has the same number of components(width) in each element as the two inputs,
 /// but the number of elements increases.
 pub struct ConcatElements<S1: DataSet, S2: DataSet> {
@@ -229,7 +236,8 @@ impl<S1: DataSet, S2: DataSet> DataSet for ConcatElements<S1, S2> {
 	}
 }
 
-/// For each element map the components to a completely new vec of components.
+/// For each element, map the components to a completely new vec of components.
+///
 /// If names for the new components arent provided the old names will be used.
 /// If the map changes the number of components, new names must be provided.
 pub struct MapAll<S: DataSet, F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>> {
@@ -280,7 +288,8 @@ impl<S: DataSet, F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>> DataSet 
 }
 
 
-/// For one component in each element of the dataset apply a function.
+/// For one component in each element of the dataset: apply a function.
+///
 /// Renaming the component is optional.
 pub struct MapOne<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> {
 	func: F,
