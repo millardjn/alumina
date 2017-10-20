@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ByteOrder};
 
 /// A `DataSet` created from both mnist binary format image and label files.
 ///
-/// Each element contains two components, a (typically) 28x28 image and a one hot label encoding the category
+/// Each element contains two components, a (typically) 28x28 image and a one-hot label encoding the category out of 10
 pub struct Mnist {
 	data: ConcatComponents<MnistImages, MnistLabels>
 }
@@ -131,7 +131,7 @@ impl MnistLabels {
 impl DataSet for MnistLabels {
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>>{
 		let mut one_hot_label = ArrayD::zeros(IxDyn(&[10]));
-		one_hot_label[i] = 1.0;
+		one_hot_label[self.labels[i] as usize] = 1.0;
 		vec![one_hot_label]
 	}
 
@@ -144,7 +144,7 @@ impl DataSet for MnistLabels {
 	}
 
 	fn components(&self) -> Vec<String> {
-		vec!["Label".to_string()]
+		vec!["Labels".to_string()]
 	}
 }
 
