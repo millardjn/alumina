@@ -1,9 +1,13 @@
 pub mod mnist;
 pub mod cifar;
 
-use ndarray::{ArrayD, IxDyn};
 use std::mem;
+use std::sync::mpsc::{sync_channel, Receiver};
 use rand::{thread_rng, Isaac64Rng, Rng};
+use ndarray::{ArrayD, IxDyn};
+use std::thread;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::mpsc::TrySendError;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
@@ -393,7 +397,7 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> DataSet for MapOne
 }
 
 
-trait DataStream {
+pub trait DataStream: Sized {
 	fn next(&mut self) -> Vec<ArrayD<f32>>;
 }
 
@@ -497,14 +501,85 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 }
 
 
-struct Buffer {
 
+pub struct Buffered<S: DataStream + Send + 'static> {
+	stream: Arc<Mutex<S>>,
+	rx: Receiver<Vec<ArrayD<f32>>>,
 }
 
-struct Zip {
+impl<S: DataStream + Send + 'static> Buffered<S> {
+	pub fn new(stream: S, buffer_size: usize) -> Self {
+		let (tx, rx) = sync_channel(buffer_size);
 
+		let stream = Arc::new(Mutex::new(stream));
+		let stream_clone = stream.clone();
+
+		thread::spawn(move|| {
+			let mut prev = None; // Failed attempts to send store a value here
+			
+			// use two loops so that the mutex lock can be dropped when the buffer is full
+			loop {
+				let mut locked_stream = stream_clone.lock().unwrap();
+				// keep lock while values are still being accepted by the buffer
+				let err = loop {
+					match tx.try_send(prev.take().unwrap_or_else(||locked_stream.next())) {
+						Ok(()) => {},
+						Err(e) => break e,
+					}
+				};
+				match err {
+					TrySendError::Full(val) => {prev = Some(val)}, // save the value and let the lock drop
+					TrySendError::Disconnected(_val) => {break;}, // let the thread die
+				}
+			}
+		});
+
+		Buffered{
+			stream: stream,
+			rx: rx,
+		}
+	}
+
+	/// Borrows the wrapped datastream
+	///
+	/// Blocks until the buffer is full and the lock can be acquired, holding the guard blocks the buffer thread
+	pub fn inner<'a>(&'a self) -> MutexGuard<'a, S> {
+		self.stream.lock().expect("Buffer internal thread has poisoned the mutex")
+	}
+
+	/// Returns the wrapped datastream
+	///
+	/// Spinwaits until the buffer thread disconnects, if the bufferthread is blocked this can hang.
+	pub fn into_inner(self) -> S {
+		let Buffered{stream, ..} = self;
+		let mut result = Arc::try_unwrap(stream);
+		loop {
+			match result {
+				Ok(lock) => return lock.into_inner().expect("Buffer internal thread has poisoned the mutex"),
+				Err(stream) => result = Arc::try_unwrap(stream),
+			}
+		}
+	}
 }
 
-struct Batch {
+impl<S: DataStream + Send + 'static> DataStream for Buffered<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		self.rx.recv().expect("Buffer internal thread has died")
+	}
+}
 
+pub struct Zip<S1: DataStream, S2: DataStream> {
+	stream1: S1,
+	stream2: S2,
+}
+
+
+pub struct ZipMany {
+	//streams: Vec<Box<DataStream>>,
+}
+
+
+pub struct Batch<S: DataStream> {
+	stream: S,
+	batch_size: usize,
 }
