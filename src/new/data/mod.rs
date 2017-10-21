@@ -4,7 +4,6 @@ pub mod cifar;
 use ndarray::{ArrayD, IxDyn};
 use std::mem;
 use rand::{thread_rng, Isaac64Rng, Rng};
-use std::iter;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
@@ -399,7 +398,7 @@ trait DataStream {
 }
 
 
-struct Sequential<S: DataSet> {
+pub struct Sequential<S: DataSet> {
 	set: S,
 	next_i: usize,
 }
@@ -426,7 +425,7 @@ impl<S: DataSet> DataStream for Sequential<S> {
 	}
 }
 
-struct Random<S: DataSet> {
+pub struct Random<S: DataSet> {
 	set: S,
 	rng: Box<Rng>,
 }
@@ -439,7 +438,7 @@ impl<S: DataSet> Random<S> {
 		}
 	}
 
-	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
+	pub fn rng<R: Rng + 'static>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}
@@ -452,11 +451,12 @@ impl<S: DataSet> Random<S> {
 
 impl<S: DataSet> DataStream for Random<S> {
 	fn next(&mut self) -> Vec<ArrayD<f32>>{
-		self.set.get(thread_rng().gen_range(0, self.set.length()))
+		let set_len = self.set.length();
+		self.set.get(thread_rng().gen_range(0, set_len))
 	}
 }
 
-struct ShuffleRandom<S: DataSet> {
+pub struct ShuffleRandom<S: DataSet> {
 	set: S,
 	rng: Box<Rng>,
 	order: Vec<usize>,
@@ -474,7 +474,7 @@ impl<S: DataSet> ShuffleRandom<S> {
 		}
 	}
 
-	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
+	pub fn rng<R: Rng + 'static>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}

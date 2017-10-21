@@ -17,7 +17,7 @@ impl Cifar10 {
 		let mut labels = vec![];
 		let mut images = vec![];
 		for file in files {
-			let (next_labels, next_images) = read_cifar10_file(file);
+			let (mut next_labels, mut next_images) = read_cifar10_file(file);
 			labels.append(&mut next_labels);
 			images.append(&mut next_images);
 		}
@@ -49,7 +49,7 @@ impl Cifar10 {
 
 impl DataSet for Cifar10 {
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>> {
-		let bytes = self.images[i];
+		let bytes = &self.images[i];
 		let mut image_vec = vec![0.0; 3072];
 		for i in 0..1024{
 			image_vec[i*3 + 0] = bytes[i + 0*1024] as f32/255.0;
@@ -81,14 +81,14 @@ fn read_cifar10_file(mut file: File) -> (Vec<u8>, Vec<Vec<u8>>){
 	file.read_exact(&mut buf).unwrap();
 	let mut i: usize = 0;
 	
-	assert!(buf.len() % (1 + 3072));
+	assert_eq!(0, buf.len() % (1 + 3072));
 	let n = buf.len() / (1 + 3072);
 
 	let mut labels = Vec::with_capacity(n);
 	let mut images = Vec::with_capacity(n);
 	for _ in 0..n {
 		labels.push(buf[i]); i += 1;
-		let pixels = vec![3072];
+		let mut pixels = Vec::with_capacity(3072);
 		for _ in 0..3072 {
 			pixels.push(buf[i]); i += 1;
 		}
@@ -141,7 +141,7 @@ impl Cifar100 {
 
 impl DataSet for Cifar100 {
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>>{
-		let bytes = self.images[i];
+		let bytes = &self.images[i];
 		let mut image_vec = vec![0.0; 3072];
 		for i in 0..1024{
 			image_vec[i*3 + 0] = bytes[i + 0*1024] as f32/255.0;
@@ -174,7 +174,7 @@ fn read_cifar100_file(mut file: File) -> (Vec<u8>, Vec<u8>, Vec<Vec<u8>>) {
 	file.read_exact(&mut buf).unwrap();
 	let mut i: usize = 0;
 	
-	assert!(buf.len() % (2 + 3072));
+	assert_eq!(0, buf.len() % (2 + 3072));
 	let n = buf.len() / (2 + 3072);
 
 	let mut coarse_labels = Vec::with_capacity(n);
@@ -184,7 +184,7 @@ fn read_cifar100_file(mut file: File) -> (Vec<u8>, Vec<u8>, Vec<Vec<u8>>) {
 		coarse_labels.push(buf[i]); i += 1;
 		fine_labels.push(buf[i]); i += 1;
 
-		let pixels = vec![3072];
+		let mut pixels = Vec::with_capacity(3072);
 		for _ in 0..3072 {
 			pixels.push(buf[i]); i += 1;
 		}
