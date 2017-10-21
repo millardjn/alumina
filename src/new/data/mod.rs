@@ -568,6 +568,10 @@ pub trait DataStream: Sized {
 	fn zip<S: DataStream>(self, stream: S) -> Zip<Self, S> {
 		Zip::new(self, stream)
 	}
+
+	fn count<S: DataStream>(self) -> Count<Self> {
+		Count::new(self)
+	}
 }
 
 /// Augment a stream with a fixed sized buffer fed by a new thread.
@@ -677,8 +681,43 @@ impl<S1: DataStream, S2: DataStream> DataStream for Zip<S1, S2> {
 	}
 }
 
-pub struct ZipMany {
-	//streams: Vec<Box<DataStream>>,
+
+/// Keeps a count of how many times next is called().
+pub struct Count<S: DataStream> {
+	stream: S,
+	count: usize,
+}
+
+impl<S: DataStream> Count<S> {
+	pub fn new(stream: S) -> Self {
+		Count {
+			stream: stream,
+			count: 0,
+		}
+	}
+
+	/// Returns a count of how many times next has been called.
+	pub fn count(&self) -> usize {
+		self.count
+	}
+
+	/// Borrows the wrapped datastreams.
+	pub fn inner(&self) -> &S {
+		&self.stream
+	}
+
+	/// Returns the wrapped datastreams.
+	pub fn into_inner(self) -> S {
+		let Self{stream, ..} = self;
+		stream
+	}
+}
+
+impl<S: DataStream> DataStream for Count<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		self.count += 1;
+		self.stream.next()
+	}
 }
 
 
