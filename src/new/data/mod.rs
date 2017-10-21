@@ -3,7 +3,8 @@ pub mod cifar;
 
 use ndarray::{ArrayD, IxDyn};
 use std::mem;
-
+use rand::{thread_rng, Isaac64Rng, Rng};
+use std::iter;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
@@ -49,6 +50,18 @@ pub trait DataSet: Sized {
 	fn map_one<F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>>(self, func: F, component: usize) -> MapOne<Self, F> {
 		MapOne::new(self, func, component)
 	}
+
+	fn sequential(self) -> Sequential<Self> {
+		Sequential::new(self)
+	}
+
+	fn random(self) -> Random<Self> {
+		Random::new(self)
+	}
+
+	fn shuffle_random(self) -> ShuffleRandom<Self> {
+		ShuffleRandom::new(self)
+	}
 }
 
 
@@ -69,6 +82,11 @@ impl<S: DataSet> ReorderComponents<S> {
 			set: s,
 			order: order.to_vec(),
 		}
+	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
 	}
 }
 
@@ -132,6 +150,11 @@ impl<S: DataSet> ReorderElements<S> {
 			order: order.to_vec(),
 		}
 	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
+	}
 }
 
 impl<S: DataSet> DataSet for ReorderElements<S> {
@@ -169,6 +192,16 @@ impl<S1: DataSet, S2: DataSet> ConcatComponents<S1, S2> {
 			set1: s1,
 			set2: s2,
 		}
+	}
+
+	/// Returns the first wrapped dataset
+	pub fn inner1(&self) -> &S1 {
+		&self.set1
+	}
+
+	/// Returns the second wrapped dataset
+	pub fn inner2(&self) -> &S2 {
+		&self.set2
 	}
 }
 
@@ -213,6 +246,16 @@ impl<S1: DataSet, S2: DataSet> ConcatElements<S1, S2> {
 			set2: s2,
 		}
 	}
+
+	/// Returns the first wrapped dataset
+	pub fn inner1(&self) -> &S1 {
+		&self.set1
+	}
+
+	/// Returns the second wrapped dataset
+	pub fn inner2(&self) -> &S2 {
+		&self.set2
+	}
 }
 
 impl<S1: DataSet, S2: DataSet> DataSet for ConcatElements<S1, S2> {
@@ -254,6 +297,11 @@ impl<S: DataSet, F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>> MapAll<S
 			set,
 			names: names
 		}
+	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
 	}
 }
 
@@ -313,6 +361,11 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> MapOne<S, F> {
 		self.component_name = Some(name);
 		self
 	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
+	}
 }
 
 impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> DataSet for MapOne<S, F> {
@@ -343,6 +396,94 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> DataSet for MapOne
 
 trait DataStream {
 	fn next(&mut self) -> Vec<ArrayD<f32>>;
+}
+
+
+struct Sequential<S: DataSet> {
+	set: S,
+	next_i: usize,
+}
+
+impl<S: DataSet> Sequential<S> {
+	pub fn new(set: S) -> Self {
+		Sequential{
+			set: set,
+			next_i: 0,
+		}
+	}
+}
+
+impl<S: DataSet> DataStream for Sequential<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		let out = self.set.get(self.next_i);
+		self.next_i = (self.next_i + 1)%self.set.length();
+		out
+	}
+}
+
+struct Random<S: DataSet> {
+	set: S,
+	rng: Box<Rng>,
+}
+
+impl<S: DataSet> Random<S> {
+	pub fn new(set: S) -> Self {
+		Random{
+			set: set,
+			rng: Box::new(thread_rng().gen::<Isaac64Rng>()),
+		}
+	}
+
+	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
+		self.rng = Box::new(rng);
+		self
+	}
+}
+
+impl<S: DataSet> DataStream for Random<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		self.set.get(thread_rng().gen_range(0, self.set.length()))
+	}
+}
+
+struct ShuffleRandom<S: DataSet> {
+	set: S,
+	rng: Box<Rng>,
+	order: Vec<usize>,
+	next_i: usize,
+}
+
+impl<S: DataSet> ShuffleRandom<S> {
+	pub fn new(set: S) -> Self {
+		let set_len = set.length();
+		ShuffleRandom{
+			set: set,
+			rng: Box::new(thread_rng().gen::<Isaac64Rng>()),
+			order: (0..set_len).collect(),
+			next_i: set_len,
+		}
+	}
+
+	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
+		self.rng = Box::new(rng);
+		self
+	}
+}
+
+impl<S: DataSet> DataStream for ShuffleRandom<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		if self.next_i >= self.order.len() {
+			self.rng.shuffle(&mut self.order);
+			self.next_i = 0;
+		}
+
+		self.set.get(self.order[self.next_i])
+	}
+}
+
+
+struct Buffer {
+
 }
 
 struct Zip {
