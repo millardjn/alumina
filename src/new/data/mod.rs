@@ -89,9 +89,15 @@ impl<S: DataSet> ReorderComponents<S> {
 		}
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+	
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -156,9 +162,15 @@ impl<S: DataSet> ReorderElements<S> {
 		}
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -199,14 +211,20 @@ impl<S1: DataSet, S2: DataSet> ConcatComponents<S1, S2> {
 		}
 	}
 
-	/// Returns the first wrapped dataset
+	/// Borrows the first wrapped dataset
 	pub fn inner1(&self) -> &S1 {
 		&self.set1
 	}
 
-	/// Returns the second wrapped dataset
+	/// Borrows the second wrapped dataset
 	pub fn inner2(&self) -> &S2 {
 		&self.set2
+	}
+
+	/// Returns the wrapped datasets.
+	pub fn into_inner(self) -> (S1, S2) {
+		let Self{set1, set2} = self;
+		(set1, set2)
 	}
 }
 
@@ -252,14 +270,20 @@ impl<S1: DataSet, S2: DataSet> ConcatElements<S1, S2> {
 		}
 	}
 
-	/// Returns the first wrapped dataset
+	/// Borrows the first wrapped dataset
 	pub fn inner1(&self) -> &S1 {
 		&self.set1
 	}
 
-	/// Returns the second wrapped dataset
+	/// Borrows the second wrapped dataset
 	pub fn inner2(&self) -> &S2 {
 		&self.set2
+	}
+
+	/// Returns the wrapped datasets.
+	pub fn into_inner(self) -> (S1, S2) {
+		let Self{set1, set2} = self;
+		(set1, set2)
 	}
 }
 
@@ -304,9 +328,15 @@ impl<S: DataSet, F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>> MapAll<S
 		}
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -367,9 +397,15 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> MapOne<S, F> {
 		self
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -413,9 +449,15 @@ impl<S: DataSet> Sequential<S> {
 		}
 	}
 	
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -445,9 +487,15 @@ impl<S: DataSet> Random<S> {
 		self
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
@@ -481,9 +529,15 @@ impl<S: DataSet> ShuffleRandom<S> {
 		self
 	}
 
-	/// Returns the wrapped dataset
+	/// Borrows the wrapped dataset.
 	pub fn inner(&self) -> &S {
 		&self.set
+	}
+
+	/// Returns the wrapped dataset.
+	pub fn into_inner(self) -> S {
+		let Self{set, ..} = self;
+		set
 	}
 }
 
