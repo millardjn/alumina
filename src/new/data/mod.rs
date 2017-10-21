@@ -397,10 +397,6 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> DataSet for MapOne
 }
 
 
-pub trait DataStream: Sized {
-	fn next(&mut self) -> Vec<ArrayD<f32>>;
-}
-
 
 pub struct Sequential<S: DataSet> {
 	set: S,
@@ -502,6 +498,19 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 
 
 
+pub trait DataStream: Sized {
+	fn next(&mut self) -> Vec<ArrayD<f32>>;
+
+	fn buffered(self, buffer_size: usize) -> Buffered<Self> where Self: Send{
+		Buffered::new(self, buffer_size)
+	}
+
+	fn zip<S: DataStream>(self, stream: S) -> Zip<Self, S> {
+		Zip::new(self, stream)
+	}
+}
+
+
 pub struct Buffered<S: DataStream + Send + 'static> {
 	stream: Arc<Mutex<S>>,
 	rx: Receiver<Vec<ArrayD<f32>>>,
@@ -573,6 +582,33 @@ pub struct Zip<S1: DataStream, S2: DataStream> {
 	stream2: S2,
 }
 
+impl<S1: DataStream, S2: DataStream> Zip<S1, S2> {
+	pub fn new(stream1: S1, stream2: S2) -> Self {
+		Zip{
+			stream1,
+			stream2,
+		}
+	}
+
+	/// Borrows the wrapped datastreams
+	pub fn inner(&self) -> (&S1, &S2) {
+		(&self.stream1, &self.stream2)
+	}
+
+	/// Returns the wrapped datastreams
+	pub fn into_inner(self) -> (S1, S2) {
+		let Zip{stream1, stream2} = self;
+		(stream1, stream2)
+	}
+}
+
+impl<S1: DataStream, S2: DataStream> DataStream for Zip<S1, S2> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		let mut data = self.stream1.next();
+		data.append(&mut self.stream2.next());
+		data
+	}
+}
 
 pub struct ZipMany {
 	//streams: Vec<Box<DataStream>>,
