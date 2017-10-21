@@ -1,13 +1,15 @@
 pub mod mnist;
 pub mod cifar;
 
-use std::mem;
-use std::sync::mpsc::{sync_channel, Receiver};
 use rand::{thread_rng, Isaac64Rng, Rng};
-use ndarray::{ArrayD, IxDyn};
+use ndarray::{ArrayD, IxDyn, Axis};
+use smallvec::SmallVec;
+
+use std::mem;
+use std::sync::mpsc::{sync_channel, Receiver, TrySendError};
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::mpsc::TrySendError;
+use std::iter;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
@@ -501,6 +503,10 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 pub trait DataStream: Sized {
 	fn next(&mut self) -> Vec<ArrayD<f32>>;
 
+	fn batch(self, batch_size: usize) -> Batch<Self> {
+		Batch::new(self, batch_size)
+	}
+
 	fn buffered(self, buffer_size: usize) -> Buffered<Self> where Self: Send{
 		Buffered::new(self, buffer_size)
 	}
@@ -510,7 +516,7 @@ pub trait DataStream: Sized {
 	}
 }
 
-
+/// Augment a stream with a fixed sized buffer fed by a new thread.
 pub struct Buffered<S: DataStream + Send + 'static> {
 	stream: Arc<Mutex<S>>,
 	rx: Receiver<Vec<ArrayD<f32>>>,
@@ -577,6 +583,8 @@ impl<S: DataStream + Send + 'static> DataStream for Buffered<S> {
 	}
 }
 
+
+/// Concatenates the components of two `DataStream`s
 pub struct Zip<S1: DataStream, S2: DataStream> {
 	stream1: S1,
 	stream2: S2,
@@ -597,7 +605,7 @@ impl<S1: DataStream, S2: DataStream> Zip<S1, S2> {
 
 	/// Returns the wrapped datastreams
 	pub fn into_inner(self) -> (S1, S2) {
-		let Zip{stream1, stream2} = self;
+		let Self{stream1, stream2} = self;
 		(stream1, stream2)
 	}
 }
@@ -615,7 +623,54 @@ pub struct ZipMany {
 }
 
 
+/// Adds an outer batch dimension to each component by combining multiple elements.
+///
+/// Batch size must be greater than 0.
 pub struct Batch<S: DataStream> {
 	stream: S,
 	batch_size: usize,
+}
+
+impl<S: DataStream> Batch<S> {
+	pub fn new(stream: S, batch_size: usize) -> Self {
+		assert!(batch_size > 0);
+		Batch {
+			stream,
+			batch_size,
+		}
+	}
+
+	/// Borrows the wrapped datastreams.
+	pub fn inner(&self) -> &S {
+		&self.stream
+	}
+
+	/// Returns the wrapped datastreams.
+	pub fn into_inner(self) -> S {
+		let Self{stream, ..} = self;
+		stream
+	}
+}
+
+impl<S: DataStream> DataStream for Batch<S> {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+
+		let mut batch_data = self.stream.next().into_iter().map(|arr|{
+			let batch_shape = iter::once(&self.batch_size).chain(arr.shape()).map(|&i|i).collect::<SmallVec<[usize;6]>>();
+			let mut batch_arr = unsafe{
+				ArrayD::uninitialized(IxDyn(&batch_shape))
+			};
+			// batch_arr.subview_mut(Axis(0), 0).assign(&arr); // unecessary extra logic
+			batch_arr.subview_mut(Axis(0), 0).as_slice_mut().unwrap().copy_from_slice(arr.as_slice().unwrap());
+			batch_arr
+		}).collect();
+
+		for i in 1..self.batch_size {
+			for (arr, batch_arr) in self.stream.next().into_iter().zip(&mut batch_data) {
+				(batch_arr as &mut ArrayD<f32>).subview_mut(Axis(0), i).as_slice_mut().unwrap().copy_from_slice(arr.as_slice().unwrap());
+			}
+		}
+
+		batch_data
+	}
 }
