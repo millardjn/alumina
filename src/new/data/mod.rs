@@ -652,9 +652,14 @@ impl<S1: DataStream, S2: DataStream> Zip<S1, S2> {
 		}
 	}
 
-	/// Borrows the wrapped datastreams
-	pub fn inner(&self) -> (&S1, &S2) {
-		(&self.stream1, &self.stream2)
+	/// Borrows the first wrapped datastream
+	pub fn inner1(&self) -> &S1 {
+		&self.stream1
+	}
+
+	/// Borrows the second wrapped datastream
+	pub fn inner2(&self) -> &S2 {
+		&self.stream2
 	}
 
 	/// Returns the wrapped datastreams
