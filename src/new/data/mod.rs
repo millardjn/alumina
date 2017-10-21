@@ -411,6 +411,11 @@ impl<S: DataSet> Sequential<S> {
 			next_i: 0,
 		}
 	}
+	
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
+	}
 }
 
 impl<S: DataSet> DataStream for Sequential<S> {
@@ -437,6 +442,11 @@ impl<S: DataSet> Random<S> {
 	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
+	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
 	}
 }
 
@@ -467,6 +477,11 @@ impl<S: DataSet> ShuffleRandom<S> {
 	pub fn rng<R: Rng + 'static>(self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
+	}
+
+	/// Returns the wrapped dataset
+	pub fn inner(&self) -> &S {
+		&self.set
 	}
 }
 
