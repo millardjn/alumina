@@ -13,7 +13,7 @@ use std::iter;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
-pub trait DataSet: Sized {
+pub trait DataSet {
 
 	/// Returns the `i`th element of the `Dataset`
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>>;
@@ -32,39 +32,39 @@ pub trait DataSet: Sized {
 	// 	Box::new(iter)
 	// }
 
-	fn reorder_components(self, order: &[usize]) -> ReorderComponents<Self> {
+	fn reorder_components(self, order: &[usize]) -> ReorderComponents<Self> where Self: Sized {
 		ReorderComponents::new(self, order)
 	}
 
-	fn reorder_elements(self, order: &[usize]) -> ReorderElements<Self> {
+	fn reorder_elements(self, order: &[usize]) -> ReorderElements<Self> where Self: Sized {
 		ReorderElements::new(self, order)
 	}
 
-	fn concat_components<S: DataSet>(self, set: S) -> ConcatComponents<Self, S> {
+	fn concat_components<S: DataSet>(self, set: S) -> ConcatComponents<Self, S> where Self: Sized {
 		ConcatComponents::new(self, set)
 	}
 
-	fn concat_elements<S: DataSet>(self, set: S) -> ConcatElements<Self, S> {
+	fn concat_elements<S: DataSet>(self, set: S) -> ConcatElements<Self, S> where Self: Sized {
 		ConcatElements::new(self, set)
 	}
 
-	fn map_all<F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>>(self, func: F, names: Option<Vec<String>>) -> MapAll<Self, F> {
+	fn map_all<F: FnMut(usize, Vec<ArrayD<f32>>) -> Vec<ArrayD<f32>>>(self, func: F, names: Option<Vec<String>>) -> MapAll<Self, F> where Self: Sized {
 		MapAll::new(self, func, names)
 	}
 
-	fn map_one<F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>>(self, func: F, component: usize) -> MapOne<Self, F> {
+	fn map_one<F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>>(self, func: F, component: usize) -> MapOne<Self, F> where Self: Sized {
 		MapOne::new(self, func, component)
 	}
 
-	fn sequential(self) -> Sequential<Self> {
+	fn sequential(self) -> Sequential<Self> where Self: Sized {
 		Sequential::new(self)
 	}
 
-	fn random(self) -> Random<Self> {
+	fn random(self) -> Random<Self> where Self: Sized {
 		Random::new(self)
 	}
 
-	fn shuffle_random(self) -> ShuffleRandom<Self> {
+	fn shuffle_random(self) -> ShuffleRandom<Self> where Self: Sized {
 		ShuffleRandom::new(self)
 	}
 }
@@ -554,22 +554,22 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 
 
 
-pub trait DataStream: Sized {
+pub trait DataStream {
 	fn next(&mut self) -> Vec<ArrayD<f32>>;
 
-	fn batch(self, batch_size: usize) -> Batch<Self> {
+	fn batch(self, batch_size: usize) -> Batch<Self> where Self: Sized {
 		Batch::new(self, batch_size)
 	}
 
-	fn buffered(self, buffer_size: usize) -> Buffered<Self> where Self: Send{
+	fn buffered(self, buffer_size: usize) -> Buffered<Self> where Self: Sized + Send{
 		Buffered::new(self, buffer_size)
 	}
 
-	fn zip<S: DataStream>(self, stream: S) -> Zip<Self, S> {
+	fn zip<S: DataStream>(self, stream: S) -> Zip<Self, S> where Self: Sized {
 		Zip::new(self, stream)
 	}
 
-	fn count<S: DataStream>(self) -> Count<Self> {
+	fn count<S: DataStream>(self) -> Count<Self> where Self: Sized {
 		Count::new(self)
 	}
 }
