@@ -75,4 +75,5 @@ macro_rules! shape(
 pub mod shape;
 pub mod graph;
 pub mod ops;
+pub mod opt;
 pub mod data;
