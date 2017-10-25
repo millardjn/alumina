@@ -22,6 +22,9 @@ use new::ops::*;
 use std::borrow::Borrow;
 use std::rc::Rc;
 use std::any::Any;
+use std::sync::Mutex;
+use std::fmt;
+use std::ops::DerefMut;
 
 error_chain!{
 	errors {
@@ -273,6 +276,33 @@ impl From<String> for OpTag{
 	}
 }
 
+/// Wrapper for initialiser closures that implements `Clone` and `Debug`
+#[derive(Clone)]
+struct Initialiser {
+	name: String,
+	func: Arc<Mutex<FnMut(&mut ArrayD<f32>)>>
+}
+
+impl Initialiser {
+	pub fn new<F: 'static + FnMut(&mut ArrayD<f32>)>(name: String, func: F) -> Self {
+		Initialiser {
+			name: name,
+			func: Arc::new(Mutex::new(func)),
+		}
+	}
+
+	pub fn call(&self, arr: &mut ArrayD<f32>) {
+		let mut guard = self.func.lock().expect(&format!("Could not unwrap initialiser: {:?}", self));
+		(guard.deref_mut())(arr);
+	}
+}
+
+impl fmt::Debug for Initialiser {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "Initialiser {{ name: {}, .. }}", self.name)
+	}
+}
+
 /// Used to construct the definition of the computational hypergraph.
 /// This cannot be executed, an executable `Graph` can be built using
 #[derive(Clone, Debug)]
@@ -292,6 +322,8 @@ pub struct GraphDef {
 	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
 
 	static_inputs: OrderMap<DataID, ArrayD<f32>>,
+
+	initialisers: OrderMap<NodeID, Initialiser>,
 }
 
 impl GraphDef {
@@ -312,6 +344,8 @@ impl GraphDef {
 			op_tags: OrderMap::new(),
 
 			static_inputs: OrderMap::new(),
+
+			initialisers: OrderMap::new(),
 		}
 	}
 
@@ -342,6 +376,27 @@ impl GraphDef {
 
 	pub fn clear_static_input(&mut self, id: DataID){
 		self.static_inputs.remove(&id);
+	}
+
+	pub fn set_initialiser<F: 'static + FnMut(&mut ArrayD<f32>)>(&mut self, node_id: &NodeID, name: String, func: F) {
+		self.initialisers.insert(node_id.clone(), Initialiser::new(name, func));
+	}
+
+	pub fn clear_initialiser(&mut self, node_id: &NodeID) {
+		self.initialisers.remove(node_id);
+	}
+
+	pub fn initialise_nodes(&self, nodes: &[NodeID]) -> Result<Vec<ArrayD<f32>>>{
+		let mut vec = Vec::with_capacity(nodes.len());
+		for node in nodes {
+			let shape = self.node_shapes[node.index].to_data_shape()?;
+			let mut arr = ArrayD::zeros(shape);
+			if let Some(init_func) = self.initialisers.get(node) {
+				init_func.call(&mut arr);
+			}
+			vec.push(arr);
+		}
+		Ok(vec)
 	}
 
 	/// Create a new node in the graph
