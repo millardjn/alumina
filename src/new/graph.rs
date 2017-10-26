@@ -357,14 +357,23 @@ impl GraphDef {
 		Subgraph::new(&self, inputs, outputs)
 	}
 
-	/// The default subgraph is a training subgraph.
+	/// The default subgraph is typicaly suitable for training.
+	///
 	/// All nodes with no input ops are taken to be subgraph inputs,
 	/// and all parameters values and parameter gradients are taken to be outputs.
 	/// The ordering of the inputs follows the order of node creation,
 	/// with the additional constraint that non-parameter nodes are strictly before parameter nodes.
+	///
 	/// See `subgraph()`.
-	pub fn default_subgraph() -> Result<Subgraph> {
-		unimplemented!()
+	pub fn default_subgraph(&self) -> Result<Subgraph> {
+		let dependencies = Dependencies::new(self);
+		let input_ids: Vec<NodeID> = self.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !self.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+		let parameter_ids: Vec<NodeID> = self.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && self.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+		
+		self.subgraph(
+			&input_ids.iter().chain(&parameter_ids).map(|node_id| node_id.value_id()).collect::<Vec<_>>(),
+			&parameter_ids.iter().map(|node_id| node_id.value_id()).chain(parameter_ids.iter().map(|node_id| node_id.gradient_id())).collect::<Vec<_>>()
+		)
 	}
 
 	/// Node values are initialised to be zero filled by default.

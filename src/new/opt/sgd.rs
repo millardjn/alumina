@@ -17,18 +17,12 @@ impl Sgd {
 
 	/// Create an optimisation problem assuming that all nodes marked `Parameter` should be optimised, and all other leaf nodes are batch inputs.
 	pub fn new(graph: &GraphDef) -> Result<Self> {
-		let dependencies = Dependencies::new(&graph);
-		let input_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
-		let parameter_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
-		
-		let subgraph = graph.subgraph(
-			&input_ids.iter().chain(&parameter_ids).map(|node_id| node_id.value_id()).collect::<Vec<_>>(),
-			&parameter_ids.iter().map(|node_id| node_id.value_id()).chain(parameter_ids.iter().map(|node_id| node_id.gradient_id())).collect::<Vec<_>>()
-		)?;
+
+		let subgraph = graph.default_subgraph()?;
 
 		Ok(Sgd {
-			inputs: input_ids.iter().map(|node_id| node_id.value_id()).collect::<Vec<_>>(),
-			parameters: parameter_ids,
+			inputs: subgraph.inputs().iter().filter(|data_id| !graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter)).cloned().collect(),
+			parameters: subgraph.inputs().iter().filter_map(|data_id| if graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter) {Some(data_id.node_id())} else {None}).collect(),
 			subgraph: subgraph,
 			callbacks: vec![],
 			rate: 1e-3,
