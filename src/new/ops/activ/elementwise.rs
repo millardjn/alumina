@@ -98,7 +98,7 @@ impl<F: ActivationFunc> Pass for ElementwiseForward<F> {
 
 		ensure!(
 			input.shape() == output.shape(),
-			ErrorKind::BackwardPassError(format!("'{}' input shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
 		);
 
 		let input = input.as_slice().unwrap();
@@ -159,7 +159,7 @@ impl<F: ActivationFunc> Pass for ElementwiseBackward<F> {
 		
 		ensure!(
 			input_grad.shape() == output_grad.shape(),
-			ErrorKind::BackwardPassError(format!("'{}' input shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input_grad.shape(), output_grad.shape()))
 		);
 
 		let output_grad = output_grad.as_slice().unwrap();

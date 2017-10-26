@@ -94,28 +94,31 @@ error_chain!{
 		}
 		/// Some `NodeShapes` could not be inferred
 		SubgraphInsufficientInputsForShapeInference(unavailable_nodes: Vec<String>){
-			display("The following node shapes were required, but could not be inferred from the inputs: {:?}", unavailable_nodes)
+			display("The following node shapes were required, but could not be inferred from the inputs: {:?}", &unavailable_nodes)
 		}
 		InputSizeError{}
 		StaticInputBroadcastFailure(id: NodeID, s1: Vec<Ix>, s2: Vec<Ix>){
 			display("Broadcast of initial value failed for node {:?} as shape {:?} could not be broadcast to shape: {:?}", id, s1, s2)
 		}
-		PassAttemptedToAccessDataNotListedAsInputOrOutput(pass_name: String, data_name: String){
+
+		/// Occurs when a pass immutably accesses data at a data_ID not listed as an input or output dependency
+		StorageImmutableBorrowError(pass_name: String, data_name: String){
 			display("Pass '{}' attemped to access '{}' but did not have it listed as an input or output dependency", pass_name, data_name)
 		}
-		PassAttemptedToMutablyAccessDataNotListedAsOutput(pass_name: String, data_name: String){
+
+		/// Occurs when a pass mutably accesses data at a data_ID not listed as an output dependency
+		StorageMutableBorrowError(pass_name: String, data_name: String){
 			display("Pass '{}' attemped to mutably access '{}' but did not have it listed as an output dependency", pass_name, data_name)
 		}
 
 		// Op Errors
-		ShapePropagationError(message: String){
-			display("{}", message)
+		ShapePropagationError(op_instance_name: String, message: String){
+			display("OpInstance: '{}' returned error message: {}", op_instance_name, message)
 		}
-		ForwardPassError(message: String){
-			display("{}", message)
-		}
-		BackwardPassError(message: String){
-			display("{}", message)
+
+		/// Generic error to be returned from the `run()` method of a `Pass`
+		PassError(pass_name: String, message: String){
+			display("Pass: '{}' returned error message: {}", pass_name,	message)
 		}
 	}
 
@@ -1476,8 +1479,10 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_
 	// for all op forward passes that are scheduled. call the relevant shape propagation
 	//let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
 	for op_id in op_order {
+		shapes.set_current_op(Some(op_id.clone()));
 		subgraph.graph.ops[op_id.index].propagate_shape_constraints(&mut shapes)?;
 	}
+	shapes.set_current_op(None);
 
 	shapes.shapes.iter_mut().map(|shape| {
 		shape.collapse_dimensions_to_minimum();
@@ -1492,15 +1497,31 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_
 /// Immediately prior to each graph execution, the propagation of shape constraints from inputs through the graph takes place.
 /// Each Op can read the shape of its inputs, and new constraints can be applied/merged with the shapes of its outputs.
 #[derive(Debug)]
-pub struct GraphShapes{
+pub struct GraphShapes<'a> {
 	shapes: Vec<NodeShape>,
+	subgraph: &'a Subgraph,
+	current_op_instance: Option<OpID>,
 }
 
-impl GraphShapes {
+impl<'a> GraphShapes<'a> {
 	fn new(subgraph: &Subgraph) -> GraphShapes {
 		GraphShapes{
 			shapes: subgraph.graph.node_shapes.clone(),
+			subgraph: subgraph,
+			current_op_instance: None,
 		}
+	}
+
+	pub fn graph(&self) -> &GraphDef {
+		&self.subgraph.graph
+	}
+
+	fn set_current_op(&mut self, op_id: Option<OpID>){
+		self.current_op_instance = op_id;
+	}
+
+	pub fn current_op_instance(&self) -> &Option<OpID>{
+		&self.current_op_instance
 	}
 
 	fn merge_input(&mut self, data_id: &DataID, shape: &[Ix]) -> Result<()>{
@@ -1563,7 +1584,7 @@ pub struct Storage<'a> {
 	borrow_flags: Vec<Cell<usize>>,
 	static_inputs: &'a OrderMap<DataID, ArrayD<f32>>,
 	dependencies: &'a Dependencies,
-	next_pass: Option<PassID>,
+	current_pass: Option<PassID>,
 	pass_data: Vec<Option<Box<Any>>>,
 	graph: &'a GraphDef,
 }
@@ -1602,13 +1623,12 @@ impl<'a> Storage<'a> {
 			borrow_flags: vec![Cell::new(UNUSED); num_data],
 			static_inputs,
 			dependencies,
-			next_pass: None,
+			current_pass: None,
 			pass_data: (0..num_passes).map(|_| None).collect(),
 			graph: graph,
 		}
 	}
 
-	/// Return the `OpInstance` associated with the `OpID`
 	pub fn graph(&self) -> &GraphDef {
 		self.graph
 	}
@@ -1624,11 +1644,11 @@ impl<'a> Storage<'a> {
 	/// If this value is not `None`, all subsequent accesses will be checked against the dependency list for the Pass.
 	/// This can be useful to ensure that passes dont access anything they havent listed as and input or output.
 	fn set_current_pass(&mut self, pass_id: Option<PassID>){
-		self.next_pass = pass_id;
+		self.current_pass = pass_id;
 	}
 
 	pub fn get_current_pass(&self) -> &Option<PassID>{
-		&self.next_pass
+		&self.current_pass
 	}
 
 	/// Deallocates the data specified by DataID.
@@ -1695,8 +1715,8 @@ impl<'a> Storage<'a> {
 	/// Will panic if data element is already mutably borrowed.
 	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewD<f32>> {
-		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToAccessDataNotListedAsInputOrOutput(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
+		if let Some(ref pass_id) = self.current_pass {
+			ensure!(self.dependencies.pass_inputs[pass_id.index].contains(data_id)||self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::StorageImmutableBorrowError(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
 		}
 
 		if self.borrow_flags[data_id.index].get() != WRITING {
@@ -1713,8 +1733,8 @@ impl<'a> Storage<'a> {
 	/// Will panic if data element is already mutably or immutably borrowed.
 	/// The borrow will stick until `clear_borrow_flags()` is called.
 	pub fn get_mut<'b>(&'b self, data_id: &DataID) -> Result<ArrayViewMutD<f32>> {
-		if let Some(ref pass_id) = self.next_pass {
-			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::PassAttemptedToMutablyAccessDataNotListedAsOutput(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
+		if let Some(ref pass_id) = self.current_pass {
+			ensure!(self.dependencies.pass_outputs[pass_id.index].contains(data_id), ErrorKind::StorageMutableBorrowError(self.graph.pass_name(pass_id), self.graph.data_name(data_id)));
 		}
 		match self.borrow_flags[data_id.index].get() {
 			UNUSED => {

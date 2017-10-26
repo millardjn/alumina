@@ -204,7 +204,11 @@ impl Pass for CrossEntropyJointPass {
 		let logits_val = data.get(&self.logits_id.value_id())?;
 		let labels_val = data.get(&self.labels_id.value_id())?;
 
-		ensure!(labels_val.shape() == logits_val.shape(), ErrorKind::ForwardPassError("TODO".to_string()));
+		ensure!(
+			labels_val.shape() == logits_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			);
+
 
 		let logits_val = logits_val.as_slice().unwrap();
 		let labels_val = labels_val.as_slice().unwrap();
@@ -292,7 +296,10 @@ impl Pass for CrossEntropyForward {
 		let labels_val = data.get(&self.labels_id.value_id())?;
 		let mut output_val = data.get_mut(&self.output_id.value_id())?;
 
-		ensure!(labels_val.shape() == logits_val.shape(), ErrorKind::ForwardPassError("TODO".to_string()));
+		ensure!(
+			labels_val.shape() == logits_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			);
 
 		let logits_val = logits_val.as_slice().unwrap();
 		let labels_val = labels_val.as_slice().unwrap();
@@ -348,7 +355,10 @@ impl Pass for CrossEntropyBackward {
 		let labels_val = data.get(&self.labels_id.value_id())?;
 		let output_grad = data.get(&self.output_id.gradient_id())?;
 
-		ensure!(labels_val.shape() == logits_val.shape(), ErrorKind::ForwardPassError("TODO".to_string()));
+		ensure!(
+			labels_val.shape() == logits_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			);
 
 		let logits_val = logits_val.as_slice().unwrap();
 		let labels_val = labels_val.as_slice().unwrap();

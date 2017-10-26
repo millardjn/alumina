@@ -118,12 +118,18 @@ impl Pass for MaePass {
 
 	fn run (&self, data: &Storage) -> Result<Box<Any>>{
 		let input1_val = data.get(&self.input1_id.value_id())?;
-		let input1_val = input1_val.as_slice().unwrap();
 		let input2_val = data.get(&self.input2_id.value_id())?;
+		
+		ensure!(
+			input2_val.shape() == input1_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+			);
+
 		let input2_val = input2_val.as_slice().unwrap();
+		let input1_val = input1_val.as_slice().unwrap();
 
 		let n = input1_val.len();
-		ensure!(input2_val.len() == n, ErrorKind::BackwardPassError(format!("")));
+		assert!(input2_val.len() == n);
 
 		let multiplier = self.multiplier/n as f32;
 		const SIMD: usize = 16;

@@ -132,15 +132,15 @@ impl Pass for MulForward {
 
 		ensure!(
 			input1.shape() == output.shape(),
-			ErrorKind::ForwardPassError(format!("'{}' input1 shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output.shape()))
 		);
 		ensure!(
 			input2.broadcast(input1.shape()).is_some(),
-			ErrorKind::ForwardPassError(format!("'{}' could not broadcast input2 to input1 shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
 		);
 		ensure!(
 			input2.broadcast(output.shape()).is_some(), 
-			ErrorKind::ForwardPassError(format!("'{}' could not broadcast input2 to output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output.shape()))
 		);
 
 		let iter = input1.exact_chunks(input2.shape()).into_iter()
@@ -188,15 +188,15 @@ impl Pass for MulBackward {
 		
 		ensure!(
 			input1.shape() == output_grad.shape(),
-			ErrorKind::BackwardPassError(format!("'{}' input1 shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output_grad.shape()))
 		);
 		ensure!(
 			input2.broadcast(input1.shape()).is_some(),
-			ErrorKind::BackwardPassError(format!("'{}' could not broadcast input2 to input1 shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
 		);
 		ensure!(
 			input2.broadcast(output_grad.shape()).is_some(), 
-			ErrorKind::BackwardPassError(format!("'{}' could not broadcast input2 to output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output_grad.shape()))
 		);
 
 

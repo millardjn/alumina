@@ -1,4 +1,4 @@
-use new::graph::{GraphDef, Subgraph, Dependencies, NodeTag, NodeID, DataID, Result};
+use new::graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
 use new::opt::{Opt, CallbackData, CallbackSignal};
 use ndarray::ArrayD;
 

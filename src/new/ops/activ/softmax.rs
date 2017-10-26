@@ -166,7 +166,7 @@ impl Pass for SoftMaxForward {
 
 		ensure!(
 			input.shape() == output.shape(),
-			ErrorKind::ForwardPassError(format!("'{}' input shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
 		);
 
 		let iter = input.exact_chunks(group_shape.as_slice()).into_iter()
@@ -219,7 +219,7 @@ impl Pass for SoftMaxBackward {
 
 		ensure!(
 			input.shape() == output_grad.shape(),
-			ErrorKind::ForwardPassError(format!("'{}' input shape did not match output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output_grad.shape()))
 		);
 
 

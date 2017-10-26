@@ -119,7 +119,7 @@ impl Pass for AddForward {
 		let input_broadcast = if let Some(view) = input.broadcast(output.shape()) {
 			view
 		} else {
-			bail!(ErrorKind::ForwardPassError(format!("'{}' could not broadcast input to output shape", self.instance_name(data.graph()))));
+			bail!(ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input.shape(), output.shape())));
 		};
 
 		output += &input_broadcast;
@@ -159,7 +159,7 @@ impl Pass for AddBackward {
 		
 		ensure!(
 			input_grad.broadcast(output_grad.shape()).is_some(), 
-			ErrorKind::BackwardPassError(format!("'{}' could not broadcast input to output shape", self.instance_name(data.graph())))
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input_grad.shape(), output_grad.shape()))
 		);
 
 		// TODO check that the match shapes before rather than panic

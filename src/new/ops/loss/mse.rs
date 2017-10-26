@@ -208,7 +208,10 @@ impl Pass for MseJointPass {
 		let input1_val = data.get(&self.input1_id.value_id())?;
 		let input2_val = data.get(&self.input2_id.value_id())?;
 
-		ensure!(input2_val.shape() == input1_val.shape(), ErrorKind::ForwardPassError("TODO".to_string()));
+		ensure!(
+			input2_val.shape() == input1_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+		);
 
 		let avg_denom: usize = input1_val.shape()[1..].iter().product();
 
@@ -373,8 +376,11 @@ impl Pass for MseForward {
 		let input2_val = data.get(&self.input2_id.value_id())?;
 		let mut output_val = data.get_mut(&self.output_id.value_id())?;
 
-		ensure!(input2_val.shape() == input1_val.shape(), ErrorKind::ForwardPassError("TODO".to_string()));
-		ensure!(output_val.len() == 1, ErrorKind::ForwardPassError("Mse Output must be scalar".to_string()));
+		ensure!(
+			input2_val.shape() == input1_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+		);
+		ensure!(output_val.len() == 1, ErrorKind::PassError(self.instance_name(data.graph()), "Mse Output must be scalar".to_string()));
 
 		let avg_denom: usize = input1_val.shape()[1..].iter().product();
 
@@ -468,8 +474,11 @@ impl Pass for MseBackward {
 		let input2_val = data.get(&self.input2_id.value_id())?;
 		let output_grad = data.get(&self.output_id.gradient_id())?;
 
-		ensure!(input2_val.shape() == input1_val.shape(), ErrorKind::BackwardPassError("TODO".to_string()));
-		ensure!(output_grad.len() == 1, ErrorKind::BackwardPassError("Mse Output must be scalar".to_string()));
+		ensure!(
+			input2_val.shape() == input1_val.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+			);
+		ensure!(output_grad.len() == 1, ErrorKind::PassError(self.instance_name(data.graph()), "Output must be scalar".to_string()));
 
 		let avg_denom: usize = input1_val.shape()[1..].iter().product();
 
