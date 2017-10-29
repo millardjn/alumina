@@ -148,7 +148,7 @@ pub trait Op: Any {
 /// The `OpInstance` trait is used to record each `Op` that has been added to a `GraphDef`.
 ///
 /// An OpInstance is produced when `build()` is called on an Op
-pub trait OpInstance: Any + OpClone + Debug{
+pub trait OpInstance: Any + OpClone + OpAny + Debug{
 
 	/// The name of this instance of the Op
 	fn instance_name(&self) -> &str;
@@ -162,10 +162,13 @@ pub trait OpInstance: Any + OpClone + Debug{
 	/// Returns the `Pass`s used directly to implement this Op
 	fn inner_passes(&self) -> Vec<PassID>;
 
-	/// Returns the Ops used to implement this Op, passes created by these ops are not returned by `inner_passes()`
+	/// Returns the Ops used to implement this Op.
+	///
+	/// Passes created by these ops are not returned by `inner_passes()`,
+	/// nodes created by these ops are not returned by `inner_nodes()`.
 	fn inner_ops(&self) -> Vec<OpID>;
 
-	/// Returns the Nodes used directly to implement this Op
+	/// Returns the Nodes created when this Op was built
 	fn inner_nodes(&self) -> Vec<NodeID>;
 
 	/// TODO
@@ -229,6 +232,16 @@ pub trait Pass: Any + PassClone + Debug {
 	fn run (&self, data: &Storage) -> Result<Box<Any>>;
 }
 
+
+pub trait OpAny {
+	fn as_any(&self) -> &Any;
+}
+
+impl<T> OpAny for T where T: 'static + OpInstance {
+	fn as_any (&self) -> &Any {
+		self
+	}
+}
 
 /// Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
 pub trait OpClone {
