@@ -1,4 +1,4 @@
-use new::graph::{GraphDef, NodeID, OpID, NodeTag, Result};
+use new::graph::{GraphDef, NodeID, OpID, PassID, GraphShapes, Result};
 use new::init::Initialiser;
 use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
 use new::shape::{NodeShape, NodeDim};
@@ -6,6 +6,7 @@ use new::ops::math::matmul::{MatMul, MatMulInstance};
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal};
 use ndarray::ArrayD;
+
 /// The Linear portion of a fully connected layer
 ///
 /// Creates an Op which implements the differentiable matrix multiplication component of typical neural nets.
@@ -100,7 +101,7 @@ impl Linear {
 }
 
 impl Op for Linear {
-	type InstanceType = MatMulInstance;
+	type InstanceType = LinearInstance;
 
 	fn type_name(&self) -> &'static str {
 		"Linear"
@@ -113,10 +114,10 @@ impl Op for Linear {
 
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
-		let name = if let Some(ref param) = self.parameter_id {
-			standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), param.clone()], &[self.output_id.clone()])
+		let (name, parameter_is_inner) = if let Some(ref param) = self.parameter_id {
+			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), param.clone()], &[self.output_id.clone()]), false)
 		} else {
-			standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()])
+			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]), true)
 		};
 
 		// the inner dimension of the matrix excludes the outermost dimension,
@@ -131,38 +132,91 @@ impl Op for Linear {
 			})
 		};
 
+		let mut n = self.n;
+		let mut k = self.k;
 
-
-		if let Some(param) = self.parameter_id {
+		let param = if let Some(param) = self.parameter_id {
 			// TODO check that dimensions of param works
-			if let Some(initialiser) = self.initialiser {
-				graph.set_initialiser(&param, initialiser.set_op_id(op_id.clone()));
-			}
-			let mut mat_mul = MatMul::new(&self.input_id, &param, &self.output_id).name(name);
-			if let Some(n) = self.n {mat_mul = mat_mul.n(n)}
-			if let Some(k) = self.k {mat_mul = mat_mul.k(k)}
-			mat_mul.build(graph, op_id)
+			param
 		} else {
-			let n = if let Some(n) = self.n {n} else {get_inner(graph.node_shape(&self.output_id)?)};
-			let k = if let Some(k) = self.k {k} else {get_inner(graph.node_shape(&self.input_id)?)};
+			if n.is_none() {n = Some(get_inner(graph.node_shape(&self.output_id)?));}
+			if k.is_none() {k = Some(get_inner(graph.node_shape(&self.input_id)?));}
+
 			let param_name = standard_inner_parameter_name(&name, graph);
-			let param = graph.new_node(shape![k, n], param_name, tag![NodeTag::Parameter])?;
-			if let Some(initialiser) = self.initialiser {
-				graph.set_initialiser(&param, initialiser.set_op_id(op_id.clone()));
-			}
-			MatMul::new(&self.input_id, &param, &self.output_id).n(n).k(k).name(name).build(graph, op_id)
+			graph.new_node(shape![k.unwrap(), n.unwrap()], param_name, tag![Parameter])?
+		};
+
+		if let Some(initialiser) = self.initialiser {
+			graph.set_initialiser(&param, initialiser.set_op_id(op_id.clone()));
+		}
+
+		let mut mat_mul = MatMul::new(&self.input_id.clone(), &param, &self.output_id.clone());
+		if let Some(n) = self.n {mat_mul = mat_mul.n(n)}
+		if let Some(k) = self.k {mat_mul = mat_mul.k(k)}
+		let matmul_id = graph.new_op(mat_mul, tag![])?;
+
+
+		Ok(LinearInstance{
+			name: name,
+			input_id: self.input_id,
+			output_id: self.output_id,
+			parameter_id: param,
+			parameter_is_inner: parameter_is_inner,
+			matmul_id: matmul_id,
+		})
+	}
+}
+
+
+/// Linear Op
+#[derive(Clone, Debug)] 
+pub struct LinearInstance{
+	name: String,
+	input_id: NodeID,
+	output_id: NodeID,
+	parameter_id: NodeID,
+	parameter_is_inner: bool,
+	matmul_id: OpID,
+}
+
+impl OpInstance for LinearInstance {
+
+	fn instance_name(&self) -> &str{&self.name}
+
+	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
+		(
+			if self.parameter_is_inner {
+				vec![self.input_id.clone()]
+			} else {
+				vec![self.input_id.clone(), self.parameter_id.clone()]
+			},
+			vec![self.output_id.clone()]
+		)
+	}
+
+	fn inner_passes(&self) -> Vec<PassID>{vec![]}
+
+	fn inner_ops(&self) -> Vec<OpID>{vec![self.matmul_id.clone()]}
+
+	fn inner_nodes(&self) -> Vec<NodeID>{
+		if self.parameter_is_inner {
+			vec![self.parameter_id.clone()]
+		} else {
+			vec![]
 		}
 	}
+
+	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
 }
 
 
 
 #[test]
-fn test_linear_init(){
-	_linear_init().unwrap();
+fn test_linear_init_backprop(){
+	_linear_init_backprop().unwrap();
 }
 
-fn _linear_init() -> Result<()>{
+fn _linear_init_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use new::ops::loss::mse::Mse;
@@ -177,14 +231,18 @@ fn _linear_init() -> Result<()>{
 	let o1 = g.new_op(Linear::new(&node1, &node2).init(Linear::msra(2.0)), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
-	let init_values = g.initialise_nodes(&g.op(o1)?.inner_nodes());
+	let init_values = g.initialise_nodes(&g.op(o1)?.inner_nodes())?;
 
-	// let iters = 100;
-	// let failures = 1;
-	// let tolerance = 0.001;
-	// let step_size = 1E-2;
-	// let default_variance = 1.0;
-	// numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	assert_eq!(init_values.len(), 1);
+	assert_ne!(init_values[0].scalar_sum(), 0.0);
+
+
+	let iters = 100;
+	let failures = 1;
+	let tolerance = 0.001;
+	let step_size = 1E-2;
+	let default_variance = 1.0;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
 
 	Ok(())
 }
