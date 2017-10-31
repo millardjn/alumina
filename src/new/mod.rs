@@ -1,39 +1,63 @@
 //#![deny(missing_docs)]
 
-/// tag constructor for nodes and operations
+/// NodeTag / OpTag constructor for nodes and operations
+///
+/// Returns a value of the type `Vec<NodeTag>` or `Vec<OpTag>`, relying on inference from surrounding code.
+///
+/// Three or four types of values can be entered as a list into the macro,
+/// with the following conversions taking place:
+///
+///     Parameter values:     Parameter  => NodeTag::Parameter
+///     usize values:         5          => NodeTag::Int(5)
+///     str|String values:    "input"    => NodeTag::Str("input".to_string())
+///     NodeID values         id_binding => NodeTag::Id(id_binding)
+///
+/// All of these conversions are also possible for `OpTag` with the exception of Parameter values
+///
+/// #Example
+/// ```
+/// #[macro_use]
+/// extern crate alumina;
+/// use alumina::new::graph::NodeTag;
+///
+/// fn main() {
+///		let s1: Vec<NodeTag> = tag![Parameter, 5, "input"];
+///		let s2: Vec<NodeTag> = vec![NodeTag::Parameter, NodeTag::Int(5), NodeTag::Str("input".to_string())];
+///		assert_eq!(s1, s2);
+/// }
+/// ```
 #[macro_export]
 macro_rules! tag(
-
-    (@parse Parameter) => {
-        $crate::new::graph::NodeTag::Parameter
-    };
-    
     (@parse $v:expr) => {
         ($v).into()
     };
-    
-    ( $( $x:expr ),* ) => {
-        vec![
-            $(
-                tag!(@parse $x),
-            )*
-        ]
+
+    ( $($x:expr),* ) => {
+        {
+			#[allow(unused_imports)]
+			use $crate::new::graph::NodeTag::Parameter;
+			vec![
+				$(
+					tag![@parse $x],
+				)*
+			]
+		}
     };
-    
 );
+
 
 /// NodeShape constructor.
 ///
-/// Returns a value of the type `&[NodeDim]`
+/// Returns a value of the type `NodeShape`
 ///
-/// Three types of vales can be entered as a list into the macro,
+/// Three types of values can be entered as a list into the macro,
 /// with the following conversions taking place:
-/// Unknown values:   Unknown => NodeDim::Unknown
-/// usize values:     5       => NodeDim::Known(5)
-/// usize tuples:     (4, 7)  => NodeDim::Interval{lower:4, upper:7}
 ///
-/// note: 
+///     Unknown values:   Unknown => NodeDim::Unknown
+///     usize values:     5       => NodeDim::Known(5)
+///     usize tuples:     (4, 7)  => NodeDim::Interval{lower:4, upper:7}
 ///
+/// #Example
 /// ```
 /// #[macro_use]
 /// extern crate alumina;
@@ -48,29 +72,26 @@ macro_rules! tag(
 #[macro_export]
 macro_rules! shape(
 
-	(@parse Unknown) => {
-		$crate::new::shape::NodeDim::Unknown
+	(@parse $x:expr) => {
+		($x).into()
 	};
-	
-	(@parse ($l:expr, $u:expr)) => {
-		$crate::new::shape::NodeDim::Interval{lower: $l, upper: $u}
+
+	[ $($x:expr),+ ] => {
+		{
+			#[allow(unused_imports)]
+			use $crate::new::shape::NodeDim::Unknown;
+			let slice: &[$crate::new::shape::NodeDim] = &[
+				$(
+					shape![@parse $x],
+				)*
+			];
+			$crate::new::shape::NodeShape::from(slice)
+		}
 	};
-	
-	(@parse $v:expr) => {
-		$crate::new::shape::NodeDim::Known($v)
-	};
-	
-	
-	( $( $x:tt ),* ) => {
-		{let slice: &[$crate::new::shape::NodeDim] = &[
-			$(
-				shape!(@parse $x),
-			)*
-		];
-		$crate::new::shape::NodeShape::from(slice)}
-	};
-	
+
 );
+
+
 
 pub mod shape;
 pub mod graph;
