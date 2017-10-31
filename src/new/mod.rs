@@ -7,10 +7,12 @@
 /// Three or four types of values can be entered as a list into the macro,
 /// with the following conversions taking place:
 ///
-///     Parameter values:     Parameter  => NodeTag::Parameter
-///     usize values:         5          => NodeTag::Int(5)
-///     str|String values:    "input"    => NodeTag::Str("input".to_string())
-///     NodeID values         id_binding => NodeTag::Id(id_binding)
+/// | Value | | Output |
+/// |---|---|---|
+/// | Parameter  | => | NodeTag::Parameter`                |
+/// | 5          | => | NodeTag::Int(5)`                   |
+/// | "input"    | => | NodeTag::Str("input".to_string())` |
+/// | id_binding | => | NodeTag::Id(id_binding)`           |
 ///
 /// All of these conversions are also possible for `OpTag` with the exception of Parameter values
 ///
@@ -53,9 +55,11 @@ macro_rules! tag(
 /// Three types of values can be entered as a list into the macro,
 /// with the following conversions taking place:
 ///
-///     Unknown values:   Unknown => NodeDim::Unknown
-///     usize values:     5       => NodeDim::Known(5)
-///     usize tuples:     (4, 7)  => NodeDim::Interval{lower:4, upper:7}
+/// | Value | | Output |
+/// |---|---|---|
+/// | Unknown | => | NodeDim::Unknown` |
+/// | 5       | => | NodeDim::Known(5)` |
+/// | (4, 7)  | => | NodeDim::Interval{lower:4, upper:7}` |
 ///
 /// #Example
 /// ```
