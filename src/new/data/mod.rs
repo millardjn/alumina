@@ -548,7 +548,9 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 			self.next_i = 0;
 		}
 
-		self.set.get(self.order[self.next_i])
+		let val = self.set.get(self.order[self.next_i]);
+		self.next_i += 1;
+		val
 	}
 }
 
