@@ -13,23 +13,23 @@ enum Grouping {
 	Mask(Vec<bool>)
 }
 
-/// SoftMax Activation Op
+/// Softmax Activation Op
 ///
-/// The softmax operation squeezes all activations into the (0,1) range, and ensures that all activations in a group will sum to one.
-/// By default all dimensions from the inner most outward until the first non-`Known` dimension will be grouped, and the softmax operation repeated over the remaining dimensions.
+/// The Softmax operation squeezes all activations into the (0,1) range, and ensures that all activations in a group will sum to one.
+/// By default all dimensions from the inner most outward until the first non-`Known` dimension will be grouped, and the Softmax operation repeated over the remaining dimensions.
 /// 
 /// This can be overridden using `inner()`, `outer()`, or most generally `mask()`.
 #[derive(Clone, Debug)]
-pub struct SoftMax {
+pub struct Softmax {
 	input_id: NodeID,
 	output_id: NodeID,
 	grouping: Grouping,
 	name: Option<String>,
 }
 
-impl SoftMax {
+impl Softmax {
 	pub fn new(input: &NodeID, output: &NodeID) -> Self {
-		SoftMax {
+		Softmax {
 			input_id: input.clone(),
 			output_id: output.clone(),
 			grouping: Grouping::Auto,
@@ -37,30 +37,30 @@ impl SoftMax {
 		}
 	}
 
-	/// The inner most `n` dims will be grouped for the softmax operation
+	/// The inner most `n` dims will be grouped for the Softmax operation
 	pub fn inner(mut self, n: usize) -> Self {
 		self.grouping = Grouping::Inner(n);
 		self
 	}
 
-	/// The outer most `n` dims will be grouped for the softmax operation
+	/// The outer most `n` dims will be grouped for the Softmax operation
 	pub fn outer(mut self, n: usize) -> Self {
 		self.grouping = Grouping::Outer(n);
 		self
 	}
 
-	/// The dimensions where mask is set to `true` will be grouped for the softmax operation
+	/// The dimensions where mask is set to `true` will be grouped for the Softmax operation
 	pub fn mask(mut self, mask: &[bool]) -> Self {
 		self.grouping = Grouping::Mask(mask.to_vec());
 		self
 	}
 }
 
-impl Op for SoftMax {
-	type InstanceType = SoftMaxInstance;
+impl Op for Softmax {
+	type InstanceType = SoftmaxInstance;
 
 	fn type_name(&self) -> &'static str {
-		"SoftMax"
+		"Softmax"
 	}
 
 	fn name<T: Into<String>>(mut self, name: T) -> Self{
@@ -84,16 +84,16 @@ impl Op for SoftMax {
 		};
 
 
-		Ok(SoftMaxInstance{
+		Ok(SoftmaxInstance{
 			name: name,
 			input_id: self.input_id.clone(),
 			output_id: self.output_id.clone(),
 			mask: mask.clone(),
-			forward_id: graph.add_pass(SoftMaxForward::new(
+			forward_id: graph.add_pass(SoftmaxForward::new(
 				self.input_id.clone(),
 				self.output_id.clone(),
 				mask.clone())),
-			backward_id: graph.add_pass(SoftMaxBackward::new(
+			backward_id: graph.add_pass(SoftmaxBackward::new(
 				self.input_id.clone(),
 				self.output_id.clone(),
 				mask.clone())),
@@ -103,7 +103,7 @@ impl Op for SoftMax {
 
 
 #[derive(Clone, Debug)] 
-pub struct SoftMaxInstance {
+pub struct SoftmaxInstance {
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
@@ -112,7 +112,7 @@ pub struct SoftMaxInstance {
 	backward_id: PassID,
 }
 
-impl OpInstance for SoftMaxInstance {
+impl OpInstance for SoftmaxInstance {
 	
 	fn instance_name(&self) -> &str{&self.name}
 
@@ -132,15 +132,15 @@ impl OpInstance for SoftMaxInstance {
 
 
 #[derive(Clone, Debug)]
-struct SoftMaxForward {
+struct SoftmaxForward {
 	input_id: NodeID,
 	output_id: NodeID,
 	mask: Vec<bool>,
 }
 
-impl SoftMaxForward {
+impl SoftmaxForward {
 	pub fn new(input_id: NodeID, output_id: NodeID, mask: Vec<bool>) -> Self {
-		SoftMaxForward {
+		SoftmaxForward {
 			input_id,
 			output_id,
 			mask,
@@ -148,8 +148,8 @@ impl SoftMaxForward {
 	}
 }
 
-impl Pass for SoftMaxForward {
-	fn type_name(&self) -> &'static str {"SoftMaxForward"}
+impl Pass for SoftmaxForward {
+	fn type_name(&self) -> &'static str {"SoftmaxForward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(
@@ -184,15 +184,15 @@ impl Pass for SoftMaxForward {
 
 
 #[derive(Clone, Debug)]
-struct SoftMaxBackward {
+struct SoftmaxBackward {
 	input_id: NodeID,
 	output_id: NodeID,
 	mask: Vec<bool>,
 }
 
-impl SoftMaxBackward {
+impl SoftmaxBackward {
 	pub fn new(input_id: NodeID, output_id: NodeID, mask: Vec<bool>) -> Self {
-		SoftMaxBackward {
+		SoftmaxBackward {
 			input_id,
 			output_id,
 			mask,
@@ -200,8 +200,8 @@ impl SoftMaxBackward {
 	}
 }
 
-impl Pass for SoftMaxBackward {
-	fn type_name(&self) -> &'static str {"SoftMaxBackward"}
+impl Pass for SoftmaxBackward {
+	fn type_name(&self) -> &'static str {"SoftmaxBackward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
 		(
@@ -270,7 +270,7 @@ fn _softmax_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![5, 16], "target", tag![])?;
 
 
-	let _o1 = g.new_op(SoftMax::new(&node1, &node2), tag![])?;
+	let _o1 = g.new_op(Softmax::new(&node1, &node2), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
@@ -301,7 +301,7 @@ fn _softmax_mask_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![3, 16, 5], "target", tag![])?;
 
 
-	let _o1 = g.new_op(SoftMax::new(&node1, &node2).mask(&[true, false, true]), tag![])?;
+	let _o1 = g.new_op(Softmax::new(&node1, &node2).mask(&[true, false, true]), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
