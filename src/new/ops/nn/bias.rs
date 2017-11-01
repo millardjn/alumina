@@ -1,4 +1,5 @@
 use new::graph::{GraphDef, PassID, NodeID, OpID, GraphShapes, Result};
+use new::init::Initialiser;
 use new::ops::math::add::Add;
 use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
 use new::shape::{NodeShape};
@@ -8,6 +9,7 @@ pub struct Bias {
 	parameter_id: Option<NodeID>,
 	param_shape: Option<NodeShape>,
 	name: Option<String>,
+	initialiser: Option<Initialiser>,
 }
 
 impl Bias {
@@ -20,6 +22,7 @@ impl Bias {
 			parameter_id: None,
 			param_shape: None,
 			name: None,
+			initialiser: None,
 		}
 	}
 
@@ -39,6 +42,11 @@ impl Bias {
 		self.param_shape = shape;
 		self
 	}
+
+	pub fn init (mut self, initialiser: Initialiser) -> Self {
+		self.initialiser = Some(initialiser);
+		self
+	}
 }
 
 impl Op for Bias {
@@ -53,7 +61,7 @@ impl Op for Bias {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
 		let (name, parameter_is_inner) = if let Some(ref parameter_id) = self.parameter_id {
 			(standard_op_name(&self, &self.name, graph, &[parameter_id.clone()], &[self.output_id.clone()]), false)
@@ -72,6 +80,10 @@ impl Op for Bias {
 			let param_name = standard_inner_parameter_name(&name, graph);
 			graph.new_node(shape, param_name, tag![Parameter])?
 		};
+
+		if let Some(initialiser) = self.initialiser {
+			graph.set_initialiser(&parameter_id, initialiser.set_op_id(op_id.clone()));
+		}
 
 		let add_id = graph.new_op(Add::new(&parameter_id, &self.output_id.clone()), tag![])?;
 

@@ -239,7 +239,7 @@ impl<'a> From<&'a str> for NodeTag{
 
 impl From<String> for NodeTag{
 	fn from(i: String) -> NodeTag {
-		NodeTag::Str(i.to_string())
+		NodeTag::Str(i)
 	}
 }
 
