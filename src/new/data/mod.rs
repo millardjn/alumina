@@ -471,7 +471,7 @@ impl<S: DataSet> DataStream for Sequential<S> {
 
 pub struct Random<S: DataSet> {
 	set: S,
-	rng: Box<Rng>,
+	rng: Box<Rng + Send>,
 }
 
 impl<S: DataSet> Random<S> {
@@ -482,7 +482,7 @@ impl<S: DataSet> Random<S> {
 		}
 	}
 
-	pub fn rng<R: Rng + 'static>(mut self, rng: R) -> Self {
+	pub fn rng<R: Rng + 'static + Send>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}
@@ -508,7 +508,7 @@ impl<S: DataSet> DataStream for Random<S> {
 
 pub struct ShuffleRandom<S: DataSet> {
 	set: S,
-	rng: Box<Rng>,
+	rng: Box<Rng + Send>,
 	order: Vec<usize>,
 	next_i: usize,
 }
@@ -524,7 +524,7 @@ impl<S: DataSet> ShuffleRandom<S> {
 		}
 	}
 
-	pub fn rng<R: Rng + 'static>(mut self, rng: R) -> Self {
+	pub fn rng<R: Rng + 'static + Send>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}
