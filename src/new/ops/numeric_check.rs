@@ -141,6 +141,4 @@ pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, ov
 	
 	Ok((param_err, input_err))
 
-	// TODO A small step in a random direction should produce a change in error proportional to the projection onto the gradient.
-	// repeat for parameters and inputs	
 }

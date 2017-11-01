@@ -152,9 +152,6 @@ pub trait OpInstance: Any + OpClone + OpAny + Debug{
 
 	/// The name of this instance of the Op
 	fn instance_name(&self) -> &str;
-
-	// TODO consider whether non standard order ops may be useful
-	//fn requires_standard_order_inputs(&self) -> bool {true}
 	
 	/// Returns the (input, output) nodeIDs of the nodes use when creating this Op. This does not include nodes created by this Op which are returns in `inner_nodes()`.
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
@@ -206,10 +203,6 @@ pub trait Pass: Any + PassClone + Debug {
 		name_string.push_str(")");
 		name_string
 	}
-
-	// TODO consider mutable access so the graph con modify passes:
-	// this would force inputs and outputs to be stored sequentially for all ops. maybe a mut iter is better?
-	// fn dependencies_mut(&mut self) -> (&mut[DataID], &mut[DataID]);
 
 	/// Returns the DataIDs of the (inputs, outputs) of the pass
 	///

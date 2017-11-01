@@ -38,7 +38,6 @@ impl Op for Proportional {
 	}
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
-		// TODO check broadcast at graph define time?
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[]);
 
 		Ok(ProportionalInstance{
@@ -116,24 +115,6 @@ impl Pass for ProportionalBackward {
 		let mut error = 0.0;
 		let mut errs = [0.;SIMD];
 		
-		// type SIMD = U16;
-		// let mut errs = <GenericArray<f32, SIMD>>::default();
-		// let mut iv1 = <GenericArray<f32, SIMD>>::default();
-		// let mut iv2 = <GenericArray<f32, SIMD>>::default();
-		// let mut diff = <GenericArray<f32, SIMD>>::default();
-
-
-
-		
-
-		// SIMD::partial_unroll(n, |i, j|{
-		// 	unsafe{
-		// 		let diff = *odds::get_unchecked(input1_val, i) - *odds::get_unchecked(input2_val, i);
-		// 		errs[j] += diff*diff*multiplier;
-		// 		*odds::get_unchecked_mut(input1_grad, i) +=  2.0*diff*multiplier;
-		// 	}
-		// });
-
 		for i in 0..n/SIMD {
 			let input1_val = &input_val[i*SIMD..][..SIMD];
 			let input1_grad = &mut input_grad[i*SIMD..][..SIMD];

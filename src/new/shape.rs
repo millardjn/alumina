@@ -161,8 +161,7 @@ impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 			})
 			.collect();
 		if dimensions.len() == 0 {panic!("Node shape must have at least 1 dimension.")}
-		// TODO this may not be necessary or true:
-		//if let NodeDim::Known(_) = dimensions[dimensions.len() - 1] {} else {panic!("Final dimension in node shape (channels) must be of Known size")}
+
 		NodeShape{dimensions}
 	}
 }
@@ -179,14 +178,6 @@ impl NodeShape{
 	pub fn dimensions_mut(&mut self) -> &mut [NodeDim] {
 		&mut self.dimensions
 	}
-
-	// TODO consider removing
-	// pub fn channels(&self) -> usize {
-	// 	match self.dimensions[self.dimensions.len() - 1] {
-	// 		NodeDim::Known(dim) => dim,
-	// 		_ => unreachable!(),
-	// 	}
-	// }
 	
 	/// Should be called and only called by operations prior to propagating shape constraints
 	/// The NodeDim::Interval0 are collapsed to the lower bound, and any NodeDim::Unknown entries will be replaced with 0

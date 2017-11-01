@@ -68,7 +68,7 @@ error_chain!{
 		/// Could not find any nodes matching the tag supplied
 		ZeroNodesMatchTag(tag: NodeTag){
 			display("Could not find any nodes matching the tag supplied: {:?}", tag)
-		} // TODO include tag
+		}
 		/// Found more than one nodes matching the tag supplied, use the method for multiple NodeIDs.
 		MultipleNodesMatchTag(tag: NodeTag){
 			display("Found more than one nodes matching the tag supplied, use the method for multiple NodeIDs. {:?}", tag)
@@ -487,28 +487,17 @@ impl GraphDef {
 		pass_id
 	}
 
-	// fn new_layer(SimpleOpBuilder and output NodeShape){}
-	// fn new_simple_op<B: SimpleOpBuilder>(&mut self, mut builder: B, shape: NodeShape) -> (OpID, NodeID) {
-	// 	let name = unimplemented!();
-	// 	let node_id = self.new_node(builder.required_output_shape(), name, &[]);
-	// 	builder.set_output(&node_id);
-	// 	let op_id = self.new_op(builder);
-	// 	(op_id, node_id)
-	// }
-
-	
-
 	/// Create a node which acts as a subview of another node.
 	/// Contiguous views will be free from time and memory overhead, recording just a view.
 	/// Non-contigues views will incurr a memory and time overhead during runtime.
 	/// Returns NodeID of the new node.
-	pub fn new_read_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
-		unimplemented!()
-	}
+	// pub fn new_read_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
+	// 	unimplemented!()
+	// }
 
-	pub fn new_write_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
-		unimplemented!()
-	}
+	// pub fn new_write_view<I: Into<String>>(&mut self, _name: I, _shape: NodeShape, _tags: Vec<NodeTag>) -> Result<NodeID>{
+	// 	unimplemented!()
+	// }
 
 	pub fn nodes(&self) -> &[NodeID] {
 		&self.node_ids
@@ -1964,8 +1953,6 @@ fn _test_circular_detection() -> Result<()>{
 	// However the circular dependencies in the backward passes still exists
 	let sg_forward_backward = g.subgraph(&[node2.value_id()], &[node2.gradient_id()]);
 	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::GraphContainsCircularPasses(_), _))), "{:?}", sg_forward_backward);
-
-	// TODO check Graph ContainsCircularPass
 
 	Ok(())
 }

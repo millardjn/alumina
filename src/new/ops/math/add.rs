@@ -162,7 +162,6 @@ impl Pass for AddBackward {
 			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input_grad.shape(), output_grad.shape()))
 		);
 
-		// TODO check that the match shapes before rather than panic
 		for chunk in output_grad.exact_chunks(input_grad.shape()){
 			input_grad += &chunk;
 		}

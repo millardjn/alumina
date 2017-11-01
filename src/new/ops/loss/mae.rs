@@ -47,7 +47,7 @@ impl Op for Mae {
 	}
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
-		// TODO check broadcast at graph define time?
+
 		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[]);
 
 		Ok(MaeInstance{

@@ -73,7 +73,7 @@ impl Op for Mse {
 	}
 
 	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
-		// TODO check broadcast at graph define time?
+
 		let name =  if let Some(ref output_id) = self.output {
 			standard_op_name(&self, &self.name, graph, &[self.input1_id.clone(), self.input2_id.clone()], &[output_id.clone()])
 		} else {
