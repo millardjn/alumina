@@ -55,7 +55,7 @@ impl DataSet for Mnist {
 
 /// A `DataSet` created from a mnist binary format image file.
 ///
-/// Each element contains only one component, a typically [28, 28] array with values in the range (0,1)
+/// Each element contains only one component, a typically [28, 28, 1] array with values in the range (0,1)
 pub struct MnistImages {
 	shape: Vec<usize>,
 	data: Vec<Vec<u8>>,
@@ -110,7 +110,7 @@ fn read_image_file(mut file: File) -> (Vec<usize>, Vec<Vec<u8>>){
 		v1.push(v2);
 	}
 	
-	(vec![1, w, h], v1)
+	(vec![w, h, 1], v1)
 }
 
 /// A `DataSet` created from a mnist binary format label file.
