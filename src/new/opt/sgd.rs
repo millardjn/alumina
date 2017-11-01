@@ -119,12 +119,12 @@ impl Opt for Sgd {
 			for (i, grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
 				self.momentum_vec[i] *= momentum;
 				self.momentum_vec[i] += &grad;
-				params[i].scaled_add(self.rate, &self.momentum_vec[i]);
+				params[i].scaled_add(-self.rate, &self.momentum_vec[i]);
 			}
 
 		} else {
 			for (i, grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
-				params[i].scaled_add(self.rate, &grad);
+				params[i].scaled_add(-self.rate, &grad);
 			}
 		};
 
