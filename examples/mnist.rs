@@ -32,16 +32,23 @@ fn main(){
 	let mut training_set = MnistSupplier::<ShuffleRandom>::training(Path::new(MNIST_PATH));
 
 	let start_params = g.init_params();
-	let mut solver = opt::cain::Cain::new(&mut g)
-		.num_subbatches(8)
-		//.target_err(0.75)
-		.target_err(0.9)
-		.subbatch_increase_damping(0.15)
-		.subbatch_decrease_damping(0.15)
-		.aggression(0.75)
-		.momentum(0.9)
-		.initial_learning_rate(3e-3)
-		.finish();
+	// let mut solver = opt::cain::Cain::new(&mut g)
+	// 	.num_subbatches(8)
+	// 	//.target_err(0.75)
+	// 	.target_err(0.9)
+	// 	.subbatch_increase_damping(0.15)
+	// 	.subbatch_decrease_damping(0.15)
+	// 	.aggression(0.75)
+	// 	.momentum(0.9)
+	// 	.initial_learning_rate(3e-3)
+	// 	.finish();
+
+	let mut solver = opt::adam::Adam::new(&mut g)
+	.learning_rate(1e-3)
+	.beta1(0.9)
+	.beta2(0.999)
+	.batch_size(32)
+	.finish();
 
 	println!("Total num params: {}", start_params.len());
 

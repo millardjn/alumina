@@ -175,14 +175,14 @@ impl VecMath for [f32] {
 
 pub const SIMD_WIDTH: usize = 8;
 
-macro_rules! loop4 {
-    ($i:ident, $e:expr) => {{
-        let $i = 0; $e;
-        let $i = 1; $e;
-        let $i = 2; $e;
-        let $i = 3; $e;
-    }}
-}
+// macro_rules! loop4 {
+//     ($i:ident, $e:expr) => {{
+//         let $i = 0; $e;
+//         let $i = 1; $e;
+//         let $i = 2; $e;
+//         let $i = 3; $e;
+//     }}
+// }
 
 macro_rules! loop8 {
     ($i:ident, $e:expr) => {{

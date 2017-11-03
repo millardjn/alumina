@@ -1,4 +1,5 @@
 pub mod sgd;
+pub mod adam;
 pub mod cain;
 
 use graph::*;

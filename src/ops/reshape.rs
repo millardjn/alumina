@@ -457,7 +457,7 @@ impl Operation for Pooling {
 		assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
 		assert_eq!(input.shape.spatial_dimensions.len(), self.factors.len());
 
-		let scale = 1.0;///self.factors.iter().fold(1,|p, v| p* v) as f32;
+		let scale = 1.0;//self.factors.iter().fold(1,|p, v| p* v) as f32;
 
 		for n_ind in  0..input.shape.n{
 			let out_n = &mut output.values[n_ind*out_size..][..out_size];
@@ -484,7 +484,7 @@ impl Operation for Pooling {
 		assert_eq!(input.shape.spatial_dimensions.len(), output.shape.spatial_dimensions.len());
 		assert_eq!(input.shape.spatial_dimensions.len(), self.factors.len());
 
-		let scale = 1.0;///self.factors.iter().fold(1,|p, v| p* v) as f32;
+		let scale = 1.0;//self.factors.iter().fold(1,|p, v| p* v) as f32;
 
 		for n_ind in  0..input.shape.n{
 			let outd_n = &output.derivatives[n_ind*out_size..][..out_size];
