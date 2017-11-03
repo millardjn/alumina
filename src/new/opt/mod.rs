@@ -94,10 +94,12 @@ pub fn every_n_steps(n: usize, mut func: Box<FnMut(&CallbackData)->CallbackSigna
 	let mut step = 0;
 	Box::new(move |data|{
 		if step % n == 0 {
+			step += 1;
 			func(data)
 		} else {
 			step += 1;
 			CallbackSignal::Continue
 		}
+		
 	})
 }
