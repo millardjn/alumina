@@ -10,6 +10,7 @@ use std::sync::mpsc::{sync_channel, Receiver, TrySendError};
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::iter;
+use std::time::Duration;
 
 /// An indexable data set.
 /// To use tensorflow terminology a dataset is made up of elements(`Vec<ArrayD>>`s), each of which can contain multiple components (`ArrayD`s)
@@ -606,6 +607,7 @@ impl<S: DataStream + Send + 'static> Buffered<S> {
 					TrySendError::Full(val) => {prev = Some(val)}, // save the value and let the lock drop
 					TrySendError::Disconnected(_val) => {break;}, // let the thread die
 				}
+				thread::sleep(Duration::from_millis(10));
 			}
 		});
 
