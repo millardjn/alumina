@@ -10,12 +10,12 @@ use ndarray::ArrayD;
 /// The Linear portion of a fully connected layer
 ///
 /// Creates an Op which implements the differentiable matrix multiplication component of typical neural nets.
-/// Calculates C += A B, where B is a parameter matrix, A is the input node, and C is the output node.
+/// Calculates C += A B, where B is a weights matrix, A is the input node, and C is the output node.
 /// Does not include bias.
 pub struct Linear {
 	input_id: NodeID,
 	output_id: NodeID,
-	parameter_id: Option<NodeID>,
+	weights_id: Option<NodeID>,
 	k: Option<usize>,
 	n: Option<usize>,
 	name: Option<String>,
@@ -28,7 +28,7 @@ impl Linear {
 		Linear {
 			input_id: input.clone(),
 			output_id: output.clone(),
-			parameter_id: None,
+			weights_id: None,
 			k: None,
 			n: None,
 			name: None,
@@ -54,16 +54,18 @@ impl Linear {
 		self
 	}
 
-	/// Provide a node to replace the parameter matrix, B
+	/// Provide a node to replace the weights matrix, B
 	///
-	/// If setting parameter() and init(), ensure that k() is set.
-	/// Any value other than `None` prevents the automatic creation of a `Parameter` node.
+	/// If setting weights() and init(), ensure that k() is set.
+	/// If left as `None` a suitable `Parameter` node will be automatically created.
+	///
 	/// Default value: `None`
-	pub fn parameter(mut self, node_id: Option<&NodeID>) -> Self {
-		self.parameter_id = node_id.cloned();
+	pub fn weights(mut self, node_id: Option<&NodeID>) -> Self {
+		self.weights_id = node_id.cloned();
 		self
 	}
 
+	/// Provide an Initialiser for the weights node
 	pub fn init (mut self, initialiser: Initialiser) -> Self {
 		self.initialiser = Some(initialiser);
 		self
@@ -114,8 +116,8 @@ impl Op for Linear {
 
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
-		let (name, parameter_is_inner) = if let Some(ref param) = self.parameter_id {
-			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), param.clone()], &[self.output_id.clone()]), false)
+		let (name, weights_are_inner) = if let Some(ref weights) = self.weights_id {
+			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), weights.clone()], &[self.output_id.clone()]), false)
 		} else {
 			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]), true)
 		};
@@ -135,22 +137,22 @@ impl Op for Linear {
 		let mut n = self.n;
 		let mut k = self.k;
 
-		let param = if let Some(param) = self.parameter_id {
+		let weights = if let Some(weights) = self.weights_id {
 			// TODO check that dimensions of param works
-			param
+			weights
 		} else {
 			if n.is_none() {n = Some(get_inner(graph.node_shape(&self.output_id)?));}
 			if k.is_none() {k = Some(get_inner(graph.node_shape(&self.input_id)?));}
 
-			let param_name = standard_inner_parameter_name(&name, graph);
-			graph.new_node(shape![k.unwrap(), n.unwrap()], param_name, tag![Parameter])?
+			let weights_name = standard_inner_parameter_name(&name, graph);
+			graph.new_node(shape![k.unwrap(), n.unwrap()], weights_name, tag![Parameter])?
 		};
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&param, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&weights, initialiser.set_op_id(op_id.clone()));
 		}
 
-		let mut mat_mul = MatMul::new(&self.input_id.clone(), &param, &self.output_id.clone());
+		let mut mat_mul = MatMul::new(&self.input_id.clone(), &weights, &self.output_id.clone());
 		if let Some(n) = self.n {mat_mul = mat_mul.n(n)}
 		if let Some(k) = self.k {mat_mul = mat_mul.k(k)}
 		let matmul_id = graph.new_op(mat_mul, tag![])?;
@@ -160,8 +162,8 @@ impl Op for Linear {
 			name: name,
 			input_id: self.input_id,
 			output_id: self.output_id,
-			parameter_id: param,
-			parameter_is_inner: parameter_is_inner,
+			weights_id: weights,
+			weights_are_inner: weights_are_inner,
 			matmul_id: matmul_id,
 		})
 	}
@@ -174,8 +176,8 @@ pub struct LinearInstance{
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
-	parameter_id: NodeID,
-	parameter_is_inner: bool,
+	weights_id: NodeID,
+	weights_are_inner: bool,
 	matmul_id: OpID,
 }
 
@@ -185,10 +187,10 @@ impl OpInstance for LinearInstance {
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
-			if self.parameter_is_inner {
+			if self.weights_are_inner {
 				vec![self.input_id.clone()]
 			} else {
-				vec![self.input_id.clone(), self.parameter_id.clone()]
+				vec![self.input_id.clone(), self.weights_id.clone()]
 			},
 			vec![self.output_id.clone()]
 		)
@@ -199,8 +201,8 @@ impl OpInstance for LinearInstance {
 	fn inner_ops(&self) -> Vec<OpID>{vec![self.matmul_id.clone()]}
 
 	fn inner_nodes(&self) -> Vec<NodeID>{
-		if self.parameter_is_inner {
-			vec![self.parameter_id.clone()]
+		if self.weights_are_inner {
+			vec![self.weights_id.clone()]
 		} else {
 			vec![]
 		}
@@ -228,7 +230,7 @@ fn _linear_init_backprop() -> Result<()>{
 	let node2 = g.new_node(shape![7, 16], "output", tag![])?;
 	let node3 = g.new_node(shape![7, 16], "target", tag![])?;
 
-	let o1 = g.new_op(Linear::new(&node1, &node2).init(Linear::msra(2.0)), tag![])?;
+	let o1 = g.new_op(Linear::new(&node1, &node2).init(Linear::msra(2.0)).k(5), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let init_values = g.initialise_nodes(&g.op(o1)?.inner_nodes())?;
