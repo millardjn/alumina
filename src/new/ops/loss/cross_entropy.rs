@@ -416,17 +416,20 @@ fn _cross_entropy_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
+	use new::ops::activ::logistic::Logistic;
 
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
-	let node2 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
+	let node2 = g.new_node(shape![7, 5, 16], "logistic", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
 
-	let _o1 = g.new_op(CrossEntropy::new(&node1, &node2), tag![])?;
+	let _o1 = g.new_op(Logistic::new(&node1, &node2), tag![])?;
+	let _o2 = g.new_op(CrossEntropy::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
-	let failures = 1;
-	let tolerance = 0.001;
+	let failures = 2;
+	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
 	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
@@ -443,17 +446,20 @@ fn _cross_entropy_separate_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
+	use new::ops::activ::logistic::Logistic;
 
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
-	let node2 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
+	let node2 = g.new_node(shape![7, 5, 16], "logistic", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
 
-	let _o1 = g.new_op(CrossEntropy::new(&node1, &node2).separate_loss(true), tag![])?;
+	let _o1 = g.new_op(Logistic::new(&node1, &node2), tag![])?;
+	let _o2 = g.new_op(CrossEntropy::new(&node2, &node3).separate_loss(true), tag![])?;
 
 	let iters = 100;
-	let failures = 1;
-	let tolerance = 0.001;
+	let failures = 2;
+	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
 	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
