@@ -73,8 +73,8 @@ pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &Graph
 		let (param_err, input_err) = numeric_error(graph, step_size, default_variance, override_distributions)?;
 		param_errs.push(param_err);
 		input_errs.push(input_err);
-		if param_err > tolerance {param_count += 1};
-		if input_err > tolerance {input_count += 1};
+		if param_err > tolerance || param_err.is_nan() {param_count += 1};
+		if input_err > tolerance || input_err.is_nan() {input_count += 1};
 	}
 
 	assert!(param_count <= failures, "param error failures: {} \n values:{:?}", param_count, param_errs);
