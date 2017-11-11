@@ -13,6 +13,8 @@ use odds;
 use num_cpus;
 use matrixmultiply;
 use new::init::Initialiser;
+use rand::{thread_rng, Isaac64Rng, Rng};
+use rand::distributions::{Sample, Normal};
 
 /// Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -70,7 +72,7 @@ impl Conv {
 		}
 	}
 
-	///
+	/// Padding determines the shape of the output with respect to the input
 	///
 	/// Default: `Padding::Same`
 	pub fn padding(mut self, padding: Padding) -> Self {
@@ -94,6 +96,31 @@ impl Conv {
 		self
 	}
 
+
+	/// MSRA/He initialisation
+	///
+	/// This initialises the parameter filter with gaussian values drawn from N(0, multiplier/K).
+	/// Where K is the number of incoming neurons to each outgoing neuron.
+	/// For typical use, the variance multiplier should cancel out the variance modifying
+	/// effect of the nonlinearity, e.g. use 2.0 with ReLU, and 1.0 with Tanh.
+	pub fn msra(multiplier: f32) -> Initialiser {
+		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+			let k = arr.len()/arr.shape()[arr.ndim()-1];
+
+			let mut rng = thread_rng().gen::<Isaac64Rng>();
+			let mut norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
+			for e in arr.iter_mut() {
+				*e = norm.sample(&mut rng) as f32;
+			}
+		})
+	}
+
+	/// Xavier initialisation
+	///
+	/// This is just msra with a multiplier of 1.0
+	pub fn xavier() -> Initialiser {
+		Conv::msra(1.0)
+	}
 }
 
 
