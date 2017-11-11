@@ -475,7 +475,7 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 			let new_axis = axis-1;
 			let new_output_ind = output_ind - ox*o_stride;
 			let new_ox = new_output_ind/ *odds::get_unchecked(output_strides, new_axis);//output_strides[new_axis];
-			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(input_shape, new_axis) as isize)/2;
+			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(output_shape, new_axis) as isize)/2;
 			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
 
 			unsafe_pack_patch_recurse(new_patch, new_input, channels, axis - 1, new_output_ind, new_ox, new_ix,
