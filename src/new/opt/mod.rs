@@ -51,7 +51,7 @@ pub trait Opt {
 
 			let data = CallbackData{err: err, params: &params, stream: training_stream};
 			for func in self.callbacks().iter_mut(){
-				stop = matches!(func(&data), CallbackSignal::Stop);
+				stop = stop | matches!(func(&data), CallbackSignal::Stop);
 			}
 		}
 		Ok(params)
@@ -100,6 +100,5 @@ pub fn every_n_steps(n: usize, mut func: Box<FnMut(&CallbackData)->CallbackSigna
 			step += 1;
 			CallbackSignal::Continue
 		}
-		
 	})
 }
