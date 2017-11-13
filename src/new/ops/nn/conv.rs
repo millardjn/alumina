@@ -15,6 +15,7 @@ use matrixmultiply;
 use new::init::Initialiser;
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal};
+use smallvec::SmallVec;
 
 /// Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -415,10 +416,8 @@ impl Pass for ConvForward {
 				let n = batch_spaxels;
 				let k = patch_size;
 				debug_assert_eq!(filter.len(), k*m);
-				debug_assert_eq!(patches.len(), n*k);
+				debug_assert!(patches.len() >= n*k);
 				debug_assert_eq!(out_batch.len(), n*m);
-				debug_assert!(!patches.iter().cloned().any(f32::is_nan), "{:?}", patches);
-				debug_assert!(!filter.iter().cloned().any(f32::is_nan), "{:?}", filter);
 				unsafe{
 					matrixmultiply::sgemm(m, k, n,
 						1.0,
@@ -427,7 +426,6 @@ impl Pass for ConvForward {
 						1.0,
 						out_batch.as_mut_ptr(), 1, m as isize); // C output values column major
 				}
-				debug_assert!(!out_batch.iter().cloned().any(f32::is_nan));
 				spare_patches_opt = Some(patches);
 			}
 		});
@@ -582,7 +580,7 @@ impl Pass for ConvBackward {
 					let k1 = patch_size;
 					let ind_b = &mut input_grad_slice[spaxel_ind*input_channels..][..batch_spaxels*input_channels];
 					debug_assert_eq!(inverted_filter_slice.len(), k1*m1);
-					debug_assert_eq!(patches.len(), n1*k1);
+					debug_assert!(patches.len() >= n1*k1);
 					debug_assert_eq!(ind_b.len(), n1*m1);
 					unsafe{
 						// input derivatives
@@ -602,7 +600,7 @@ impl Pass for ConvBackward {
 					let n2 = patch_size;
 					let k2 = batch_spaxels;
 					debug_assert_eq!(in_b.len(), k2*m2);
-					debug_assert_eq!(patches.len(), n2*k2);
+					debug_assert!(patches.len() >= n2*k2);
 					debug_assert_eq!(inverted_filter_grad_slice.len(), n2*m2);
 					unsafe{
 						matrixmultiply::sgemm(m2, k2, n2,
@@ -706,12 +704,12 @@ fn pack_patch_recurse(patch: &mut [f32], input: &[f32], patch_shape:&[usize], n_
 // }
 
 /// returns a vector with the array stride of each dimension. output[n] == channel.
-fn stride_vec2(channels: usize, shape: &[usize]) -> Vec<usize>{
+fn stride_vec2(channels: usize, shape: &[usize]) -> SmallVec<[usize;6]>{
 	let mut strides = iter::once(&channels).chain(shape.iter().rev()).scan(1, |state, &i| {
 		let res = Some(*state);
 		*state *= i;
 		res
-	}).collect::<Vec<usize>>();
+	}).collect::<SmallVec<[usize;6]>>();
 	strides.reverse();
 	strides
 }
