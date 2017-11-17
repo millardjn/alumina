@@ -116,7 +116,7 @@ impl Op for MatMul {
 				self.K,
 				self.alpha,
 			)),
-			backward1_id: graph.add_pass(MatMulPass::new( // B' += At C
+			backward1_id: graph.add_pass(MatMulPass::new( // B' += At C'
 				self.A_id.value_id(),
 				self.C_id.gradient_id(),
 				self.B_id.gradient_id(),
