@@ -560,7 +560,7 @@ fn _linterp_backprop1() -> Result<()> {
 	let mut g = GraphDef::new();
 	
 	let node1 = g.new_node(shape![2, 4, 3, 5], "input", tag![])?;
-	let node2 = g.new_node(shape![2, 8, 6, 5], "conv", tag![])?;
+	let node2 = g.new_node(shape![2, 8, 6, 5], "linterp", tag![])?;
 	let node3 = g.new_node(shape![2, 8, 6, 5], "target", tag![])?;
 		
 	let _o1 = g.new_op(Linterp::new(&node1, &node2, &[1, 2, 2, 1]), tag![])?;
