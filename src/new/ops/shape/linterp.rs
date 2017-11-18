@@ -154,7 +154,7 @@ impl Pass for LinterpForward {
 		let factors_spatial = &self.factors[self.central_range.clone()];
 		
 		ensure!(input_shape.len() == output_shape.len(), "Input ndims does not match output ndims");
-		ensure!(input_shape.len() == self.factors.len(), "pooling factors must be the same length as input dimensions");
+		ensure!(input_shape.len() == self.factors.len(), "Expansion factors must be the same length as input dimensions");
 		ensure!(input_shape.iter().zip(&output_shape).map(|(i, o)| (o + i - 1)/i).eq(self.factors.iter().cloned()), "input shape and factors incompatible with output shape");
 
 		let input = input.as_slice().unwrap();
@@ -255,7 +255,7 @@ impl Pass for LinterpBackward {
 		let factors_spatial = &self.factors[self.central_range.clone()];
 		
 		ensure!(input_shape.len() == output_shape.len(), "Input ndims does not match output ndims");
-		ensure!(input_shape.len() == self.factors.len(), "pooling factors must be the same length as input dimensions");
+		ensure!(input_shape.len() == self.factors.len(), "Expansion factors must be the same length as input dimensions");
 		ensure!(input_shape.iter().zip(output_shape).map(|(i, o)| (o + i - 1)/i).eq(self.factors.iter().cloned()), "input shape and factors incompatible with output shape");
 
 		let input_grad = input_grad.as_slice_mut().unwrap();
@@ -551,7 +551,7 @@ fn linterp_backprop1(){
 	_linterp_backprop1().unwrap();
 }
 
-fn _linterp_backprop1() -> Result<()>{
+fn _linterp_backprop1() -> Result<()> {
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use new::ops::loss::mse::Mse;
