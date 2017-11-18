@@ -223,6 +223,7 @@ impl Pass for AvgPoolBackward {
 		let n = output_shape[..outer_dims].iter().product();
 		let ind_stride = output_grad.len()/n;
 
+		// TODO consider lifting outer unit factor dimensions into an outer loop like in linterp
 		for i in 0..n {
 			let output_ind = i * ind_stride;
 			let ox = output_ind/output_strides[axis];
