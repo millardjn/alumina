@@ -61,7 +61,6 @@ fn _exp_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use new::ops::loss::mse::Mse;
-	use new::ops::math::square::Square;
 	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
