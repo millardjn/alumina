@@ -887,6 +887,7 @@ fn flip_transpose_kernel_overwrite(kernel: &[f32], in_channels: usize, out_chann
 
 /// takes row major, outputs col major
 #[cfg(test)]
+#[allow(unused)]
 fn col_flip_transpose_kernel_overwrite(kernel: &[f32], in_channels: usize, out_channels: usize, out: &mut [f32]){
 	debug_assert_eq!(kernel.len(), out.len());
 	debug_assert_eq!(kernel.len()%(in_channels * out_channels), 0);
@@ -910,6 +911,7 @@ fn col_flip_transpose_kernel_overwrite(kernel: &[f32], in_channels: usize, out_c
 }
 
 #[cfg(test)]
+#[allow(unused)]
 fn rev_col_flip_transpose_kernel_overwrite(kernel: &[f32], in_channels: usize, out_channels: usize, out: &mut [f32]){
 	debug_assert_eq!(kernel.len(), out.len());
 	debug_assert_eq!(kernel.len()%(in_channels * out_channels), 0);
@@ -1046,7 +1048,7 @@ fn test_pack(){
 	let output_spaxel_count = output_spatial.iter().fold(1, |p, v| p*v);
 	
 	let input_size = input_spaxel_count*input_channels;
-	let output_size = output_spaxel_count*output_channels;
+	let _output_size = output_spaxel_count*output_channels;
 	let patch_size = filter_spatial.iter().fold(input_channels, |p, v| p*v);
 
 
