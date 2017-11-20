@@ -12,7 +12,7 @@ pub struct ReduceMean {
 	name: Option<String>,
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
@@ -23,7 +23,7 @@ impl ReduceMean {
 			name: None,
 			input_id: input_id.clone(),
 			output_id: output_id.clone(),
-			axes: vec![],
+			axes: SmallVec::new(),
 			keep_dims: false
 		}
 	}
@@ -35,7 +35,7 @@ impl ReduceMean {
 	///
 	/// Default: empty
 	pub fn axes(mut self, axes: &[isize]) -> Self {
-		self.axes = axes.to_vec();
+		self.axes = axes.iter().cloned().collect();
 		self
 	}
 
@@ -90,7 +90,7 @@ pub struct ReduceMeanInstance {
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 	forward_id: PassID,
 	backward_id: PassID,
@@ -163,12 +163,12 @@ fn reduction_mask(len: usize, axes: &[isize]) -> SmallVec<[bool; 6]> {
 pub struct ReduceMeanForward {
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
 impl ReduceMeanForward {
-	pub fn new(input_id: NodeID, output_id: NodeID, axes: Vec<isize>, keep_dims: bool) -> Self{
+	pub fn new(input_id: NodeID, output_id: NodeID, axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self{
 		ReduceMeanForward {
 			input_id,
 			output_id,
@@ -214,12 +214,12 @@ impl Pass for ReduceMeanForward {
 pub struct ReduceMeanBackward {
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
 impl ReduceMeanBackward {
-	pub fn new(input_id: NodeID, output_id: NodeID, axes: Vec<isize>, keep_dims: bool) -> Self{
+	pub fn new(input_id: NodeID, output_id: NodeID, axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self{
 		ReduceMeanBackward {
 			input_id,
 			output_id,

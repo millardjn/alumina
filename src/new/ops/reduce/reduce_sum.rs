@@ -12,7 +12,7 @@ pub struct ReduceSum {
 	name: Option<String>,
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
@@ -23,7 +23,7 @@ impl ReduceSum {
 			name: None,
 			input_id: input_id.clone(),
 			output_id: output_id.clone(),
-			axes: vec![],
+			axes: SmallVec::new(),
 			keep_dims: false
 		}
 	}
@@ -35,7 +35,7 @@ impl ReduceSum {
 	///
 	/// Default: empty
 	pub fn axes(mut self, axes: &[isize]) -> Self {
-		self.axes = axes.to_vec();
+		self.axes = axes.iter().cloned().collect();
 		self
 	}
 
@@ -90,7 +90,7 @@ pub struct ReduceSumInstance {
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 	forward_id: PassID,
 	backward_id: PassID,
@@ -163,12 +163,12 @@ fn reduction_mask(len: usize, axes: &[isize]) -> SmallVec<[bool; 6]> {
 pub struct ReduceSumForward {
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
 impl ReduceSumForward {
-	pub fn new(input_id: NodeID, output_id: NodeID, axes: Vec<isize>, keep_dims: bool) -> Self{
+	pub fn new(input_id: NodeID, output_id: NodeID, axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self{
 		ReduceSumForward {
 			input_id,
 			output_id,
@@ -212,12 +212,12 @@ impl Pass for ReduceSumForward {
 pub struct ReduceSumBackward {
 	input_id: NodeID,
 	output_id: NodeID,
-	axes: Vec<isize>,
+	axes: SmallVec<[isize; 6]>,
 	keep_dims: bool,
 }
 
 impl ReduceSumBackward {
-	pub fn new(input_id: NodeID, output_id: NodeID, axes: Vec<isize>, keep_dims: bool) -> Self{
+	pub fn new(input_id: NodeID, output_id: NodeID, axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self{
 		ReduceSumBackward {
 			input_id,
 			output_id,
