@@ -73,7 +73,7 @@ impl Op for Softmax {
 			name: name,
 			input_id: self.input_id.clone(),
 			output_id: self.output_id.clone(),
-			mask: mask.clone(),
+			axes: self.axes.clone(),
 			forward_id: graph.add_pass(SoftmaxForward::new(
 					self.input_id.clone(),
 					self.output_id.clone(),
@@ -94,7 +94,7 @@ pub struct SoftmaxInstance {
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
-	mask: SmallVec<[bool; 6]>,
+	axes: SmallVec<[isize; 6]>,
 	forward_id: PassID,
 	backward_id: PassID,
 }
