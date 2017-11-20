@@ -3,15 +3,8 @@ use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::shape::NodeDim;
 use ndarray::{ArrayViewMutD, ArrayViewD};
 use std::any::Any;
+use smallvec::SmallVec;
 use std::f32;
-
-#[derive(Clone, Debug)]
-enum Grouping {
-	Auto,
-	Inner(usize),
-	Outer(usize),
-	Mask(Vec<bool>)
-}
 
 /// Softmax Activation Op
 ///
@@ -23,7 +16,7 @@ enum Grouping {
 pub struct Softmax {
 	input_id: NodeID,
 	output_id: NodeID,
-	grouping: Grouping,
+	axes: SmallVec<[isize; 6]>,
 	name: Option<String>,
 }
 
@@ -32,26 +25,19 @@ impl Softmax {
 		Softmax {
 			input_id: input.clone(),
 			output_id: output.clone(),
-			grouping: Grouping::Auto,
+			//grouping: Grouping::Auto,
+			axes: SmallVec::new(),
 			name: None,
 		}
 	}
 
-	/// The inner most `n` dims will be grouped for the Softmax operation
-	pub fn inner(mut self, n: usize) -> Self {
-		self.grouping = Grouping::Inner(n);
-		self
-	}
-
-	/// The outer most `n` dims will be grouped for the Softmax operation
-	pub fn outer(mut self, n: usize) -> Self {
-		self.grouping = Grouping::Outer(n);
-		self
-	}
-
-	/// The dimensions where mask is set to `true` will be grouped for the Softmax operation
-	pub fn mask(mut self, mask: &[bool]) -> Self {
-		self.grouping = Grouping::Mask(mask.to_vec());
+	/// The axes supplied will be grouped for the Softmax operation,
+	/// with the operation repeated across the axes not supplied.
+	///
+	/// `axes` can be in the range [-input.ndims(), input.ndims());
+	/// If no axes are supplied then all dimensions with Known size will be grouped.
+	pub fn axes(mut self, axes: &[isize]) -> Self {
+		self.axes = axes.iter().cloned().collect();
 		self
 	}
 }
@@ -68,21 +54,20 @@ impl Op for Softmax {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(mut self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]);
 
 		let mask = {
 			let input_shape = graph.node_shape(&self.input_id)?;
-			let mask = match self.grouping {
-				Grouping::Auto => input_shape.dimensions().iter().map(|dim| matches!(dim, &NodeDim::Known(_))).collect(),
-				Grouping::Inner(n) => (0..input_shape.ndims()).map(|i| i < n).rev().collect(),
-				Grouping::Outer(n) => (0..input_shape.ndims()).map(|i| i < n).collect(),
-				Grouping::Mask(mask) => mask,
-			};
-			assert_eq!(input_shape.ndims(), mask.len());
-			mask
+			if self.axes.len() == 0 {
+				for i in 0..input_shape.ndim() {
+					if matches!(input_shape.dimensions()[i], NodeDim::Known(_)) {
+						self.axes.push(i as isize)
+					}
+				}
+			}
+			group_mask(input_shape.ndims(), &self.axes)
 		};
-
 
 		Ok(SoftmaxInstance{
 			name: name,
@@ -90,13 +75,15 @@ impl Op for Softmax {
 			output_id: self.output_id.clone(),
 			mask: mask.clone(),
 			forward_id: graph.add_pass(SoftmaxForward::new(
-				self.input_id.clone(),
-				self.output_id.clone(),
-				mask.clone())),
+					self.input_id.clone(),
+					self.output_id.clone(),
+					mask.clone()
+				)),
 			backward_id: graph.add_pass(SoftmaxBackward::new(
-				self.input_id.clone(),
-				self.output_id.clone(),
-				mask.clone())),
+					self.input_id.clone(),
+					self.output_id.clone(),
+					mask.clone()
+				)),
 		})
 	}
 }
@@ -107,7 +94,7 @@ pub struct SoftmaxInstance {
 	name: String,
 	input_id: NodeID,
 	output_id: NodeID,
-	mask: Vec<bool>,
+	mask: SmallVec<[bool; 6]>,
 	forward_id: PassID,
 	backward_id: PassID,
 }
@@ -131,15 +118,36 @@ impl OpInstance for SoftmaxInstance {
 }
 
 
+// fn calc_group_shape(input_shape: &[usize], axes: &[isize]) -> SmallVec<[usize; 6]> {
+// 	let group_mask = group_mask(input_shape.len(), &axes);
+
+// 	input_shape.iter().enumerate().map(|(i, dim)| if group_mask[i] {*dim} else {1}).collect()
+// }
+
+/// Returns a mask indicating whether an axis should be reduced based on the axes list
+/// If axes is empty this returns all true,
+/// else only the axis provided are marked true.
+fn group_mask(len: usize, axes: &[isize]) -> SmallVec<[bool; 6]> {
+	let mut group = SmallVec::with_capacity(len);
+	for _ in 0..len {
+		group.push(false);
+	}
+	for axis in axes {
+		group[(axis + len as isize) as usize % len] = true;
+	}
+	group
+}
+
+
 #[derive(Clone, Debug)]
 struct SoftmaxForward {
 	input_id: NodeID,
 	output_id: NodeID,
-	mask: Vec<bool>,
+	mask: SmallVec<[bool; 6]>,
 }
 
 impl SoftmaxForward {
-	pub fn new(input_id: NodeID, output_id: NodeID, mask: Vec<bool>) -> Self {
+	pub fn new(input_id: NodeID, output_id: NodeID, mask: SmallVec<[bool; 6]>) -> Self {
 		SoftmaxForward {
 			input_id,
 			output_id,
@@ -187,15 +195,16 @@ impl Pass for SoftmaxForward {
 struct SoftmaxBackward {
 	input_id: NodeID,
 	output_id: NodeID,
-	mask: Vec<bool>,
+	mask: SmallVec<[bool; 6]>,
 }
 
 impl SoftmaxBackward {
-	pub fn new(input_id: NodeID, output_id: NodeID, mask: Vec<bool>) -> Self {
+	pub fn new(input_id: NodeID, output_id: NodeID, mask: SmallVec<[bool; 6]>) -> Self {
 		SoftmaxBackward {
 			input_id,
 			output_id,
 			mask,
+			//axes
 		}
 	}
 }
@@ -301,7 +310,7 @@ fn _softmax_mask_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![3, 16, 5], "target", tag![])?;
 
 
-	let _o1 = g.new_op(Softmax::new(&node1, &node2).mask(&[true, false, true]), tag![])?;
+	let _o1 = g.new_op(Softmax::new(&node1, &node2).axes(&[0, -1]), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
