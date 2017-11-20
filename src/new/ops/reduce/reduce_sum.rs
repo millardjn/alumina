@@ -28,8 +28,10 @@ impl ReduceSum {
 		}
 	}
 
-	/// `axes` can be in the range [-input.ndims(), input.ndims());
-	/// If axes is empty, all dimensions are reduced.
+	/// Supply which axes are to be reduced across.
+	///
+	/// If axes is empty, all axes are reduced.
+	/// Each element of `axes` can be in the range [-input.ndims(), input.ndims()).
 	///
 	/// Default: empty
 	pub fn axes(mut self, axes: &[isize]) -> Self {
@@ -37,6 +39,8 @@ impl ReduceSum {
 		self
 	}
 
+	/// If `true` the reduced axes still appear in the output with size 1, otherwise they are removed.
+	///
 	/// Default: `false`
 	pub fn keep_dims(mut self, keep_dims: bool) -> Self {
 		self.keep_dims = keep_dims;
