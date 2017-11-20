@@ -413,7 +413,7 @@ impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> MapOne<S, F> {
 impl<S: DataSet, F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>> DataSet for MapOne<S, F> {
 	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>> {
 		let mut data = self.set.get(i);
-		let arr = mem::replace(&mut data[self.component], ArrayD::zeros(IxDyn(&[0])));
+		let arr = mem::replace(&mut data[self.component], ArrayD::zeros(IxDyn(&[])));
 		mem::replace(&mut data[self.component], (self.func)(i, arr)) ;
 		data
 	}

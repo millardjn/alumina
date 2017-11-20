@@ -83,7 +83,7 @@ impl Linear {
 			let k = instance
 				.and_then(|i| i.as_any().downcast_ref::<MatMulInstance>())
 				.and_then(|matmul_instance| matmul_instance.K)
-				.unwrap_or(arr.shape()[0]);
+				.unwrap_or(arr.shape()[0]); //TODO use ensure to guard against zero length shapes
 
 			let mut rng = thread_rng().gen::<Isaac64Rng>();
 			let mut norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());

@@ -250,8 +250,8 @@ impl OpInstance for ConvInstance {
 		let input_shape = input_shape.slice();
 		let filter_shape = filter_shape.slice();
 
-		let batch_size = input_shape[0];
-		let out_channels = filter_shape[0];
+		let batch_size = input_shape[0]; //TODO use ensure to guard against zero length shapes
+		let out_channels = filter_shape[0];  //TODO use ensure to guard against zero length shapes
 		let in_channels = input_shape[input_shape.len()-1];
 		ensure!(in_channels == filter_shape[filter_shape.len()-1], format!("input channels dimension {} does not match final filter dimension {}", in_channels, filter_shape[filter_shape.len()-1]));
 
@@ -333,7 +333,7 @@ impl Pass for ConvForward {
 		let filter = data.get(&self.filter_id.value_id())?;
 		let mut output = data.get_mut(&self.output_id.value_id())?;
 
-		let n = input.shape()[0];
+		let n = input.shape()[0]; //TODO use ensure to guard against zero length shapes
 		let in_size: usize = input.shape()[1..].iter().product();
 		let _out_size: usize = output.shape()[1..].iter().product();
 		let patch_size = filter.shape()[1..].iter().product();
@@ -466,7 +466,7 @@ impl Pass for ConvBackward {
 		let filter = data.get(&self.filter_id.value_id())?;
 		let output_grad = data.get(&self.output_id.gradient_id())?;
 
-		let n = input.shape()[0];
+		let n = input.shape()[0]; //TODO use ensure to guard against zero length shapes
 		let _in_size: usize = input.shape()[1..].iter().product();
 		let out_size: usize = output_grad.shape()[1..].iter().product();
 		let patch_size = filter.shape()[..filter.ndim()-1].iter().product();

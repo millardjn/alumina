@@ -167,7 +167,7 @@ impl Pass for LinterpForward {
 		let out_size = output.len()/batches;
 
 		let patch_strides = patch_strides(&input_spatial);
-		let n_patches = patch_strides[0] * (input_spatial[0] + 1);
+		let n_patches = patch_strides[0] * (input_spatial[0] + 1); //TODO use ensure to guard against zero length shapes
 
 		let k = 2usize.pow(factors_spatial.len() as u32);
 		let m = factors_spatial.iter().product();

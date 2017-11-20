@@ -162,7 +162,7 @@ impl <T: Into<NodeDim> + Clone, I: IntoIterator<Item=T>> From<I> for NodeShape {
 				}
 			})
 			.collect();
-		if dimensions.len() == 0 {panic!("Node shape must have at least 1 dimension.")}
+		//if dimensions.len() == 0 {panic!("Node shape must have at least 1 dimension.")}
 
 		NodeShape{dimensions}
 	}
