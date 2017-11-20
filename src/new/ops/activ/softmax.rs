@@ -118,12 +118,6 @@ impl OpInstance for SoftmaxInstance {
 }
 
 
-// fn calc_group_shape(input_shape: &[usize], axes: &[isize]) -> SmallVec<[usize; 6]> {
-// 	let group_mask = group_mask(input_shape.len(), &axes);
-
-// 	input_shape.iter().enumerate().map(|(i, dim)| if group_mask[i] {*dim} else {1}).collect()
-// }
-
 /// Returns a mask indicating whether an axis should be reduced based on the axes list
 /// If axes is empty this returns all true,
 /// else only the axis provided are marked true.
@@ -204,7 +198,6 @@ impl SoftmaxBackward {
 			input_id,
 			output_id,
 			mask,
-			//axes
 		}
 	}
 }
