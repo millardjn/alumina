@@ -3,6 +3,7 @@ pub mod mse;
 pub mod mae;
 pub mod l2;
 pub mod cross_entropy;
+pub mod prediction;
 
 
 use new::graph::{NodeID, OpID, PassID};

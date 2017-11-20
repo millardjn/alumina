@@ -62,7 +62,7 @@ impl Op for Softmax {
 			if self.axes.len() == 0 {
 				for i in 0..input_shape.ndim() {
 					if matches!(input_shape.dimensions()[i], NodeDim::Known(_)) {
-						self.axes.push(i as isize)
+						self.axes.push(i as isize);
 					}
 				}
 			}
