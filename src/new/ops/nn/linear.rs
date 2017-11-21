@@ -66,7 +66,7 @@ impl Linear {
 	}
 
 	/// Provide an Initialiser for the weights node
-	pub fn init (mut self, initialiser: Initialiser) -> Self {
+	pub fn init(mut self, initialiser: Initialiser) -> Self {
 		self.initialiser = Some(initialiser);
 		self
 	}

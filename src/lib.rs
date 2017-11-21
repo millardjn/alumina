@@ -20,6 +20,7 @@ extern crate generic_array;
 extern crate scoped_threadpool;
 extern crate ordermap;
 #[macro_use] extern crate matches;
+extern crate arrayvec;
 
 pub mod graph;
 pub mod ops;

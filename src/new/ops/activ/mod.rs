@@ -6,3 +6,4 @@ pub mod elu;
 pub mod tanh;
 pub mod srgb;
 pub mod softmax;
+pub mod spline;
