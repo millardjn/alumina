@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::DerefMut;
 use new::ops::{OpInstance};
 use new::graph::OpID;
-use ndarray::ArrayD;
+use ndarray::ArrayViewMutD;
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal, Range};
 
@@ -11,12 +11,12 @@ use rand::distributions::{Sample, Normal, Range};
 #[derive(Clone)]
 pub struct Initialiser {
 	name: String,
-	func: Arc<Mutex<FnMut(&mut ArrayD<f32>, Option<&OpInstance>)>>,
+	func: Arc<Mutex<FnMut(ArrayViewMutD<f32>, Option<&OpInstance>)>>,
 	op_id: Option<OpID>,
 }
 
 impl Initialiser {
-	pub fn new<F: 'static + FnMut(&mut ArrayD<f32>, Option<&OpInstance>)>(name: String, func: F) -> Self {
+	pub fn new<F: 'static + FnMut(ArrayViewMutD<f32>, Option<&OpInstance>)>(name: String, func: F) -> Self {
 		Initialiser {
 			name: name,
 			func: Arc::new(Mutex::new(func)),
@@ -24,7 +24,7 @@ impl Initialiser {
 		}
 	}
 
-	pub fn wrap(name: String, func: Arc<Mutex<FnMut(&mut ArrayD<f32>, Option<&OpInstance>)>>) -> Self {
+	pub fn wrap(name: String, func: Arc<Mutex<FnMut(ArrayViewMutD<f32>, Option<&OpInstance>)>>) -> Self {
 		Initialiser {
 			name: name,
 			func: func,
@@ -36,7 +36,7 @@ impl Initialiser {
 	///
 	/// This initialises with gaussian values drawn from N(mean, std_dev^2).
 	pub fn guassian(mean: f32, std_dev: f32) -> Initialiser {
-		Initialiser::new("Gaussian Initialiser".to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+		Initialiser::new("Gaussian Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			let mut rng = thread_rng().gen::<Isaac64Rng>();
 			let mut norm = Normal::new(mean as f64, std_dev as f64);
 			for e in arr.iter_mut() {
@@ -49,7 +49,7 @@ impl Initialiser {
 	///
 	/// This initialises uniform values drawn from [low, high).
 	pub fn uniform(low: f32, high: f32) -> Initialiser {
-		Initialiser::new("Uniform Initialiser".to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+		Initialiser::new("Uniform Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			let mut rng = thread_rng().gen::<Isaac64Rng>();
 			let mut rang = Range::new(low, high);
 			for e in arr.iter_mut() {
@@ -62,14 +62,14 @@ impl Initialiser {
 	///
 	/// Sets all elements to the supplied value
 	pub fn fill(val: f32) -> Initialiser {
-		Initialiser::new("Fill Initialiser".to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+		Initialiser::new("Fill Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			for e in arr.iter_mut() {
 				*e = val;
 			}
 		})
 	}
 
-	pub fn call(&self, arr: &mut ArrayD<f32>, op: Option<&OpInstance>) {
+	pub fn call(&self, arr: ArrayViewMutD<f32>, op: Option<&OpInstance>) {
 		let mut guard = self.func.lock().expect(&format!("Could not acquire lock on initialiser: {:?}", self));
 		guard.deref_mut()(arr, op);
 	}

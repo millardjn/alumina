@@ -381,7 +381,7 @@ impl GraphDef {
 			let mut arr = ArrayD::zeros(shape);
 			if let Some(initialiser) = self.initialisers.get(node) {
 				let op = initialiser.op_id().map(|op_id| &*self.ops[op_id.index]);
-				initialiser.call(&mut arr, op);
+				initialiser.call(arr.view_mut(), op);
 			}
 			vec.push(arr);
 		}

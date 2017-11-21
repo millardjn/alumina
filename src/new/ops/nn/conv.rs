@@ -1,7 +1,7 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
 use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
 use new::shape::{NodeDim, NodeShape};
-use ndarray::{ArrayD, Dimension, Axis, IxDyn};
+use ndarray::{ArrayViewMutD, ArrayD, Dimension, Axis, IxDyn};
 use std::any::Any;
 use std::iter;
 use std::sync::Mutex;
@@ -105,7 +105,7 @@ impl Conv {
 	/// For typical use, the variance multiplier should cancel out the variance modifying
 	/// effect of the nonlinearity, e.g. use 2.0 with ReLU, and 1.0 with Tanh.
 	pub fn msra(multiplier: f32) -> Initialiser {
-		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			let k = arr.len()/arr.shape()[arr.ndim()-1];
 
 			let mut rng = thread_rng().gen::<Isaac64Rng>();

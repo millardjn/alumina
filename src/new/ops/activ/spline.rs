@@ -1,7 +1,7 @@
 use new::graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
 use new::shape::NodeDim;
-use ndarray::{ArrayD, Zip};
+use ndarray::{ArrayViewMutD, Zip};
 use std::any::Any;
 use smallvec::SmallVec;
 use new::init::Initialiser;
@@ -63,7 +63,7 @@ impl Spline {
 	}
 
 	fn _init_custom(name: &'static str, left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser{
-		Initialiser::new(name.to_string(), move |arr: &mut ArrayD<f32>, _instance: Option<&OpInstance>|{
+		Initialiser::new(name.to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			if arr.shape()[0] == 3 {
 				let mut weights_iter = arr.outer_iter_mut();
 				weights_iter.next().unwrap().fill(left_slope);

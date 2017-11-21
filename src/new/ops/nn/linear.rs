@@ -5,7 +5,7 @@ use new::shape::{NodeShape, NodeDim};
 use new::ops::math::matmul::{MatMul, MatMulInstance};
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal};
-use ndarray::ArrayD;
+use ndarray::ArrayViewMutD;
 
 /// The Linear portion of a fully connected layer
 ///
@@ -79,7 +79,7 @@ impl Linear {
 	/// For typical use, the variance multiplier should cancel out the variance modifying
 	/// effect of the nonlinearity, e.g. use 2.0 with ReLU.
 	pub fn msra(multiplier: f32) -> Initialiser {
-		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |arr: &mut ArrayD<f32>, instance: Option<&OpInstance>|{
+		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |mut arr: ArrayViewMutD<f32>, instance: Option<&OpInstance>|{
 			let k = instance
 				.and_then(|i| i.as_any().downcast_ref::<MatMulInstance>())
 				.and_then(|matmul_instance| matmul_instance.K)
