@@ -33,6 +33,10 @@ pub trait DataSet {
 	// 	Box::new(iter)
 	// }
 
+	fn boxed(self) -> Box<Self> where Self: Sized {
+		Box::new(self)
+	}
+
 	fn reorder_components(self, order: &[usize]) -> ReorderComponents<Self> where Self: Sized {
 		ReorderComponents::new(self, order)
 	}
@@ -559,6 +563,10 @@ impl<S: DataSet> DataStream for ShuffleRandom<S> {
 
 pub trait DataStream {
 	fn next(&mut self) -> Vec<ArrayD<f32>>;
+
+	fn boxed(self) -> Box<Self> where Self: Sized {
+		Box::new(self)
+	}
 
 	fn batch(self, batch_size: usize) -> Batch<Self> where Self: Sized {
 		Batch::new(self, batch_size)
