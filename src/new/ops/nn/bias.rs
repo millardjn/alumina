@@ -2,12 +2,13 @@ use new::graph::{GraphDef, PassID, NodeID, OpID, GraphShapes, Result};
 use new::init::Initialiser;
 use new::ops::math::add::Add;
 use new::ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
-use new::shape::{NodeShape};
+use new::shape::NodeDim;
+use smallvec::SmallVec;
 
 pub struct Bias {
 	output_id: NodeID,
-	parameter_id: Option<NodeID>,
-	param_shape: Option<NodeShape>,
+	weights_id: Option<NodeID>,
+	shared_axes: SmallVec<[isize; 6]>,
 	name: Option<String>,
 	initialiser: Option<Initialiser>,
 }
@@ -19,27 +20,32 @@ impl Bias {
 	pub fn new(output: &NodeID) -> Self {
 		Bias {
 			output_id: output.clone(),
-			parameter_id: None,
-			param_shape: None,
+			weights_id: None,
+			shared_axes: SmallVec::new(),
 			name: None,
 			initialiser: None,
 		}
 	}
 
-	/// Provide a node in place of the bias parameter
+	/// Provide a node in place of the bias weights
 	///
 	/// This node will be added to the output, with broadcasting.
 	/// Any value other than `None` prevents the automatic creation of a `Parameter` node.
 	/// Default value: `None`
-	pub fn parameter(mut self, node_id: Option<&NodeID>) -> Self {
-		self.parameter_id = node_id.cloned();
+	pub fn weights(mut self, node_id: Option<&NodeID>) -> Self {
+		self.weights_id = node_id.cloned();
 		self
 	}
 
-	/// If 'input()' is not set this can be used to control the shape of the parameter node which will be created.
-	/// If both this and `input()` are `None` then the created parameter will use the largest dimension sizes that can be guarenteed to broadcast the output node.
-	pub fn parameter_shape(mut self, shape: Option<NodeShape>) -> Self {
-		self.param_shape = shape;
+	/// Supply axes which learnable weights should be shared over.
+	///
+	/// By default all axes with Known size are assigned unique weights, and sharing via broadcasting is used for non-Known axes.
+	/// Setting an axis as shared will prevent unique weights being used, and enforce sharing, even if the size is Known.
+	/// Each element of `axes` can be in the range [-input.ndims(), input.ndims()).
+	///
+	/// Default: empty
+	pub fn shared_axes(mut self, shared_axes: &[isize]) -> Self {
+		self.shared_axes = shared_axes.iter().cloned().collect();
 		self
 	}
 
@@ -63,35 +69,51 @@ impl Op for Bias {
 
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
 
-		let (name, parameter_is_inner) = if let Some(ref parameter_id) = self.parameter_id {
-			(standard_op_name(&self, &self.name, graph, &[parameter_id.clone()], &[self.output_id.clone()]), false)
+		let (name, weights_are_inner) = if let Some(ref weights_id) = self.weights_id {
+			(standard_op_name(&self, &self.name, graph, &[weights_id.clone()], &[self.output_id.clone()]), false)
 		} else {
 			(standard_op_name(&self, &self.name, graph, &[], &[self.output_id.clone()]), true)
 		};
 
-		let parameter_id = if let Some(parameter_id) = self.parameter_id {
-			parameter_id
+		let weights_id = if let Some(weights_id) = self.weights_id {
+			weights_id
 		} else {
-			let shape = {
+			// let shape = {
+			// 	let output_shape = graph.node_shape(&self.output_id)?;
+			// 	self.weights_shape.unwrap_or_else(||{output_shape.collapse_to_broadcastable_dimension()})
+			// 	};
+			let weights_shape = {
 				let output_shape = graph.node_shape(&self.output_id)?;
-				self.param_shape.unwrap_or_else(||{output_shape.collapse_to_broadcastable_dimension()})
-				};
+				let mut weights_shape = vec![1; output_shape.ndim()];
+				weights_shape[0] = 3;
+				for axis in 0..output_shape.ndim() {
+					if let NodeDim::Known(dim) = output_shape.dimensions()[axis] {
+						weights_shape[axis] = dim;
+					}
+				}
 
-			let param_name = standard_inner_parameter_name(&name, graph);
-			graph.new_node(shape, param_name, tag![Parameter])?
+				for shared_axis in &self.shared_axes {
+					let shared_axis = (shared_axis + output_shape.ndim() as isize) as usize % output_shape.ndim();
+					weights_shape[shared_axis] = 1;
+				}
+
+				weights_shape
+			};
+			let weights_name = standard_inner_parameter_name(&name, graph);
+			graph.new_node(weights_shape.into(), weights_name, tag![Parameter])?
 		};
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&parameter_id, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&weights_id, initialiser.set_op_id(op_id.clone()));
 		}
 
-		let add_id = graph.new_op(Add::new(&parameter_id, &self.output_id.clone()), tag![])?;
+		let add_id = graph.new_op(Add::new(&weights_id, &self.output_id.clone()), tag![])?;
 
 		Ok(BiasInstance{
 			name: name,
-			parameter_id: parameter_id,
+			weights_id: weights_id,
 			output_id: self.output_id,
-			parameter_is_inner: parameter_is_inner,
+			weights_are_inner: weights_are_inner,
 			add_id: add_id,
 		})
 	}
@@ -104,8 +126,8 @@ impl Op for Bias {
 pub struct BiasInstance{
 	name: String,
 	output_id: NodeID,
-	parameter_id: NodeID,
-	parameter_is_inner: bool,
+	weights_id: NodeID,
+	weights_are_inner: bool,
 	add_id: OpID,
 }
 
@@ -115,10 +137,10 @@ impl OpInstance for BiasInstance {
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
-			if self.parameter_is_inner {
+			if self.weights_are_inner {
 				vec![]
 			} else {
-				vec![self.parameter_id.clone()]
+				vec![self.weights_id.clone()]
 			},
 			vec![self.output_id.clone()]
 		)
@@ -129,8 +151,8 @@ impl OpInstance for BiasInstance {
 	fn inner_ops(&self) -> Vec<OpID>{vec![self.add_id.clone()]}
 
 	fn inner_nodes(&self) -> Vec<NodeID>{
-			if self.parameter_is_inner {
-				vec![self.parameter_id.clone()]
+			if self.weights_are_inner {
+				vec![self.weights_id.clone()]
 			} else {
 				vec![]
 			}
@@ -154,10 +176,10 @@ fn _bias_init_backprop() -> Result<()>{
 
 	let mut g = GraphDef::new();
 
-	let node1 = g.new_node(shape![7, 16], "input1", tag![])?;
-	let node2 = g.new_node(shape![7, 16], "output", tag![])?;
+	let node1 = g.new_node(shape![7, 16], "output", tag![])?;
+	let node2 = g.new_node(shape![7, 16], "target", tag![])?;
 
-	let o1 = g.new_op(Bias::new(&node1).parameter_shape(Some(shape![1, 16])), tag![])?;
+	let o1 = g.new_op(Bias::new(&node1).shared_axes(&[0]), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node1, &node2), tag![])?;
 
 	let parameter_node = &g.op(&o1)?.inner_nodes()[0];
