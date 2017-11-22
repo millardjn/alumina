@@ -119,7 +119,7 @@ impl Op for Spline {
 			// TODO check that dimensions of param works
 			weights
 		} else {
-			let mut weights_shape = {
+			let weights_shape = {
 				let input_shape = graph.node_shape(&self.input_id)?;
 				let mut weights_shape = vec![1; input_shape.ndim() + 1];
 				weights_shape[0] = 3;
