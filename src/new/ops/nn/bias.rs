@@ -78,14 +78,10 @@ impl Op for Bias {
 		let weights_id = if let Some(weights_id) = self.weights_id {
 			weights_id
 		} else {
-			// let shape = {
-			// 	let output_shape = graph.node_shape(&self.output_id)?;
-			// 	self.weights_shape.unwrap_or_else(||{output_shape.collapse_to_broadcastable_dimension()})
-			// 	};
 			let weights_shape = {
 				let output_shape = graph.node_shape(&self.output_id)?;
 				let mut weights_shape = vec![1; output_shape.ndim()];
-				weights_shape[0] = 3;
+
 				for axis in 0..output_shape.ndim() {
 					if let NodeDim::Known(dim) = output_shape.dimensions()[axis] {
 						weights_shape[axis] = dim;
