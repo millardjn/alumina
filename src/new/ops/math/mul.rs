@@ -1,7 +1,7 @@
 use new::graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
 use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::shape::{NodeShape, NodeDim};
-use ndarray::{ArrayViewMutD, ArrayViewD};
+use ndarray::{ArrayViewMutD, ArrayViewD, Zip};
 use std::any::Any;
 
 /// Mul Op
@@ -146,7 +146,12 @@ impl Pass for MulForward {
 		let iter = input1.exact_chunks(input2.shape()).into_iter()
 			.zip(output.exact_chunks_mut(input2.shape()));
 		for (in1_chunk, mut out_chunk) in iter {
-			out_chunk += &(&in1_chunk * &input2);
+			Zip::from(&mut out_chunk)
+				.and(&in1_chunk)
+				.and(&input2)
+				.apply(|output, input1, input2| {
+					*output += input1 * input2;
+				});
 		}
 
 		Ok(Box::new(()))
@@ -209,8 +214,20 @@ impl Pass for MulBackward {
 				.zip(output_grad.exact_chunks(input2.shape()));
 
 			for ((input1_chunk, mut input1_grad_chunk) , out_grad_chunk) in iter {
-				input1_grad_chunk += &(&input2 * &out_grad_chunk);
-				input2_grad += &(&input1_chunk * &out_grad_chunk);
+				//input1_grad_chunk += &(&input2 * &out_grad_chunk);
+				Zip::from(&mut input1_grad_chunk)
+					.and(&input2)
+					.and(&out_grad_chunk)
+					.apply(|input1_grad, input2, out_grad| {
+						*input1_grad += input2 * out_grad;
+					});
+				//input2_grad += &(&input1_chunk * &out_grad_chunk);
+				Zip::from(&mut input2_grad)
+					.and(&input1_chunk)
+					.and(&out_grad_chunk)
+					.apply(|input2_grad, input1, out_grad| {
+						*input2_grad += input1 * out_grad;
+					});
 			}
 
 		} else if data.is_required(&self.input1_id.gradient_id()) {
@@ -220,7 +237,13 @@ impl Pass for MulBackward {
 				.zip(output_grad.exact_chunks(input2.shape()));
 
 			for (mut input1_grad_chunk, out_grad_chunk) in iter {
-				input1_grad_chunk += &(&input2 * &out_grad_chunk);
+				//input1_grad_chunk += &(&input2 * &out_grad_chunk);
+				Zip::from(&mut input1_grad_chunk)
+					.and(&input2)
+					.and(&out_grad_chunk)
+					.apply(|input1_grad, input2, out_grad| {
+						*input1_grad += input2 * out_grad;
+					});
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
@@ -229,7 +252,13 @@ impl Pass for MulBackward {
 				.zip(output_grad.exact_chunks(input2.shape()));
 
 			for (input1_chunk, out_grad_chunk) in iter {
-				input2_grad += &(&input1_chunk * &out_grad_chunk);
+				//input2_grad += &(&input1_chunk * &out_grad_chunk);
+				Zip::from(&mut input2_grad)
+					.and(&input1_chunk)
+					.and(&out_grad_chunk)
+					.apply(|input2_grad, input1, out_grad| {
+						*input2_grad += input1 * out_grad;
+					});
 			}
 		}
 
