@@ -701,7 +701,7 @@ impl GraphDef {
 
 	/// Returns the number of passes in the graph.
 	///
-	/// Currently this is twice the number of ops (forward pass and backwards pass).
+	/// This number is independent of the number of ops
 	pub fn num_passes(&self) -> usize{
 		self.passes.len()
 	}

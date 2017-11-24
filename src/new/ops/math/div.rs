@@ -7,7 +7,7 @@ use std::any::Any;
 /// Div Op
 ///
 /// Computed the elementwise division, which is then added to the output;
-/// By default, the value of denominator is broadcast to the shape of the numerator; This can be overridden.
+/// By default the value of denominator is broadcast to the shape of the numerator, this can be overridden.
 pub struct Div {
 	numerator_id: NodeID,
 	denominator_id: NodeID,
@@ -27,7 +27,7 @@ impl Div {
 		}
 	}
 
-	/// Broadcast the numerator to the denominators shape, if true.
+	/// If true, broadcast the numerator to the denominators shape and use the denominator for shape inference.
 	///
 	/// Default: false
 	pub fn broadcast_numerator(mut self, broadcast: bool) -> Self {
