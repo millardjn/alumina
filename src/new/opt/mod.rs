@@ -1,4 +1,5 @@
 pub mod sgd;
+pub mod adam;
 
 use new::graph::{Subgraph, NodeID, DataID, Result};
 use new::data::DataStream;
