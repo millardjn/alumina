@@ -1,5 +1,6 @@
 pub mod mnist;
 pub mod cifar;
+pub mod image_folder;
 
 use rand::{thread_rng, Isaac64Rng, Rng};
 use ndarray::{ArrayD, IxDyn, Axis};
