@@ -10,3 +10,4 @@ pub mod sin;
 pub mod cos;
 pub mod abs;
 pub mod reciprocal;
+pub mod scale;
