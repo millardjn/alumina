@@ -25,7 +25,6 @@ impl Softmax {
 		Softmax {
 			input_id: input.clone(),
 			output_id: output.clone(),
-			//grouping: Grouping::Auto,
 			axes: SmallVec::new(),
 			name: None,
 		}
@@ -118,9 +117,7 @@ impl OpInstance for SoftmaxInstance {
 }
 
 
-/// Returns a mask indicating whether an axis should be reduced based on the axes list
-/// If axes is empty this returns all true,
-/// else only the axis provided are marked true.
+/// Returns a mask indicating whether an axis should be grouped based on the axes list
 fn group_mask(len: usize, axes: &[isize]) -> SmallVec<[bool; 6]> {
 	let mut group = SmallVec::with_capacity(len);
 	for _ in 0..len {
