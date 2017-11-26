@@ -39,8 +39,8 @@ pub fn generate_input_data(graph: &GraphDef, node_ids:&[NodeID], default_varianc
 	Ok(input_data)
 }
 
-/// Take a stepsize
-pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: &OrderMap<DataID, ArrayD<f32>>) -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>) {	
+/// Take a step of size step_size in each direction of the gradient
+pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: &OrderMap<DataID, ArrayD<f32>>) -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>, f32) {	
 		let grad_dot: f32 = node_ids.iter().map(|node_id|{
 				results.get(&node_id.gradient_id()).unwrap().iter().fold(0.0, |acc, d| acc + d*d)
 			}).sum();
@@ -48,18 +48,18 @@ pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: 
 		let input_1 = data.iter().cloned().zip(node_ids)
 			.map(|(mut data, node_id)|{
 				let grad = results.get(&node_id.gradient_id()).unwrap();
-				data.scaled_add(-step_size/grad_dot, grad);
+				data.scaled_add(-step_size/grad_dot.sqrt(), grad);
 				data
 			}).collect();
 
 		let input_2 = data.iter().cloned().zip(node_ids)
 			.map(|(mut data, node_id)|{
 				let grad = results.get(&node_id.gradient_id()).unwrap();
-				data.scaled_add(step_size/grad_dot, grad);
+				data.scaled_add(step_size/grad_dot.sqrt(), grad);
 				data
 			}).collect();
 
-		(input_1, input_2)
+		(input_1, input_2, grad_dot.sqrt())
 }
 
 pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<()> {
@@ -108,7 +108,7 @@ pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, ov
 	// A small step along along the parameter gradient should produce a predictable change in error.
 	let mut param_err = 0.0;
 	if parameter_ids.len() > 0 {
-		let (params_1, params_2) = step(step_size, &parameter_ids, &params_0, &output_0);
+		let (params_1, params_2, grad_norm) = step(step_size, &parameter_ids, &params_0, &output_0);
 
 		let data_1 = inputs_0.iter().chain(&params_1).cloned().collect();
 		let loss_1 = subgraph.execute(data_1)?.loss();
@@ -116,7 +116,7 @@ pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, ov
 		let data_2 = inputs_0.iter().chain(&params_2).cloned().collect();
 		let loss_2 = subgraph.execute(data_2)?.loss();
 
-		let expected_diff = 2.0*step_size;
+		let expected_diff = 2.0*step_size*grad_norm;
 		let diff = loss_2 - loss_1;
 		let err = expected_diff - diff;
 		param_err = err.abs()/diff.abs().max(expected_diff.abs());
@@ -125,7 +125,7 @@ pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, ov
 	// A small step along along the input gradient should produce a predictable change in error.
 	let mut input_err = 0.0;
 	if input_ids.len() > 0 {
-		let (inputs_1, inputs_2) = step(step_size, &input_ids, &inputs_0, &output_0);
+		let (inputs_1, inputs_2, grad_norm) = step(step_size, &input_ids, &inputs_0, &output_0);
 
 		let data_1 = inputs_1.iter().chain(&params_0).cloned().collect();
 		let loss_1 = subgraph.execute(data_1)?.loss();
@@ -133,7 +133,7 @@ pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, ov
 		let data_2 = inputs_2.iter().chain(&params_0).cloned().collect();
 		let loss_2 = subgraph.execute(data_2)?.loss();
 
-		let expected_diff = 2.0*step_size;
+		let expected_diff = 2.0*step_size*grad_norm;
 		let diff = loss_2 - loss_1;
 		let err = expected_diff - diff;
 		input_err = err.abs()/diff.abs().max(expected_diff.abs());
