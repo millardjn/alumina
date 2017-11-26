@@ -1,6 +1,9 @@
 pub mod mnist;
 pub mod cifar;
 pub mod image_folder;
+pub mod crop;
+
+pub use new::data::crop::{Crop, Cropping};
 
 use rand::{thread_rng, Isaac64Rng, Rng};
 use ndarray::{ArrayD, IxDyn, Axis};
@@ -29,10 +32,10 @@ pub trait DataSet {
 	/// Returns the names of components
 	fn components(&self) -> Vec<String>;
 
-	// fn into_iter(self: 'static) -> Box<Iterator<Item=Vec<ArrayD<f32>>>>{
-	// 	let iter = (0..self.length()).map(move|i| self.get(i));
-	// 	Box::new(iter)
-	// }
+	fn iter<'a>(&'a mut self) -> Box<Iterator<Item=Vec<ArrayD<f32>>> + 'a>{
+		let iter = (0..self.length()).map(move|i| self.get(i));
+		Box::new(iter)
+	}
 
 	fn boxed(self) -> Box<Self> where Self: Sized {
 		Box::new(self)
@@ -60,6 +63,10 @@ pub trait DataSet {
 
 	fn map_one<F: FnMut(usize, ArrayD<f32>) -> ArrayD<f32>>(self, func: F, component: usize) -> MapOne<Self, F> where Self: Sized {
 		MapOne::new(self, func, component)
+	}
+
+	fn crop(self, component: usize, shape: &[usize], cropping: Cropping) -> Crop<Self> where Self: Sized {
+		Crop::new(self, component, shape, cropping)
 	}
 
 	fn sequential(self) -> Sequential<Self> where Self: Sized {
