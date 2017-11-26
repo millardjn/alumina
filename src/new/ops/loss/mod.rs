@@ -6,7 +6,7 @@ pub mod cross_entropy;
 pub mod prediction;
 
 
-use new::graph::{NodeID, OpID, PassID};
+use new::graph::{NodeID, PassID};
 
 #[derive(Clone, Debug)] 
 enum LossType {
@@ -15,12 +15,6 @@ enum LossType {
 	},
 	Output {
 		output_id: NodeID,
-		forward_id: PassID,
-		backward_id: PassID
-	},
-	Separate {
-		output_id: NodeID,
-		loss_id: OpID,
 		forward_id: PassID,
 		backward_id: PassID
 	},

@@ -1,26 +1,23 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
-use new::ops::{standard_op_name, standard_inner_node_name, Op, OpInstance, Pass};
-use new::ops::loss::proportional::Proportional;
+use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::ops::loss::LossType;
-// use generic_array::GenericArray;
-// use typenum::{Unsigned, U16};
-// use typenum_loops::Loop;
+use new::shape::NodeShape;
+use smallvec::SmallVec;
+use ndarray::{Dimension, Zip};
 use std::any::Any;
 
 /// An `Op` which implements the Mean Squared Error
 ///
-/// The outer dimension of the inputs is taken to be the batch size and is excluded from the denominator of the Mean,
-/// i.e a larger batch size corresponds to a larger error.
 /// By default this `Op` has no output and will generate loss and gradients.
 ///
-/// If `output()` is set to a node of size 1, the Cross Entropy will be written to that Node, and the gradient will be backprop'd from the output node.
-///
-/// If `separate_loss()` is set a scalar node will be added to the graph, and a `Loss` Op attached to it.
+/// If `output()` is set, the Mse loss will be written to that Node,
+/// and instead of generating gradients this loss function will backprop gradients from the output node.
 pub struct Mse {
 	input1_id: NodeID,
 	input2_id: NodeID,
-	separate_loss: bool,
 	output: Option<NodeID>,
+	mean_axes: SmallVec<[isize; 6]>,
+	keep_dims: bool,
 	multiplier: f32,
 	name: Option<String>,
 }
@@ -30,18 +27,12 @@ impl Mse {
 		Mse {
 			input1_id: input1.clone(),
 			input2_id: input2.clone(),
-			separate_loss: false,
 			output: None,
+			mean_axes: SmallVec::new(),
+			keep_dims: false,
 			multiplier: 1.0,
 			name: None,
 		}
-	}
-
-	/// If true (and output is None) a scalar output node is created along with a `Loss` Op. This allows the loss from this Op to be queries separately while still
-	/// Default: false
-	pub fn separate_loss(mut self, separate_loss: bool) -> Self {
-		self.separate_loss = separate_loss;
-		self
 	}
 
 	/// If set this `Op` will output to the supplied node, any rely no other use ops to generate loss and gradients
@@ -52,7 +43,25 @@ impl Mse {
 		self
 	}
 
-	/// Loss is of the form `multiplier * x.dot(x)`
+	/// The axes supplied will be grouped when finding the mean,
+	/// with the operation repeated across the axes not supplied.
+	///
+	/// `axes` can be in the range [-input.ndims(), input.ndims());
+	/// If no axes are supplied then no mean operation is applied.
+	pub fn mean_axes(mut self, mean_axes: &[isize]) -> Self {
+		self.mean_axes = mean_axes.iter().cloned().collect();
+		self
+	}
+
+	/// If `true` the reduced axes still appear in the output with size 1, otherwise they are removed.
+	///
+	/// Default: `false`
+	pub fn keep_dims(mut self, keep_dims: bool) -> Self {
+		self.keep_dims = keep_dims;
+		self
+	}
+
+	/// Applies a multiplier to the output or to the loss generated.
 	pub fn multiplier(mut self, multiplier: f32) -> Self {
 		self.multiplier = multiplier;
 		self
@@ -87,38 +96,24 @@ impl Op for Mse {
 					self.multiplier,
 					self.input1_id.clone(),
 					self.input2_id.clone(),
-					output_id.clone())),
+					output_id.clone(),
+					self.mean_axes.clone(),
+					self.keep_dims)),
 				backward_id: graph.add_pass(MseBackward::new(
 					self.multiplier,
 					self.input1_id.clone(),
 					self.input2_id.clone(),
-					output_id.clone())),
-			}
-		} else if self.separate_loss {
-			let output_name = standard_inner_node_name(&name, graph);
-			let output_id = graph.new_node(shape![1], output_name, tag![])?;
-			let loss_id = graph.new_op(Proportional::new(&output_id), tag![])?;
-
-			LossType::Separate{
-				output_id: output_id.clone(),
-				loss_id: loss_id,
-				forward_id: graph.add_pass(MseForward::new(
-					self.multiplier,
-					self.input1_id.clone(),
-					self.input2_id.clone(),
-					output_id.clone())),
-				backward_id: graph.add_pass(MseBackward::new(
-					self.multiplier,
-					self.input1_id.clone(),
-					self.input2_id.clone(),
-					output_id.clone())),
+					output_id.clone(),
+					self.mean_axes.clone(),
+					self.keep_dims)),
 			}
 		} else {
 			LossType::Joint{
 				pass_id: graph.add_pass(MseJointPass::new(
 					self.multiplier,
 					self.input1_id.clone(),
-					self.input2_id.clone()))
+					self.input2_id.clone(),
+					self.mean_axes.clone()))
 			}
 		};
 
@@ -128,6 +123,8 @@ impl Op for Mse {
 			input1_id: self.input1_id.clone(),
 			input2_id: self.input2_id.clone(),
 			loss_type: loss_type,
+			mean_axes: self.mean_axes,
+			keep_dims: self.keep_dims,
 		})
 	}
 }
@@ -140,6 +137,8 @@ pub struct MseInstance {
 	input1_id: NodeID,
 	input2_id: NodeID,
 	loss_type: LossType,
+	mean_axes: SmallVec<[isize; 6]>,
+	keep_dims: bool,
 }
 
 impl OpInstance for MseInstance {
@@ -148,7 +147,7 @@ impl OpInstance for MseInstance {
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Separate{..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![]),
+			&LossType::Joint{..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![]),
 			&LossType::Output{ref output_id, ..} => (vec![self.input1_id.clone(), self.input2_id.clone()], vec![output_id.clone()]),
 		}
 	}
@@ -156,42 +155,72 @@ impl OpInstance for MseInstance {
 	fn inner_passes(&self) -> Vec<PassID> {
 		match &self.loss_type {
 			&LossType::Joint{ref pass_id} => vec![pass_id.clone()],
-			&LossType::Separate{ref forward_id, ref backward_id, ..} | &LossType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
+			&LossType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
 		}
 	}
 
 	fn inner_ops(&self) -> Vec<OpID> {
-		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Output{..} => vec![],
-			&LossType::Separate{ref loss_id, ..} => (vec![loss_id.clone()]),
-		}
+		vec![]
 	}
 
 	fn inner_nodes(&self) -> Vec<NodeID> {
-		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Output{..} => vec![],
-			&LossType::Separate{ref output_id, ..} => (vec![output_id.clone()]),
+		vec![]
+	}
+
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{
+		if let &LossType::Output{ref output_id, ..} = &self.loss_type {
+			let input1_shape = shapes.get_shape(&self.input1_id).to_data_shape()?;
+			let input2_shape = shapes.get_shape(&self.input2_id).to_data_shape()?;
+			ensure!(input1_shape == input2_shape, "Shape of input1 did not match shape of input2");
+			let output_shape: NodeShape = calc_output_shape(input1_shape.slice(), &self.mean_axes, self.keep_dims).into();
+			shapes.merge_with(output_id, &output_shape)
+		} else {
+			Ok(())
 		}
 	}
 
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
-
 }
 
+fn calc_output_shape(input_shape: &[usize], axes: &[isize], keep_dims: bool) -> SmallVec<[usize; 6]> {
+	let reduce_mask = reduction_mask(input_shape.len(), &axes);
+	if keep_dims {
+		input_shape.iter().zip(&reduce_mask).map(|(&dim, &reduce)| {
+				if reduce {1} else {dim}
+			}).collect()
+	} else {
+		input_shape.iter().zip(&reduce_mask).filter_map(|(&dim, &reduce)| {
+				if reduce {None} else {Some(dim)}
+			}).collect()
+	}
+}
+
+/// Returns a mask indicating whether an axis should be reduced based on the axes list
+fn reduction_mask(len: usize, axes: &[isize]) -> SmallVec<[bool; 6]> {
+	let mut reduce = SmallVec::with_capacity(len);
+	for _ in 0..len {
+		reduce.push(false);
+	}
+	for axis in axes {
+		reduce[(axis + len as isize) as usize % len] = true;
+	}
+	reduce
+}
 
 #[derive(Clone, Debug)]
 struct MseJointPass {
 	multiplier: f32,
 	input1_id: NodeID,
 	input2_id: NodeID,
+	mean_axes: SmallVec<[isize; 6]>,
 }
 
 impl MseJointPass {
-	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID) -> Self {
+	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID, mean_axes: SmallVec<[isize; 6]>) -> Self {
 		MseJointPass {
 			multiplier,
 			input1_id,
 			input2_id,
+			mean_axes,
 		}
 	}
 }
@@ -205,136 +234,80 @@ impl Pass for MseJointPass {
 	}
 
 	fn run (&self, data: &Storage) -> Result<Box<Any>>{
-		let input1_val = data.get(&self.input1_id.value_id())?;
-		let input2_val = data.get(&self.input2_id.value_id())?;
+		let input1 = data.get(&self.input1_id.value_id())?;
+		let input2 = data.get(&self.input2_id.value_id())?;
 
 		ensure!(
-			input2_val.shape() == input1_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+			input2.shape() == input1.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
 		);
 
-		let avg_denom: usize = input1_val.shape()[1..].iter().product();
+		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
 
-		let input1_val = input1_val.as_slice().unwrap();
-		let input2_val = input2_val.as_slice().unwrap();
+		let divisor: usize = input_shape.iter().zip(reduction_mask(input_shape.len(), &self.mean_axes)).filter_map(|(dim, reduce)| if reduce{Some(dim)} else {None}).product();
+		let multiplier = self.multiplier/divisor as f32;
 
-		let n = input1_val.len();
-		assert!(input2_val.len() == n);
-		
-		let multiplier = self.multiplier/avg_denom as f32;
-		const SIMD: usize = 16;
+		//let output_shape_actual = calc_output_shape(&input_shape, &self.axes, self.keep_dims);
+		let output_shape_keep_dims = calc_output_shape(&input_shape, &self.mean_axes, true);
+
 		let mut error = 0.0;
-		let mut errs = [0.;SIMD];
-		
-		// type SIMD = U16;
-		// let mut errs = <GenericArray<f32, SIMD>>::default();
-		// let mut iv1 = <GenericArray<f32, SIMD>>::default();
-		// let mut iv2 = <GenericArray<f32, SIMD>>::default();
-		// let mut diff = <GenericArray<f32, SIMD>>::default();
 
 		if data.is_required(&self.input1_id.gradient_id()) && data.is_required(&self.input2_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
-			let input1_grad = input1_grad.as_slice_mut().unwrap();
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
-			let input2_grad = input2_grad.as_slice_mut().unwrap();
-			assert!(input1_grad.len() == n);
-			assert!(input2_grad.len() == n);
 
-			// SIMD::partial_unroll(n, |i, j|{
-			// 	unsafe{
-			// 		iv1[j] = *odds::get_unchecked(input1_val, i);
-			// 		iv2[j] = *odds::get_unchecked(input2_val, i);
-			// 		diff[j] = iv1[j] - iv2[j];
-			// 		errs[j] += diff[j]*diff[j]*multiplier;
-			// 		*odds::get_unchecked_mut(input1_grad, i) +=  2.0*diff[j]*multiplier;
-			// 		*odds::get_unchecked_mut(input2_grad, i) += -2.0*diff[j]*multiplier;
-			// 	}
-			// });
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()));
 
-			for i in 0..n/SIMD {
-				let input1_val = &input1_val[i*SIMD..][..SIMD];
-				let input2_val = &input2_val[i*SIMD..][..SIMD];
-				let input1_grad = &mut input1_grad[i*SIMD..][..SIMD];
-				let input2_grad = &mut input2_grad[i*SIMD..][..SIMD];
-
-				for j in 0..SIMD{
-					let diff = input1_val[j]-input2_val[j];
-					errs[j] += diff*diff*multiplier;
-					input1_grad[j] +=  2.0*diff*multiplier;
-					input2_grad[j] += -2.0*diff*multiplier;
-				}
+			for ((input1_chunk, input2_chunk), (mut input1_grad_chunk, mut input2_grad_chunk)) in iter1.zip(iter2) {
+				Zip::from(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input1_grad_chunk) 
+				.and(&mut input2_grad_chunk) 
+				.apply(|input1, input2, input1_grad, input2_grad| { 
+					let diff = input1-input2;
+					error += diff*diff*multiplier;
+					*input1_grad +=  2.0*diff*multiplier;
+					*input2_grad += -2.0*diff*multiplier;
+				});
 			}
 
-			for j in (n/SIMD)*SIMD..n {
-				let diff = input1_val[j]-input2_val[j];
-				error += diff*diff*multiplier;
-				input1_grad[j] +=  2.0*diff*multiplier;
-				input2_grad[j] += -2.0*diff*multiplier;
-			}
 		} else if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
-			let input1_grad = input1_grad.as_slice_mut().unwrap();
-			assert!(input1_grad.len() == n);
 
-			// SIMD::partial_unroll(n, |i, j|{
-			// 	unsafe{
-			// 		let diff = *odds::get_unchecked(input1_val, i) - *odds::get_unchecked(input2_val, i);
-			// 		errs[j] += diff*diff*multiplier;
-			// 		*odds::get_unchecked_mut(input1_grad, i) +=  2.0*diff*multiplier;
-			// 	}
-			// });
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
 
-			for i in 0..n/SIMD {
-				let input1_val = &input1_val[i*SIMD..][..SIMD];
-				let input2_val = &input2_val[i*SIMD..][..SIMD];
-				let input1_grad = &mut input1_grad[i*SIMD..][..SIMD];
-
-				for j in 0..SIMD{
-					let diff = input1_val[j]-input2_val[j];
-					errs[j] += diff*diff*multiplier;
-					input1_grad[j] += 2.0*diff*multiplier;
-				}
-			}
-
-			for j in (n/SIMD)*SIMD..n {
-				let diff = input1_val[j]-input2_val[j];
-				error += diff*diff*multiplier;
-				input1_grad[j] += 2.0*diff*multiplier;
+			for ((input1_chunk, input2_chunk), mut input1_grad_chunk) in iter1.zip(iter2) {
+				Zip::from(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input1_grad_chunk) 
+				.apply(|input1, input2, input1_grad| { 
+					let diff = input1-input2;
+					error += diff*diff*multiplier;
+					*input1_grad +=  2.0*diff*multiplier;
+				});
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
-			let input2_grad = input2_grad.as_slice_mut().unwrap();
-			assert!(input2_grad.len() == n);
 
-			// SIMD::partial_unroll(n, |i, j|{
-			// 	unsafe{
-			// 		let diff = *odds::get_unchecked(input1_val, i) - *odds::get_unchecked(input2_val, i);
-			// 		errs[j] += diff*diff*multiplier;
-			// 		*odds::get_unchecked_mut(input2_grad, i) += -2.0*diff*multiplier;
-			// 	}
-			// });
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
 
-			for i in 0..n/SIMD {
-				let input1_val = &input1_val[i*SIMD..][..SIMD];
-				let input2_val = &input2_val[i*SIMD..][..SIMD];
-				let input2_grad = &mut input2_grad[i*SIMD..][..SIMD];
-
-				for j in 0..SIMD{
-					let diff = input1_val[j]-input2_val[j];
-					errs[j] += diff*diff*multiplier;
-					input2_grad[j] += -2.0*diff*multiplier;
-				}
+			for ((input1_chunk, input2_chunk), mut input2_grad_chunk) in iter1.zip(iter2) {
+				Zip::from(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input2_grad_chunk) 
+				.apply(|input1, input2, input2_grad| { 
+					let diff = input1-input2;
+					error += diff*diff*multiplier;
+					*input2_grad += -2.0*diff*multiplier;
+				});
 			}
-
-			for j in (n/SIMD)*SIMD..n {
-				let diff = input1_val[j]-input2_val[j];
-				error += diff*diff*multiplier;
-				input2_grad[j] += -2.0*diff*multiplier;
-			}
-		}
-
-		for e in errs.iter() {
-			error += *e;
 		}
 
 		data.loss_add(error);
@@ -350,15 +323,19 @@ struct MseForward {
 	input1_id: NodeID,
 	input2_id: NodeID,
 	output_id: NodeID,
+	mean_axes: SmallVec<[isize; 6]>,
+	keep_dims: bool,
 }
 
 impl MseForward {
-	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID, output_id: NodeID,) -> Self {
+	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID, output_id: NodeID, mean_axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self {
 		MseForward {
 			multiplier,
 			input1_id,
 			input2_id,
 			output_id,
+			mean_axes,
+			keep_dims,
 		}
 	}
 }
@@ -372,71 +349,40 @@ impl Pass for MseForward {
 	}
 
 	fn run (&self, data: &Storage) -> Result<Box<Any>>{
-		let input1_val = data.get(&self.input1_id.value_id())?;
-		let input2_val = data.get(&self.input2_id.value_id())?;
-		let mut output_val = data.get_mut(&self.output_id.value_id())?;
+		let input1 = data.get(&self.input1_id.value_id())?;
+		let input2 = data.get(&self.input2_id.value_id())?;
+		let output = data.get_mut(&self.output_id.value_id())?;
 
 		ensure!(
-			input2_val.shape() == input1_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
+			input2.shape() == input1.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
 		);
-		ensure!(output_val.len() == 1, ErrorKind::PassError(self.instance_name(data.graph()), "Mse Output must be scalar".to_string()));
 
-		let avg_denom: usize = input1_val.shape()[1..].iter().product();
+		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
+		let output_shape: SmallVec<[usize; 6]> = output.shape().iter().cloned().collect();
 
-		let input1_val = input1_val.as_slice().unwrap();
-		let input2_val = input2_val.as_slice().unwrap();
-		let output_val = output_val.as_slice_mut().unwrap();
+		let divisor: usize = input_shape.iter().zip(reduction_mask(input_shape.len(), &self.mean_axes)).filter_map(|(dim, reduce)| if reduce{Some(dim)} else {None}).product();
+		let multiplier = self.multiplier/divisor as f32;
 
-		let n = input1_val.len();
-		assert!(input2_val.len() == n);
-		assert!(output_val.len() == 1);
+		let output_shape_actual = calc_output_shape(&input_shape, &self.mean_axes, self.keep_dims);
+		let output_shape_keep_dims = calc_output_shape(&input_shape, &self.mean_axes, true);
 
+		ensure!(output_shape_actual.as_slice() == output_shape.as_slice(), "Output shape {:?} does not match reduced input shape {:?}", output_shape.as_slice(), output_shape_actual.as_slice());
 
-		let multiplier = self.multiplier/avg_denom as f32;
-		const SIMD: usize = 16;
-		let mut error = 0.0;
-		let mut errs = [0.;SIMD];
-		
-		// type SIMD = U16;
-		// let mut errs = <GenericArray<f32, SIMD>>::default();
-		// let mut iv1 = <GenericArray<f32, SIMD>>::default();
-		// let mut iv2 = <GenericArray<f32, SIMD>>::default();
-		// let mut diff = <GenericArray<f32, SIMD>>::default();
+		let iter = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+			.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
 
+		let mut output = output.into_shape(&output_shape_keep_dims[..]).expect("This should have been caught by the ensure above");;
 
-		// SIMD::partial_unroll(n, |i, j|{
-		// 	unsafe{
-		// 		iv1[j] = *odds::get_unchecked(input1_val, i);
-		// 		iv2[j] = *odds::get_unchecked(input2_val, i);
-		// 		diff[j] = iv1[j] - iv2[j];
-		// 		errs[j] += diff[j]*diff[j]*multiplier;
-		// 		*odds::get_unchecked_mut(input1_grad, i) +=  2.0*diff[j]*multiplier;
-		// 		*odds::get_unchecked_mut(input2_grad, i) += -2.0*diff[j]*multiplier;
-		// 	}
-		// });
-
-		for i in 0..n/SIMD {
-			let input1_val = &input1_val[i*SIMD..][..SIMD];
-			let input2_val = &input2_val[i*SIMD..][..SIMD];
-
-			for j in 0..SIMD{
-				let diff = input1_val[j]-input2_val[j];
-				errs[j] += diff*diff;
-			}
+		for (input1_chunk, input2_chunk) in iter {
+			Zip::from(&mut output) 
+			.and(&input1_chunk) 
+			.and(&input2_chunk) 
+			.apply(|output, input1, input2| { 
+				let diff = input1 - input2;
+				*output += diff*diff * multiplier;
+			}); 
 		}
-
-		for j in (n/SIMD)*SIMD..n {
-			let diff = input1_val[j]-input2_val[j];
-			error += diff*diff;
-		}
-		
-
-		for e in errs.iter() {
-			error += *e;
-		}
-
-		output_val[0] = error*multiplier;
 
 		Ok(Box::new(()))
 	}
@@ -448,15 +394,19 @@ struct MseBackward {
 	input1_id: NodeID,
 	input2_id: NodeID,
 	output_id: NodeID,
+	mean_axes: SmallVec<[isize; 6]>,
+	keep_dims: bool,
 }
 
 impl MseBackward {
-	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID, output_id: NodeID) -> Self {
+	pub fn new(multiplier: f32, input1_id: NodeID, input2_id: NodeID, output_id: NodeID, mean_axes: SmallVec<[isize; 6]>, keep_dims: bool) -> Self {
 		MseBackward {
 			multiplier,
 			input1_id,
 			input2_id,
 			output_id,
+			mean_axes,
+			keep_dims,
 		}
 	}
 }
@@ -470,58 +420,83 @@ impl Pass for MseBackward {
 	}
 
 	fn run (&self, data: &Storage) -> Result<Box<Any>>{
-		let input1_val = data.get(&self.input1_id.value_id())?;
-		let input2_val = data.get(&self.input2_id.value_id())?;
+		let input1 = data.get(&self.input1_id.value_id())?;
+		let input2 = data.get(&self.input2_id.value_id())?;
 		let output_grad = data.get(&self.output_id.gradient_id())?;
 
 		ensure!(
-			input2_val.shape() == input1_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2_val.shape(), input1_val.shape()))
-			);
-		ensure!(output_grad.len() == 1, ErrorKind::PassError(self.instance_name(data.graph()), "Output must be scalar".to_string()));
+			input2.shape() == input1.shape(),
+			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
+		);
 
-		let avg_denom: usize = input1_val.shape()[1..].iter().product();
+		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
+		let output_shape: SmallVec<[usize; 6]> = output_grad.shape().iter().cloned().collect();
 
-		let input1_val = input1_val.as_slice().unwrap();
-		let input2_val = input2_val.as_slice().unwrap();
-		let output_grad = output_grad.as_slice().unwrap()[0];
+		let divisor: usize = input_shape.iter().zip(reduction_mask(input_shape.len(), &self.mean_axes)).filter_map(|(dim, reduce)| if reduce{Some(dim)} else {None}).product();
+		let multiplier = self.multiplier/divisor as f32;
 
+		let output_shape_actual = calc_output_shape(&input_shape, &self.mean_axes, self.keep_dims);
+		let output_shape_keep_dims = calc_output_shape(&input_shape, &self.mean_axes, true);
 
-		let n = input1_val.len();
-		assert!(input2_val.len() == n);
+		ensure!(output_shape_actual.as_slice() == output_shape.as_slice(), "Output shape {:?} does not match reduced input shape {:?}", output_shape.as_slice(), output_shape_actual.as_slice());
 
-		let multiplier = output_grad * self.multiplier/avg_denom as f32;
+		let output_grad = output_grad.into_shape(&output_shape_keep_dims[..]).expect("This should have been caught by the ensure above");;
 
 		if data.is_required(&self.input1_id.gradient_id()) && data.is_required(&self.input2_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
-			let input1_grad = input1_grad.as_slice_mut().unwrap();
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
-			let input2_grad = input2_grad.as_slice_mut().unwrap();
-			assert!(input1_grad.len() == n);
-			assert!(input2_grad.len() == n);
 
-			for j in 0..n {
-				let diff = input1_val[j]-input2_val[j];
-				input1_grad[j] +=  2.0*diff*multiplier;
-				input2_grad[j] += -2.0*diff*multiplier;
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()));
+
+			for ((input1_chunk, input2_chunk), (mut input1_grad_chunk, mut input2_grad_chunk)) in iter1.zip(iter2) {
+				Zip::from(&output_grad) 
+				.and(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input1_grad_chunk) 
+				.and(&mut input2_grad_chunk) 
+				.apply(|output_grad, input1, input2, input1_grad, input2_grad| { 
+					let diff = input1-input2;
+					*input1_grad +=  2.0*diff*multiplier*output_grad;
+					*input2_grad += -2.0*diff*multiplier*output_grad;
+				});
 			}
+
 		} else if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
-			let input1_grad = input1_grad.as_slice_mut().unwrap();
-			assert!(input1_grad.len() == n);
 
-			for j in 0..n {
-				let diff = input1_val[j]-input2_val[j];
-				input1_grad[j] += 2.0*diff*multiplier;
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
+
+			for ((input1_chunk, input2_chunk), mut input1_grad_chunk) in iter1.zip(iter2) {
+				Zip::from(&output_grad) 
+				.and(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input1_grad_chunk) 
+				.apply(|output_grad, input1, input2, input1_grad| { 
+					let diff = input1-input2;
+					*input1_grad +=  2.0*diff*multiplier*output_grad;
+				});
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
-			let input2_grad = input2_grad.as_slice_mut().unwrap();
-			assert!(input2_grad.len() == n);
 
-			for j in 0..n {
-				let diff = input1_val[j]-input2_val[j];
-				input2_grad[j] += -2.0*diff*multiplier;
+			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			let iter2 = input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
+
+			for ((input1_chunk, input2_chunk), mut input2_grad_chunk) in iter1.zip(iter2) {
+				Zip::from(&output_grad) 
+				.and(&input1_chunk) 
+				.and(&input2_chunk)
+				.and(&mut input2_grad_chunk) 
+				.apply(|output_grad, input1, input2, input2_grad| { 
+					let diff = input1-input2;
+					*input2_grad += -2.0*diff*multiplier*output_grad;
+				});
 			}
 		}
 
@@ -558,21 +533,24 @@ fn _mse_backprop() -> Result<()>{
 }
 
 #[test]
-fn test_mse_separate_backprop(){
-	_mse_separate_backprop().unwrap();
+fn test_mse_output_backprop(){
+	_mse_output_backprop().unwrap();
 }
 
-fn _mse_separate_backprop() -> Result<()>{
+fn _mse_output_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
+	use new::ops::loss::proportional::Proportional;
 
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
 	let node2 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
+	let node3 = g.new_node(shape![5], "output", tag![])?;
 
-	let _o1 = g.new_op(Mse::new(&node1, &node2).separate_loss(true), tag![])?;
+	let _o1 = g.new_op(Mse::new(&node1, &node2).mean_axes(&[0, -1]).output(&node3), tag![])?;
+	let _o2 = g.new_op(Proportional::new(&node3), tag![])?;
 
 	let iters = 100;
 	let failures = 1;

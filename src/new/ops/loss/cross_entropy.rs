@@ -1,6 +1,5 @@
 use new::graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
-use new::ops::{standard_op_name, standard_inner_node_name, Op, OpInstance, Pass};
-use new::ops::loss::proportional::Proportional;
+use new::ops::{standard_op_name, Op, OpInstance, Pass};
 use new::ops::loss::LossType;
 use std::any::Any;
 
@@ -18,7 +17,6 @@ use std::any::Any;
 pub struct CrossEntropy {
 	logits_id: NodeID,
 	labels_id: NodeID,
-	separate_loss: bool,
 	output: Option<NodeID>,
 	multiplier: f32,
 	name: Option<String>,
@@ -29,21 +27,14 @@ impl CrossEntropy {
 		CrossEntropy{
 			logits_id: logits_id.clone(),
 			labels_id: labels_id.clone(),
-			separate_loss: false,
 			output: None,
 			multiplier: 1.0,
 			name: None,
 		}
 	}
 	
-	/// If true (and output is None) a scalar output node is created along with a `Loss` Op. This allows the loss from this Op to be queries separately while still
-	/// Default: false
-	pub fn separate_loss(mut self, separate_loss: bool) -> Self {
-		self.separate_loss = separate_loss;
-		self
-	}
-
-	/// If set this `Op` will output to the supplied node, any rely no other use ops to generate loss and gradients.
+	/// If set this `Op` will output to the supplied node, and will no longer generate loss and gradients.
+	///
 	/// The output node must have size 1.
 	/// Default: None.
 	pub fn output(mut self, output: &NodeID) -> Self {
@@ -92,25 +83,6 @@ impl Op for CrossEntropy {
 					self.labels_id.clone(),
 					output_id.clone())),
 			}
-		} else if self.separate_loss {
-			let output_name = standard_inner_node_name(&name, graph);
-			let output_id = graph.new_node(shape![1], output_name, tag![])?;
-			let loss_id = graph.new_op(Proportional::new(&output_id), tag![])?;
-
-			LossType::Separate{
-				output_id: output_id.clone(),
-				loss_id: loss_id,
-				forward_id: graph.add_pass(CrossEntropyForward::new(
-					self.multiplier,
-					self.logits_id.clone(),
-					self.labels_id.clone(),
-					output_id.clone())),
-				backward_id: graph.add_pass(CrossEntropyBackward::new(
-					self.multiplier,
-					self.logits_id.clone(),
-					self.labels_id.clone(),
-					output_id.clone())),
-			}
 		} else {
 			LossType::Joint{
 				pass_id: graph.add_pass(CrossEntropyJointPass::new(
@@ -145,7 +117,7 @@ impl OpInstance for CrossEntropyInstance {
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Separate{..} => (vec![self.logits_id.clone(), self.labels_id.clone()], vec![]),
+			&LossType::Joint{..} => (vec![self.logits_id.clone(), self.labels_id.clone()], vec![]),
 			&LossType::Output{ref output_id, ..} => (vec![self.logits_id.clone(), self.labels_id.clone()], vec![output_id.clone()]),
 		}
 	}
@@ -153,25 +125,31 @@ impl OpInstance for CrossEntropyInstance {
 	fn inner_passes(&self) -> Vec<PassID> {
 		match &self.loss_type {
 			&LossType::Joint{ref pass_id} => vec![pass_id.clone()],
-			&LossType::Separate{ref forward_id, ref backward_id, ..} | &LossType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
+			&LossType::Output{ref forward_id, ref backward_id, ..} => vec![forward_id.clone(), backward_id.clone()],
 		}
 	}
 
 	fn inner_ops(&self) -> Vec<OpID> {
-		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Output{..} => vec![],
-			&LossType::Separate{ref loss_id, ..} => (vec![loss_id.clone()]),
-		}
+		vec![]
 	}
 
 	fn inner_nodes(&self) -> Vec<NodeID> {
-		match &self.loss_type {
-			&LossType::Joint{..} | &LossType::Output{..} => vec![],
-			&LossType::Separate{ref output_id, ..} => (vec![output_id.clone()]),
-		}
+		vec![]
 	}
 
-	fn propagate_shape_constraints(&self, _shapes: &mut GraphShapes) -> Result<()>{Ok(())}
+	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{
+		if let &LossType::Output{ref output_id, ..} = &self.loss_type {
+			let logits_shape = shapes.get_shape(&self.logits_id).clone();
+			{
+				let labels_shape = shapes.get_shape(&self.labels_id);
+				ensure!(&logits_shape == labels_shape, "Shape of logits did not match shape of labels");
+			}
+
+			shapes.merge_with(output_id, &logits_shape)
+		} else {
+			Ok(())
+		}
+	}
 }
 
 
@@ -256,7 +234,6 @@ impl Pass for CrossEntropyJointPass {
 			}
 		}
 
-
 		data.loss_add(error);
 
 		Ok(Box::new(()))
@@ -307,17 +284,13 @@ impl Pass for CrossEntropyForward {
 
 		let n = logits_val.len();
 		assert!(labels_val.len() == n);
-		assert!(output_val.len() == 1);
+		assert!(output_val.len() == n);
 
 		let multiplier = self.multiplier;
 
-		let mut error = 0.0;
-
 		for i in 0..n {
-			error += -labels_val[i] * logits_val[i].ln() * multiplier;
+			output_val[i] += -labels_val[i] * logits_val[i].ln() * multiplier;
 		}
-
-		output_val[0] = error*multiplier;
 
 		Ok(Box::new(()))
 	}
@@ -362,12 +335,12 @@ impl Pass for CrossEntropyBackward {
 
 		let logits_val = logits_val.as_slice().unwrap();
 		let labels_val = labels_val.as_slice().unwrap();
-		let output_grad = output_grad.as_slice().unwrap()[0];
+		let output_grad = output_grad.as_slice().unwrap();
 
 		let n = logits_val.len();
 		assert!(labels_val.len() == n);
 		
-		let multiplier = output_grad * self.multiplier;
+		let multiplier = self.multiplier;
 
 		if data.is_required(&self.logits_id.gradient_id()) && data.is_required(&self.labels_id.gradient_id()) {
 			let mut logits_grad = data.get_mut(&self.logits_id.gradient_id())?;
@@ -376,31 +349,33 @@ impl Pass for CrossEntropyBackward {
 			let labels_grad = labels_grad.as_slice_mut().unwrap();
 			assert!(logits_grad.len() == n);
 			assert!(labels_grad.len() == n);
+			assert!(output_grad.len() == n);
 
 			for i in 0..n {
-				logits_grad[i] += -labels_val[i] * multiplier / logits_val[i];
-				labels_grad[i] += - logits_val[i].ln() * multiplier;
+				logits_grad[i] += -labels_val[i] * multiplier / logits_val[i] * output_grad[i];
+				labels_grad[i] += - logits_val[i].ln() * multiplier * output_grad[i];
 			}
 
 		} else if data.is_required(&self.logits_id.gradient_id()) {
 			let mut logits_grad = data.get_mut(&self.logits_id.gradient_id())?;
 			let logits_grad = logits_grad.as_slice_mut().unwrap();
 			assert!(logits_grad.len() == n);
+			assert!(output_grad.len() == n);
 
 			for i in 0..n {
-				logits_grad[i] += -labels_val[i] * multiplier / logits_val[i];
+				logits_grad[i] += -labels_val[i] * multiplier / logits_val[i] * output_grad[i];
 			}
 
 		} else if data.is_required(&self.labels_id.gradient_id()) {
 			let mut labels_grad = data.get_mut(&self.labels_id.gradient_id())?;
 			let labels_grad = labels_grad.as_slice_mut().unwrap();
 			assert!(labels_grad.len() == n);
+			assert!(output_grad.len() == n);
 
 			for i in 0..n {
-				labels_grad[i] += - logits_val[i].ln() * multiplier;
+				labels_grad[i] += - logits_val[i].ln() * multiplier * output_grad[i];
 			}
 		}
-
 
 		Ok(Box::new(()))
 	}
@@ -438,24 +413,28 @@ fn _cross_entropy_backprop() -> Result<()>{
 }
 
 #[test]
-fn test_cross_entropy_separate_backprop(){
-	_cross_entropy_separate_backprop().unwrap();
+fn test_cross_entropy_output_backprop(){
+	_cross_entropy_output_backprop().unwrap();
 }
 
-fn _cross_entropy_separate_backprop() -> Result<()>{
+fn _cross_entropy_output_backprop() -> Result<()>{
 	use new::graph::GraphDef;
 	use new::ops::numeric_check::numeric_test;
 	use ordermap::OrderMap;
 	use new::ops::activ::logistic::Logistic;
+	use new::ops::loss::proportional::Proportional;
 
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
-	let node2 = g.new_node(shape![7, 5, 16], "logistic", tag![])?;
-	let node3 = g.new_node(shape![7, 5, 16], "input2", tag![])?;
+	let node2 = g.new_node(shape![7, 5, 16], "logits", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 16], "labels", tag![])?;
+
+	let node4 = g.new_node(shape![7, 5, 16], "output", tag![])?;
 
 	let _o1 = g.new_op(Logistic::new(&node1, &node2), tag![])?;
-	let _o2 = g.new_op(CrossEntropy::new(&node2, &node3).separate_loss(true), tag![])?;
+	let _o2 = g.new_op(CrossEntropy::new(&node2, &node3).output(&node4), tag![])?;
+	let _o3 = g.new_op(Proportional::new(&node4), tag![])?;
 
 	let iters = 100;
 	let failures = 2;
