@@ -403,23 +403,23 @@ fn _div_backprop() -> Result<()>{
 
 	let mut g = GraphDef::new();
 
-	let node1 = g.new_node(shape![7, 5, 16], "numerator", tag![])?;
-	let node2 = g.new_node(shape![1, 1, 16], "denominator", tag![])?;
-	let node3 = g.new_node(shape![7, 5, 16], "output", tag![])?;
-	let node4 = g.new_node(shape![7, 5, 16], "target", tag![])?;
+	let node1 = g.new_node(shape![7, 5, 32], "numerator", tag![])?;
+	let node2 = g.new_node(shape![1, 1, 32], "denominator", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 32], "output", tag![])?;
+	let node4 = g.new_node(shape![7, 5, 32], "target", tag![])?;
 
 	let _o1 = g.new_op(Div::new(&node1, &node2, &node3), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
 
 	let iters = 100;
 	let failures = 1;
-	let tolerance = 0.001;
+	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
 
 	let sample: Box<::std::ops::FnMut() -> f64 + 'static> = Box::new(|| {
 		let rng = &mut thread_rng();
-		let mut range = Range::new(0.1, 10.0);
+		let mut range = Range::new(0.2, 2.0);
 		range.sample(rng)
 	});
 	let mut override_dist = OrderMap::new();
@@ -445,23 +445,23 @@ fn _div_numerator_broadcast_backprop() -> Result<()>{
 
 	let mut g = GraphDef::new();
 
-	let node1 = g.new_node(shape![1, 1, 16], "numerator", tag![])?;
-	let node2 = g.new_node(shape![7, 5, 16], "denominator", tag![])?;
-	let node3 = g.new_node(shape![7, 5, 16], "output", tag![])?;
-	let node4 = g.new_node(shape![7, 5, 16], "target", tag![])?;
+	let node1 = g.new_node(shape![1, 1, 32], "numerator", tag![])?;
+	let node2 = g.new_node(shape![7, 5, 32], "denominator", tag![])?;
+	let node3 = g.new_node(shape![7, 5, 32], "output", tag![])?;
+	let node4 = g.new_node(shape![7, 5, 32], "target", tag![])?;
 
 	let _o1 = g.new_op(Div::new(&node1, &node2, &node3).broadcast_numerator(true), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node3, &node4), tag![])?;
 
 	let iters = 100;
 	let failures = 1;
-	let tolerance = 0.001;
+	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
 
 	let sample: Box<::std::ops::FnMut() -> f64 + 'static> = Box::new(|| {
 		let rng = &mut thread_rng();
-		let mut range = Range::new(0.1, 10.0);
+		let mut range = Range::new(0.2, 2.0);
 		range.sample(rng)
 	});
 	let mut override_dist = OrderMap::new();

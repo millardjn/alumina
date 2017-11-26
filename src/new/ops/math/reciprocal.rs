@@ -83,7 +83,7 @@ fn _reciprocal_backprop() -> Result<()>{
 
 	let sample: Box<::std::ops::FnMut() -> f64 + 'static> = Box::new(|| {
 		let rng = &mut thread_rng();
-		let mut range = Range::new(0.1, 10.0);
+		let mut range = Range::new(0.2, 10.0);
 		range.sample(rng)
 	});
 	let mut override_dist = OrderMap::new();
