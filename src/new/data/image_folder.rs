@@ -16,8 +16,9 @@ pub struct ImageFolder {
 
 impl ImageFolder {
 	
-	pub fn new(root_path: &Path, subfolders: bool) -> ImageFolder {
-		
+	pub fn new<P: AsRef<Path>>(root_path: P, subfolders: bool) -> ImageFolder {
+		let root_path = root_path.as_ref();
+
 		print!("Loading paths for {} ... ", root_path.to_string_lossy());
 		stdout().flush().ok();
 
@@ -124,3 +125,21 @@ pub fn image_to_data(image: &DynamicImage) -> ArrayD<f32> {
 		data
 }
 
+
+#[test]
+fn image_crop_test() {
+	_image_crop_test()
+}
+
+fn _image_crop_test() {
+	use new::data::{Cropping, DataStream};
+
+	let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.push("res");
+
+	let mut images = ImageFolder::new(d, true)
+		.crop(0, &[25, 25, 3], Cropping::Random)
+		.sequential();
+
+	assert_eq!(&[25, 25, 3], images.next()[0].shape());
+}
