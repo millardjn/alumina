@@ -194,6 +194,7 @@ impl Pass for ReduceMeanForward {
 		let output_shape: SmallVec<[usize; 6]> = output.shape().iter().cloned().collect();
 
 		let divisor: usize = input_shape.iter().zip(reduction_mask(input_shape.len(), &self.axes)).filter_map(|(dim, reduce)| if reduce{Some(dim)} else {None}).product();
+		let multiplier = 1.0/divisor as f32;
 
 		let output_shape_actual = calc_output_shape(&input_shape, &self.axes, self.keep_dims);
 		let output_shape_keep_dims = calc_output_shape(&input_shape, &self.axes, true);
@@ -202,7 +203,7 @@ impl Pass for ReduceMeanForward {
 
 		let mut output = output.into_shape(output_shape_keep_dims.as_slice()).expect("This should have been caught on the line above");
 		for in_chunk in input.exact_chunks(output_shape_keep_dims.as_slice()) {
-			output.scaled_add(1.0/divisor as f32, &in_chunk);
+			output.scaled_add(multiplier, &in_chunk);
 		}
 
 		Ok(Box::new(()))
@@ -245,6 +246,7 @@ impl Pass for ReduceMeanBackward {
 		let output_shape: SmallVec<[usize; 6]> = output_grad.shape().iter().cloned().collect();
 
 		let divisor: usize = input_shape.iter().zip(reduction_mask(input_shape.len(), &self.axes)).filter_map(|(dim, reduce)| if reduce{Some(dim)} else {None}).product();
+		let multiplier = 1.0/divisor as f32;
 
 		let output_shape_actual: SmallVec<[usize; 6]> = calc_output_shape(&input_shape, &self.axes[..], self.keep_dims);
 		let output_shape_keep_dims: SmallVec<[usize; 6]> = calc_output_shape(&input_shape, &self.axes[..], true);
@@ -253,7 +255,7 @@ impl Pass for ReduceMeanBackward {
 
 		let output_grad = output_grad.into_shape(output_shape_keep_dims.as_slice()).expect("This should have been caught on the line above");
 		for mut in_grad_chunk in input_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()) {
-			in_grad_chunk.scaled_add(1.0/divisor as f32, &output_grad);
+			in_grad_chunk.scaled_add(multiplier, &output_grad);
 		}
 
 		Ok(Box::new(()))
