@@ -6,6 +6,7 @@ pub mod math;
 pub mod activ;
 pub mod shape;
 pub mod reduce;
+pub mod regularisation;
 
 use new::graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, Error, ErrorKind, Result};
 use std::any::Any;
