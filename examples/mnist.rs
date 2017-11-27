@@ -1,422 +1,204 @@
-
-extern crate alumina;
+#[macro_use]
+extern crate alumina as al;
+extern crate ndarray;
 
 use std::path::Path;
+use std::sync::Arc;
+use std::cell::Cell;
+use al::graph::{GraphDef, NodeTag, Result};
+use al::ops::nn::linear::Linear;
+use al::ops::shape::avg_pool::AvgPool;
+use al::ops::nn::bias::Bias;
+use al::ops::nn::conv::Conv;
+use al::ops::activ::tanh::Tanh;
+use al::ops::activ::spline::Spline;
+use al::ops::activ::softmax::Softmax;
+use al::ops::loss::cross_entropy::CrossEntropy;
+use al::ops::loss::prediction::Prediction;
+use al::opt::{Opt, CallbackSignal, max_steps, every_n_steps};
 
-// This would normally be a single glob import, but broken out for clarity.
-use alumina::ops;
-use alumina::ops::Operation;
-use alumina::ops::activ;
-use alumina::ops::basic;	
-use alumina::ops::loss;
-use alumina::ops::conv;
-use alumina::ops::reshape;
+use al::opt::sgd::Sgd;
+use al::opt::adam::Adam;
 
+use al::data::mnist::Mnist;
+use al::data::*;
+use ndarray::ArrayD;
 
-use alumina::opt;
-use alumina::opt::{Optimiser, CallbackData, CallbackSignal, max_evals};
-use alumina::supplier::{Supplier, ShuffleRandom, Sequential};
-use alumina::supplier::mnist::MnistSupplier;
-use alumina::vec_math::*;
-use alumina::graph::*;
-
-
-const MNIST_PATH: &'static str = "D:/ML/Mnist"; // This folder should have the mnist binary data files for training and testing.
 
 fn main(){
-
-	let (mut g, pred, label) = mnist_adam(1.0e-3);
-	let train_loss = loss::SoftMaxCrossEntLoss::new_default(&pred, &label);
-	g.add_operation(train_loss);
-
-	let mut training_set = MnistSupplier::<ShuffleRandom>::training(Path::new(MNIST_PATH));
-
-	let start_params = g.init_params();
-	let mut solver = opt::cain::Cain::new(&mut g)
-		.num_subbatches(8)
-		.target_err(0.95)
-		.rate_adapt_coefficient(1.05)
-		.subbatch_increase_damping(0.25)
-		.subbatch_decrease_damping(0.25)
-		.aggression(0.5)
-		.momentum(0.9)
-		.initial_learning_rate(1e-2)
-		.finish();
-
-
-	println!("Total num params: {}", start_params.len());
-
-	solver.add_boxed_step_callback(validation(&start_params, training_set.epoch_size()));
-	solver.add_boxed_step_callback(max_evals(100 * training_set.epoch_size()));
-	
-	let _opt_params = solver.optimise_from(&mut training_set, start_params);
-
+	learn_mnist().unwrap();
 }
 
+fn learn_mnist() -> Result<()> {
+	//let g = mnist_tanh_800(1.0e-3)?;
+	let g = mnist_lenet(1.0e-3)?;
 
-fn validation(start_params: &[f32], training_set_size: usize) -> Box<FnMut(&CallbackData)->CallbackSignal>{
-	let mut val_set = MnistSupplier::<Sequential>::testing(Path::new(MNIST_PATH)); // I mean, who doesnt validate on the test set /s
-	let (mut g2, pred2, label2) = mnist_adam(0.0);
-	let val_loss = loss::PredictionLoss::new_default(&pred2, &label2);
-	g2.add_operation(val_loss);
+	let batch_size = 16;
 
-	let start_params = start_params.to_vec();
+	let data = Mnist::training(Path::new("D:/ML/Mnist"));
+	let epoch = data.length();
+	let mut data_stream = data
+		.shuffle_random()
+		.batch(batch_size)
+		.buffered(32);
 
-	opt::every_n_evals(training_set_size, Box::new(move |data: &CallbackData|{
-		println!("Params moved:{}", data.params.add_scaled(&start_params, -1.0).norm2());
+
+	let mut params = None;
+	let avg_err = Arc::new(Cell::new(2.3));
+
+	for &lr in &[1e-2, 1e-4, 1e-5] {
+		// let mut solver = Sgd::new(&g)?
+		// 	.rate(lr)
+		// 	.momentum(0.9);
+
+		let mut solver = Adam::new(&g)?
+			.rate(lr)
+			.beta1(0.9)
+			.beta2(0.995);
+
+		params = if params.is_some() {params} else {Some(g.initialise_nodes(solver.parameters())?)};
 		
-		let mut n = val_set.epoch_size();
-		let count = n/256;
+		let mut validation = validation(&g)?;
+		solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |data| {
+			validation(data.params);
+			CallbackSignal::Continue
+		})));
+		let mut i = 0;
+		solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |_| {i += 1; println!("epoch:{}", i); CallbackSignal::Continue})));
+		solver.add_boxed_callback(max_steps(3 * epoch/batch_size));
+		let mut avg_err1 = avg_err.clone();
+		solver.add_callback(move |data| {
+			let new_avg_err = 0.95 * avg_err1.get() + 0.05 * data.err/batch_size as f32;
+			avg_err1.set(new_avg_err);
+			CallbackSignal::Continue
+		});
+		let mut avg_err2 = avg_err.clone();
+		solver.add_boxed_callback(every_n_steps(100, Box::new(move |_data| {
+			println!("err: {}", avg_err2.get());
+			CallbackSignal::Continue
+		})));
+
+		params = Some(solver.optimise_from(&mut data_stream, params.unwrap()).unwrap());
+	}
+
+	Ok(())
+}
+
+fn validation(g: &GraphDef) -> Result<Box<FnMut(&[ArrayD<f32>])>>{
+	let data = Mnist::testing(Path::new("D:/ML/Mnist")); // I mean, who doesnt validate on the test set!
+	let epoch = data.length();
+	let batch_size = 100;
+	let mut data_stream = data
+		.sequential()
+		.batch(batch_size)
+		.buffered(32);
+
+	let inputs: Vec<_> = [g.node_id("input")?, g.node_id("labels")?].iter()
+		.chain(g.node_ids(NodeTag::Parameter).keys())
+		.map(|node_id| node_id.value_id()).collect();
+	let prediction_loss = g.node_id("prediction_loss")?;
+	let mut subgraph = g.subgraph(&inputs, &[prediction_loss.value_id()])?;
+	
+	Ok(Box::new(move |parameters: &[ArrayD<f32>]|{
+		//println!("Params moved:{}", data.params.add_scaled(&start_params, -1.0).norm2());
+		
 		let mut err = 0.0;
 		
-		for i in 0..count {
-			let batch_size = n/(count - i);
-
-			let (input, training_input) = val_set.next_n(batch_size);
-			let (batch_err, _, _) = g2.backprop(batch_size, input, training_input, data.params);
-			err += batch_err;
-			n -= batch_size;
+		for _ in 0..epoch/batch_size {
+			let mut inputs = data_stream.next();
+			inputs.extend(parameters.iter().cloned());
+			let storage = subgraph.execute(inputs).expect("Could not execute validation");
+			let err_vec = storage.get(&prediction_loss.value_id()).unwrap();
+			err += err_vec.scalar_sum();
 		}
 
-		println!("Validation error is: {}%", 100.0*err/val_set.epoch_size() as f32);
-		CallbackSignal::Continue
+		println!("Validation error is: {}%", 100.0*err/epoch as f32);
 	}))
-
-}
-
-
-/// Based on LeNet variant as descripted at http://luizgh.github.io/libraries/2015/12/08/getting-started-with-lasagne/
-/// Activation not specified so using BeLU
-fn mnist_lenet2(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-
-	let input = g.add_input_node(Node::new_sized(1, &[28,28], "input"));
-
-	let ch1 = 6;
-	let layer1 = g.add_node(Node::new_shaped(ch1, 2, "layer1"));
-	let layer1_activ = g.add_node(Node::new_shaped(ch1, 2, "layer1_activ"));
-	let layer1_pool = g.add_node(Node::new_sized(ch1, &[14, 14], "layer1_pool"));
-
-	let ch2 = 10;
-	let layer2 = g.add_node(Node::new_shaped(ch2, 2, "layer2"));
-	let layer2_activ = g.add_node(Node::new_shaped(ch2, 2, "layer2_activ"));
-	let layer2_pool = g.add_node(Node::new_sized(ch2, &[7, 7],"layer2_pool")); // changed from [7,7] to [5,5] to reduce parameters/overfitting
-
-	let ch3 = 32; // changed from 100 to 64 to reduce parameters/overfitting
-	let layer3 = g.add_node(Node::new_flat(ch3, "layer3"));
-	let layer3_activ = g.add_node(Node::new_flat(ch3, "layer3_activ"));	
-
-
-	let pred = g.add_node(Node::new_flat(10, "prediction"));
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-	
-
-	let ops: Vec<Box<Operation>> = vec![
-		
-		conv::Convolution::new(&input, &layer1, &[5, 5], conv::Padding::Same, "conv1", conv::Convolution::init_msra(1.0)),
-		basic::Bias::new(&layer1, ops::ParamSharing::Spatial, "bias1", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer1_activ, &layer1_pool, &[2, 2], "pooling1"),
-
-		conv::Convolution::new(&layer1_pool, &layer2, &[5, 5], conv::Padding::Same, "conv2", conv::Convolution::init_msra(1.0)),
-		basic::Bias::new(&layer2, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer2_activ, &layer2_pool, &[2, 2], "pooling2"), // downscale by [3,3] instead of [2,2] to reduce parameters/overfitting
-
-		basic::LinearMap::new(&layer2_pool, &layer3, "dense1", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&layer3, ops::ParamSharing::None, "bias_dense1", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer3, &layer3_activ, ops::ParamSharing::None, "activation2", activ::BeLU::init_porque_no_los_dos()),
-
-		basic::LinearMap::new(&layer3_activ, &pred, "dense2", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&pred, ops::ParamSharing::None, "bias_dense2", ops::init_fill(0.0)),
-	];
-	let op_inds = g.add_operations(ops);
-
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-	}
-
-	(g, pred, label)
-}
-
-/// Based on LeNet variant as descripted at http://luizgh.github.io/libraries/2015/12/08/getting-started-with-lasagne/
-/// Activation not specified so using BeLU
-fn mnist_lenetd(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-
-	let input = g.add_input_node(Node::new_sized(1, &[28,28], "input"));
-
-	let ch1 = 16;
-	let layer1 = g.add_node(Node::new_shaped(ch1, 2, "layer1"));
-	let layer1_activ = g.add_node(Node::new_shaped(ch1, 2, "layer1_activ"));
-	let layer1_pool = g.add_node(Node::new_sized(ch1, &[14, 14], "layer1_pool"));
-
-	let ch2 = 16;
-	let layer2a = g.add_node(Node::new_shaped(ch2, 2, "layer2a"));
-	let layer2a_activ = g.add_node(Node::new_shaped(ch2, 2, "layer2a_activ"));
-	let layer2b = g.add_node(Node::new_shaped(ch2, 2, "layer2b"));
-	let layer2b_activ = g.add_node(Node::new_shaped(ch2, 2, "layer2b_activ"));
-	let layer2_pool = g.add_node(Node::new_sized(ch2, &[7, 7],"layer2_pool"));
-
-	let ch3 = 8;
-	let layer3a = g.add_node(Node::new_shaped(ch3, 2, "layer3"));
-	let layer3a_activ = g.add_node(Node::new_shaped(ch3, 2, "layer3_activ"));
-	let layer3b = g.add_node(Node::new_shaped(ch3, 2, "layer3"));
-	let layer3b_activ = g.add_node(Node::new_shaped(ch3, 2, "layer3_activ"));
-	let layer3_pool = g.add_node(Node::new_sized(ch3, &[4, 4],"layer3_pool"));
-
-	let pred = g.add_node(Node::new_flat(10, "prediction"));
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-	
-
-	let ops: Vec<Box<Operation>> = vec![
-		
-		conv::Convolution::new(&input, &layer1, &[5, 5], conv::Padding::Same, "conv1", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer1, ops::ParamSharing::Spatial, "bias1", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
-		reshape::Pooling::new(&layer1_activ, &layer1_pool, &[2, 2], "pooling1"),
-
-
-		conv::Convolution::new(&layer1_pool, &layer2a, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer2a, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer2a, &layer2a_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()),
-		
-		conv::Convolution::new(&layer2a, &layer2b, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(1.0)),
-		conv::Convolution::new(&layer1_pool, &layer2b, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(1.0)),
-		basic::Bias::new(&layer2b, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer2b, &layer2b_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()),
-
-		reshape::Pooling::new(&layer2a_activ, &layer2_pool, &[2, 2], "pooling2a"),
-		reshape::Pooling::new(&layer2b_activ, &layer2_pool, &[2, 2], "pooling2b"),
-
-
-		conv::Convolution::new(&layer2_pool, &layer3a, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(2.0)),
-		basic::Bias::new(&layer3a, ops::ParamSharing::Spatial, "bias3", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer3a, &layer3a_activ, ops::ParamSharing::Spatial, "activation3", activ::BeLU::init_porque_no_los_dos()),
-
-		conv::Convolution::new(&layer3a, &layer3b, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(1.0)),
-		conv::Convolution::new(&layer2_pool, &layer3b, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(1.0)),
-		basic::Bias::new(&layer3b, ops::ParamSharing::Spatial, "bias3", ops::init_fill(0.0)),
-		activ::BeLU::new(&layer3b, &layer3b_activ, ops::ParamSharing::Spatial, "activation3", activ::BeLU::init_porque_no_los_dos()),
-
-		reshape::Pooling::new(&layer3a_activ, &layer3_pool, &[2, 2], "pooling3a"),
-		reshape::Pooling::new(&layer3b_activ, &layer3_pool, &[2, 2], "pooling3b"),
-		
-
-		basic::LinearMap::new(&layer3_pool, &pred, "dense2", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&pred, ops::ParamSharing::None, "bias_dense2", ops::init_fill(0.0)),
-	];
-	let op_inds = g.add_operations(ops);
-
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-	}
-
-	(g, pred, label)
-}
-
-/// Based on LeNet variant as descripted at http://luizgh.github.io/libraries/2015/12/08/getting-started-with-lasagne/
-/// Activation not specified so using BeLU
-fn mnist_lenet(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-
-	let input = g.add_input_node(Node::new_sized(1, &[28,28], "input"));
-
-	let ch1 = 16;
-	let layer1 = g.add_node(Node::new_shaped(ch1, 2, "layer1"));
-	let layer1_activ = g.add_node(Node::new_shaped(ch1, 2, "layer1_activ"));
-	let layer1_pool = g.add_node(Node::new_sized(ch1, &[14, 14], "layer1_pool"));
-
-	let ch2 = 32;
-	let layer2 = g.add_node(Node::new_shaped(ch2, 2, "layer2"));
-	let layer2_activ = g.add_node(Node::new_shaped(ch2, 2, "layer2_activ"));
-	let layer2_pool = g.add_node(Node::new_sized(ch2, &[7, 7],"layer2_pool"));
-
-	let ch3 = 16;
-	let layer3 = g.add_node(Node::new_shaped(ch3, 2, "layer3"));
-	let layer3_activ = g.add_node(Node::new_shaped(ch3, 2, "layer3_activ"));
-	let layer3_pool = g.add_node(Node::new_sized(ch3, &[4, 4],"layer3_pool"));
-
-	let pred = g.add_node(Node::new_flat(10, "prediction"));
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-	
-
-	let mut ops: Vec<Box<Operation>> = vec![];
-	let mut bias_ops: Vec<Box<Operation>> = vec![];
-	ops.push(conv::Convolution::new(&input, &layer1, &[7, 7], conv::Padding::Same, "conv1", conv::Convolution::init_msra(2.0)));
-	bias_ops.push(basic::Bias::new(&layer1, ops::ParamSharing::Spatial, "bias1", ops::init_fill(0.0)));
-	ops.push(activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()));
-	ops.push(reshape::Pooling::new(&layer1_activ, &layer1_pool, &[2, 2], "pooling1"));
-
-	ops.push(conv::Convolution::new(&layer1_pool, &layer2, &[3, 3], conv::Padding::Same, "conv2", conv::Convolution::init_msra(2.0)));
-	bias_ops.push(basic::Bias::new(&layer2, ops::ParamSharing::Spatial, "bias2", ops::init_fill(0.0)));
-	ops.push(activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation2", activ::BeLU::init_porque_no_los_dos()));
-	ops.push(reshape::Pooling::new(&layer2_activ, &layer2_pool, &[2, 2], "pooling2"));
-
-	ops.push(conv::Convolution::new(&layer2_pool, &layer3, &[3, 3], conv::Padding::Same, "conv3", conv::Convolution::init_msra(2.0)));
-	bias_ops.push(basic::Bias::new(&layer3, ops::ParamSharing::Spatial, "bias3", ops::init_fill(0.0)));
-	ops.push(activ::BeLU::new(&layer3, &layer3_activ, ops::ParamSharing::Spatial, "activation3", activ::BeLU::init_porque_no_los_dos()));
-	ops.push(reshape::Pooling::new(&layer3_activ, &layer3_pool, &[2, 2], "pooling3"));
-
-	ops.push(basic::LinearMap::new(&layer3_pool, &pred, "dense2", basic::LinearMap::init_msra(1.0)));
-	bias_ops.push(basic::Bias::new(&pred, ops::ParamSharing::None, "bias_dense2", ops::init_fill(0.0)));
-	
-	let op_inds = g.add_operations(ops);
-	let bias_op_inds = g.add_operations(bias_ops);
-
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-		for op_ind in &bias_op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise*0.001, "L2"), op_ind);
-		}
-	}
-
-	(g, pred, label)
-}
-
-/// Mnist network used for benchmarking optimisers in the ADAM paper: https://arxiv.org/pdf/1412.6980v8.pdf
-fn mnist_adam(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-
-	let input = g.add_input_node(Node::new_sized(1, &[28,28], "input"));
-
-	let layer1 = g.add_node(Node::new_flat(512, "layer1"));
-	let layer1_activ = g.add_node(Node::new_flat(512, "layer1_activ"));
-
-	let layer2 = g.add_node(Node::new_flat(512, "layer2"));
-	let layer2_activ = g.add_node(Node::new_flat(512, "layer2_activ"));
-
-	let pred = g.add_node(Node::new_flat(10, "prediction"));
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-	
-
-	let ops: Vec<Box<Operation>> = vec![
-		
-
-		basic::LinearMap::new(&input, &layer1, "dense1", basic::LinearMap::init_msra(0.1)),
-		basic::Bias::new(&layer1, ops::ParamSharing::None, "bias1", ops::init_fill(0.0)),
-		activ::LeakyReLU::new(&layer1, &layer1_activ, 0.01, "activation1"),
-		//activ::BeLU::new(&layer1, &layer1_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
-
-		basic::LinearMap::new(&layer1_activ, &layer2, "dense2", basic::LinearMap::init_msra(0.1)),
-		basic::Bias::new(&layer2, ops::ParamSharing::None, "bias2", ops::init_fill(0.0)),
-		activ::LeakyReLU::new(&layer2, &layer2_activ, 0.01, "activation2"),
-		//activ::BeLU::new(&layer2, &layer2_activ, ops::ParamSharing::Spatial, "activation1", activ::BeLU::init_porque_no_los_dos()),
-
-		basic::LinearMap::new(&layer2_activ, &pred, "dense3", basic::LinearMap::init_msra(0.1)),
-		basic::Bias::new(&pred, ops::ParamSharing::None, "bias3", ops::init_fill(0.0)),
-	];
-	let op_inds = g.add_operations(ops);
-
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-	}
-
-	(g, pred, label)
 }
 
 /// A common mnist network with two hidden layers of 800 units and tanh activation functions
 #[allow(unused)]
-fn mnist_tanh_800(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-	
-	let input = g.add_input_node(Node::new_flat(28*28, "input"));
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-		
-	let layer1 = g.add_node(Node::new_flat(800, "layer1"));
-	let layer1_activ = g.add_node(Node::new_flat(800, "layer1_activ"));
-	
-	let layer2 = g.add_node(Node::new_flat(800, "layer2"));
-	let layer2_activ = g.add_node(Node::new_flat(800, "layer2_activ"));
-		
-	let pred = g.add_node(Node::new_flat(10, "prediction"));
+fn mnist_tanh_800(regularise: f32) -> Result<GraphDef> {
+	let mut g = GraphDef::new();
 
-	let ops: Vec<Box<Operation>> = vec![
-		basic::LinearMap::new(&input, &layer1, "dense1", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&layer1, ops::ParamSharing::Auto, "bias1", ops::init_fill(0.0)),
-		activ::Tanh::new(&layer1, &layer1_activ, "activation1"),
-		
-		basic::LinearMap::new(&layer1_activ, &layer2, "dense2", basic::LinearMap::init_msra(1.0)),
-		basic::Bias::new(&layer2, ops::ParamSharing::Auto, "bias2", ops::init_fill(0.0)),
-		activ::Tanh::new(&layer2, &layer2_activ, "activation1"),
-		
-		basic::LinearMap::new(&layer2_activ, &pred, "dense5", basic::LinearMap::init_msra(1.0)),
-	];
-	let op_inds = g.add_operations(ops);
+	let input = g.new_node(shape![Unknown, 28, 28, 1], "input", tag![])?;
+	let labels = g.new_node(shape![Unknown, 10], "labels", tag![])?;
 
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-	}
+	let layer1 = g.new_node(shape![Unknown, 800], "layer1", tag![])?;
+	let layer1_activ = g.new_node(shape![Unknown, 800], "layer1_activ", tag![])?;
 
-	(g, pred, label) 
+	let layer2 = g.new_node(shape![Unknown, 800], "layer2", tag![])?;
+	let layer2_activ = g.new_node(shape![Unknown, 800], "layer2_activ", tag![])?;
+
+	let prediction = g.new_node(shape![Unknown, 10], "prediction", tag![])?;
+	let softmax = g.new_node(shape![Unknown, 10], "softmax", tag![])?;
+
+	let prediction_loss = g.new_node(shape![Unknown], "prediction_loss", tag![])?;
+
+	g.new_op(Linear::new(&input, &layer1).init(Linear::msra(1.0)), tag![])?;
+	g.new_op(Bias::new(&layer1), tag![])?;
+	g.new_op(Tanh::new(&layer1, &layer1_activ), tag![])?;
+
+	g.new_op(Linear::new(&layer1_activ, &layer2).init(Linear::msra(1.0)), tag![])?;
+	g.new_op(Bias::new(&layer2), tag![])?;
+	g.new_op(Tanh::new(&layer2, &layer2_activ), tag![])?;
+
+	g.new_op(Linear::new(&layer2_activ, &prediction).init(Linear::msra(1.0)), tag![])?;
+	g.new_op(Softmax::new(&prediction, &softmax), tag![])?;
+	g.new_op(CrossEntropy::new(&softmax, &labels), tag![])?;
+
+	g.new_op(Prediction::new(&prediction, &labels, &prediction_loss).axes(&[-1]), tag![])?;
+
+	Ok(g)
 }
 
-
-/// A non convolutional densenet like graph, but rather than connecting to all previous layers only connecting each layer to layers that are a power of 2 away.
+/// Based on LeNet variant as descripted at http://luizgh.github.io/libraries/2015/12/08/getting-started-with-lasagne/
+/// Activation used is the non-traditional Spline
 #[allow(unused)]
-fn mnist_lognet(regularise: f32) -> (Graph, NodeID, NodeID){
-	let mut g = Graph::new();
-	
-	let mut linear_nodes = vec![];
-	let mut active_nodes = vec![];
-	let mut ops: Vec<Box<Operation>> = vec![];
+fn mnist_lenet(regularise: f32) -> Result<GraphDef> {
+	let mut g = GraphDef::new();
 
-	active_nodes.push(g.add_input_node(Node::new_flat(28*28, "input")));
-	
-	let hidden_layers = 6usize; // 2^x-1 if the prediction layer should connect directly to the input
-	let hidden_layer_size = 32;
+	let input = g.new_node(shape![Unknown, 28, 28, 1], "input", tag![])?;
+	let labels = g.new_node(shape![Unknown, 10], "labels", tag![])?;
 
-	
-	for i in 0..hidden_layers+1{
+	let c1 = 6;
+	let layer1 = g.new_node(shape![Unknown, Unknown, Unknown, c1], "layer1", tag![])?;
+	let layer1_activ = g.new_node(shape![Unknown, Unknown, Unknown, c1], "layer1_activ", tag![])?;
+	let layer1_pool = g.new_node(shape![Unknown, Unknown, Unknown, c1], "layer1_pool", tag![])?;
 
-		let layer_size = if i < hidden_layers {hidden_layer_size} else {10};
+	let c2 = 10;
+	let layer2 = g.new_node(shape![Unknown, Unknown, Unknown, c2], "layer2", tag![])?;
+	let layer2_activ = g.new_node(shape![Unknown, Unknown, Unknown, c2], "layer2_activ", tag![])?;
+	let layer2_pool = g.new_node(shape![Unknown, 7, 7, c2], "layer2_pool", tag![])?;
 
-		let new_linear_node = g.add_node(Node::new_flat(layer_size, "base_node"));
+	let c3 = 32;
+	let layer3 = g.new_node(shape![Unknown, c3], "layer3", tag![])?;
+	let layer3_activ = g.new_node(shape![Unknown, c3], "layer3_activ", tag![])?;
 
-		let connections = std::mem::size_of_val(&active_nodes.len())*8 - active_nodes.len().leading_zeros() as usize;
+	let prediction = g.new_node(shape![Unknown, 10], "prediction", tag![])?;
+	let softmax = g.new_node(shape![Unknown, 10], "softmax", tag![])?;
 
-		// connect each layer (hidden and output) to previous layers which are a power of 2 from it.
-		let mut jump = 1;
-		while jump <= active_nodes.len(){
-			//ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(0.5/jump as f32)));
-			ops.push(basic::LinearMap::new(&active_nodes[active_nodes.len() - jump], &new_linear_node, "dense", basic::LinearMap::init_msra(2.0/connections as f32)));
-			jump *= 2;
-		}
-		g.add_operation(basic::Bias::new(&new_linear_node, ops::ParamSharing::Auto, "bias", ops::init_fill(0.0)));
-		//ops.push(basic::Bias::new(&new_linear_node, ops::ParamSharing::Auto, "bias", ops::init_fill(0.0)));
-		
-		// add activation only for hidden layers
-		if i < hidden_layers{
-			let new_active_node = g.add_node(Node::new_flat(layer_size, "active_node"));
-			//ops.push(activ::Tanh::new(&new_linear_node, &new_active_node, "activation"));
-			ops.push(activ::ELU::new(&new_linear_node, &new_active_node, "activation"));
-			//ops.push(activ::BeLU::new(&new_linear_node, &new_active_node, ops::ParamSharing::None, "activation", activ::BeLU::init_porque_no_los_dos()));
-			active_nodes.push(new_active_node);
-		}
+	let prediction_loss = g.new_node(shape![Unknown], "prediction_loss", tag![])?;
 
-		linear_nodes.push(new_linear_node);
-		
-	}
+	g.new_op(Conv::new(&input, &layer1, &[5, 5]).init(Conv::msra(1.0)), tag![])?;
+	g.new_op(Bias::new(&layer1), tag![])?;
+	g.new_op(Spline::new(&layer1, &layer1_activ).init(Spline::init_swan()), tag![])?;
+	g.new_op(AvgPool::new(&layer1_activ, &layer1_pool, &[1, 2, 2, 1]), tag![])?;
 
-	let op_inds = g.add_operations(ops);
+	g.new_op(Conv::new(&layer1_pool, &layer2, &[5, 5]).init(Conv::msra(1.0)), tag![])?;
+	g.new_op(Bias::new(&layer2), tag![])?;
+	g.new_op(Spline::new(&layer2, &layer2_activ).init(Spline::init_swan()), tag![])?;
+	g.new_op(AvgPool::new(&layer2_activ, &layer2_pool, &[1, 2, 2, 1]), tag![])?;
 
-	if regularise != 0.0 {
-		for op_ind in &op_inds {
-			g.add_secondary_operation(basic::L2Regularisation::new(op_ind, regularise, "L2"), op_ind);
-		}
-	}
+	g.new_op(Linear::new(&layer2_pool, &layer3).init(Linear::msra(1.0)), tag![])?;
+	g.new_op(Bias::new(&layer3), tag![])?;
+	g.new_op(Spline::new(&layer3, &layer3_activ).init(Spline::init_swan()), tag![])?;
 
-	let pred = linear_nodes[linear_nodes.len()-1].clone();
-	let label = g.add_training_input_node(Node::new_flat(10, "training_label"));
-	(g, pred, label) 
+	g.new_op(Linear::new(&layer3_activ, &prediction).init(Linear::msra(1.0)), tag![])?;
+	g.new_op(Softmax::new(&prediction, &softmax), tag![])?;
+	g.new_op(CrossEntropy::new(&softmax, &labels), tag![])?;
+
+	g.new_op(Prediction::new(&prediction, &labels, &prediction_loss).axes(&[-1]), tag![])?;
+
+	Ok(g)
 }
