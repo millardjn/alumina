@@ -287,7 +287,7 @@ impl Pass for MaeJointPass {
 				.apply(|input1, input2, input1_grad| { 
 					let diff = input1-input2;
 					error += diff.abs()*multiplier;
-					*input1_grad +=  2.0*diff*multiplier;
+					*input1_grad +=  diff.signum()*multiplier;
 				});
 			}
 		} else if data.is_required(&self.input2_id.gradient_id()) {
