@@ -1,157 +1,183 @@
-use opt::*;
-use graph::*;
-use vec_math::{VecMath, VecMathMut, VecMathMove};
+use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
+use opt::{Opt, CallbackData, CallbackSignal};
+use ndarray::{ArrayD, Zip};
 
-use supplier::Supplier;
-use std::f32;
-use std::usize;
-
-
-pub struct AdamBuilder<'a>{
-	graph: &'a mut Graph,
-	learning_rate: f32,
-	batch_size: usize,
+/// Adam Optimiser
+///
+/// t = t + 1
+/// m = β1 m + (1 - β1) ∇f(θ)
+/// v = β2 v + (1 - β2) ∇f(θ) ∇f(θ)
+/// m_c = m / (1 - β1^t)
+/// v_c = v / (1 - β2^t)
+/// θ = θ - α m_c / sqrt(v_c + eps)
+///
+/// Default: None
+pub struct Adam {
+	subgraph: Subgraph,
+	inputs: Vec<DataID>,
+	parameters: Vec<NodeID>,
+	callbacks: Vec<Box<FnMut(&CallbackData)->CallbackSignal>>,
+	rate: f32,
 	beta1: f32,
 	beta2: f32,
 	epsilon: f32,
-}
-
-impl<'a> AdamBuilder<'a> {
-
-	pub fn learning_rate(mut self, val: f32) -> Self{
-		self.learning_rate = val;
-		self
-	}
-
-	pub fn batch_size(mut self, val: usize) -> Self{
-		self.batch_size = val;
-		self
-	}
-
-	pub fn beta1(mut self, val: f32) -> Self{
-		self.beta1 = val;
-		self
-	}
-
-	pub fn beta2(mut self, val: f32) -> Self{
-		self.beta2 = val;
-		self
-	}
-
-	pub fn epsilon(mut self, val: f32) -> Self{
-		self.epsilon = val;
-		self
-	}
-
-
-	pub fn finish(self) -> Adam<'a>{
-		let num_params = self.graph.num_params();
-		Adam{
-			graph: self.graph,
-			learning_rate: self.learning_rate,
-			batch_size: self.batch_size,
-			beta1: self.beta1,
-			beta2: self.beta2,
-			epsilon: self.epsilon,
-
-			eval_count: 0,
-			step_count: 0,
-			
-			m: vec![0.0; num_params],
-			v: vec![0.0; num_params],
-
-			step_callback: vec![],
-		}
-	}
-}
-
-
-pub struct Adam <'a>{
-	graph: &'a mut Graph,
-	learning_rate: f32,
-	batch_size: usize,
-	beta1: f32,
-	beta2: f32,
-	epsilon: f32,
-
-	eval_count: usize,
+	momentum_vec: Vec<ArrayD<f32>>,
+	curvature_vec: Vec<ArrayD<f32>>,
 	step_count: usize,
-	
-	m: Vec<f32>,
-	v: Vec<f32>,
-
-	step_callback: Vec<Box<FnMut(&CallbackData)->CallbackSignal>>,
 }
 
-impl <'a> Adam <'a> {
-	pub fn new <'b>(graph: &'b mut Graph) -> AdamBuilder<'b>{
-		AdamBuilder{
-			graph: graph,
-			learning_rate: 1e-3,
-			batch_size: 16,
+
+impl Adam {
+
+	/// Create an optimisation problem assuming that all nodes marked `Parameter` should be optimised, and all other leaf nodes are batch inputs.
+	pub fn new(graph: &GraphDef) -> Result<Self> {
+
+		let subgraph = graph.default_subgraph()?;
+
+		Ok(Adam {
+			inputs: subgraph.inputs().iter().filter(|data_id| !graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter)).cloned().collect(),
+			parameters: subgraph.inputs().iter().filter_map(|data_id| if graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter) {Some(data_id.node_id())} else {None}).collect(),
+			subgraph: subgraph,
+			callbacks: vec![],
+			rate: 1e-3,
 			beta1: 0.9,
-			beta2: 0.99,
-			epsilon: 1e-08,
+			beta2: 0.995,
+			epsilon: 1e-8,
+			momentum_vec: vec![],
+			curvature_vec: vec![],
+			step_count: 0,
+		})
+	}
+
+	/// Define a custom optimisation problem by supplying a subgraph and a list of parameters to optimise.
+	///
+	/// The subgraph must meet the following:
+	/// - subgraph inputs are ordered with general inputs (values or gradients) followed by parameter values.
+	/// - subgraph outputs must include all parameters values and gradients.
+	///
+	/// Note: All leaf nodes not listed as parameters are assumed to be batch inputs.
+	pub fn with_subgraph(subgraph: Subgraph, parameter_ids: Vec<NodeID>) -> Self {
+
+		let n_inputs = subgraph.inputs().len() - parameter_ids.len();
+		let maybe_inputs = subgraph.inputs()[0..n_inputs].to_vec();
+		
+		assert!(subgraph.inputs()[n_inputs..].iter().cloned().eq(parameter_ids.iter().map(|id| id.value_id())), "The final inputs to the subgraph must be the values of the optimiser parameter nodes");
+
+		assert!(parameter_ids.iter().all(|id| subgraph.outputs().contains(&id.value_id())), "Subgraph outputs must contain all parameter values");
+		assert!(parameter_ids.iter().all(|id| subgraph.outputs().contains(&id.gradient_id())), "Subgraph outputs must contain all parameter gradients");
+
+		Adam {
+			inputs: maybe_inputs,
+			parameters: parameter_ids,
+			subgraph: subgraph,
+			callbacks: vec![],
+			rate: 1e-3,
+			beta1: 0.9,
+			beta2: 0.995,
+			epsilon: 1e-7,
+			momentum_vec: vec![],
+			curvature_vec: vec![],
+			step_count: 0,
 		}
 	}
+
+	/// Learning rate, α
+	pub fn rate(mut self, rate: f32) -> Self{
+		self.rate = rate;
+		self
+	}
+
+	/// Momentum coefficient, β1
+	///
+	/// Default: 0.9
+	pub fn beta1(mut self, beta1: f32) -> Self{
+		self.beta1 = beta1;
+		self
+	}
+
+	/// Momentum coefficient, β2
+	///
+	/// Default: 0.995
+	pub fn beta2(mut self, beta2: f32) -> Self{
+		self.beta2 = beta2;
+		self
+	}
+
+	/// Fuzz Factor, eps
+	///
+	/// Sometimes worth increasing, according to google.
+	/// Default: 1e-8
+	pub fn epsilon(mut self, epsilon: f32) -> Self{
+		self.epsilon = epsilon;
+		self
+	}
 }
 
-impl<'a> Optimiser<'a> for Adam<'a>{
+impl Opt for Adam {
 
-	fn add_boxed_step_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>){
-		self.step_callback.push(func);
+	fn subgraph(&self) -> &Subgraph {
+		&self.subgraph
 	}
 
-	fn get_graph(&mut self) -> &mut Graph{
-		&mut self.graph
+	fn inputs(&self) -> &[DataID]{
+		&self.inputs
 	}
 
-	fn get_step_callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{
-		&mut self.step_callback[..]
+	fn parameters(&self) -> &[NodeID]{
+		&self.parameters
 	}
 
-	fn get_step_count(&self) -> usize{
-		self.step_count
-	}
+	fn step(&mut self, mut inputs: Vec<ArrayD<f32>>, mut parameters: Vec<ArrayD<f32>>) -> Result<(f32, Vec<ArrayD<f32>>)>{
+		assert_eq!(inputs.len(), self.inputs().len(), "Incorrect number of inputs supplied to optimiser.step()");
+		assert_eq!(parameters.len(), self.parameters().len(), "Incorrect number of prameters supplied to optimiser.step()");
 
-	fn get_eval_count(&self) -> usize{
-		self.eval_count
-	}
-	
-	fn step(&mut self, training_set: &mut Supplier, params: Vec<f32>) -> (f32, Vec<f32>){
-
-		let (input, training_input) = training_set.next_n(self.batch_size as usize);
-		let (mut err, mut param_derivs, _) = self.graph.backprop(self.batch_size as usize, input, training_input, &params);
+		inputs.append(&mut parameters);
 		
-		err /= self.batch_size as f32;
-		param_derivs.scale_mut(1.0/self.batch_size as f32);
-		
-		self.eval_count += self.batch_size;
+		assert_eq!(self.subgraph.inputs().len(), inputs.len());
 
+		let storage = self.subgraph.execute(inputs)?;
+		let loss = storage.loss();
+		let mut map = storage.into_map();
 
-		self.m.scale_mut(self.beta1);
-		self.m.add_scaled_mut(&param_derivs, 1.0 - self.beta1);
+		let mut params: Vec<_> = self.parameters.iter().map(|p| map.remove(&p.value_id()).expect("Subgraph must have parameter values as outputs.")).collect();
 
-		self.v.scale_mut(self.beta2);
-		self.v.add_scaled_mut(&param_derivs.elementwise_mul(&param_derivs), 1.0 - self.beta2);
+		if self.momentum_vec.len() != self.parameters.len() {
+			self.momentum_vec = params.iter().map(|param| ArrayD::zeros(param.shape())).collect();
+		}
+		if self.curvature_vec.len() != self.parameters.len() {
+			self.curvature_vec = params.iter().map(|param| ArrayD::zeros(param.shape())).collect();
+		}
 
+		let rate = self.rate;
+		let beta1 = self.beta1;
+		let beta2 = self.beta2;
+		let epsilon = self.epsilon;
+		let momentum_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta1.powi(self.step_count as i32 + 1))} else {1.0}; 
+		let curv_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta2.powi(self.step_count as i32 + 1))} else {1.0}; 
 
+		for (i, param_grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
+			Zip::from(&mut params[i])
+				.and(&mut self.momentum_vec[i])
+				.and(&mut self.curvature_vec[i])
+				.and(&param_grad)
+				.apply(|param, momentum, curv, param_grad| {
+					*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
+					*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
 
-		let m_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta1.powi(self.step_count as i32 + 1))} else {1.0};
-		let v_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta2.powi(self.step_count as i32 + 1))} else {1.0};
-
-		let change: Vec<f32> = self.m.iter().zip(&self.v).map(|(m,v)| -self.learning_rate * m * m_correction/((v*v_correction).sqrt() + self.epsilon)).collect();
-		
-
-		// print progress (TODO: this should be moved to a callback lambda)
-		if self.step_count == 0 {println!("");println!("count\terr\tmovement");}
-		println!("{}\t{:.4}\t{:.4e}", training_set.samples_taken(), err, change.norm2());
-
-		let new_params = change.add_move(&params);
+					*param += -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
+				});
+		}
 
 		self.step_count += 1;
-		(err, new_params)
+
+		Ok((loss, params))
 	}
 
-		
+	fn callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{
+		&mut self.callbacks
+	}
+
+	fn add_boxed_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>){
+		self.callbacks.push(func)
+	}
 }
