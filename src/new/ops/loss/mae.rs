@@ -36,7 +36,8 @@ impl Mae {
 	}
 
 	/// If set this `Op` will output to the supplied node, any rely no other use ops to generate loss and gradients
-	/// The output node must have size 1.
+	/// The output node must have the same size as the input node unless reductions are applied using `.mean_axes()`.
+	///
 	/// Default: None.
 	pub fn output(mut self, output: &NodeID) -> Self {
 		self.output = Some(output.clone());
