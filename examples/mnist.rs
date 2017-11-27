@@ -17,6 +17,7 @@ use al::ops::loss::cross_entropy::CrossEntropy;
 use al::ops::loss::prediction::Prediction;
 use al::opt::{Opt, CallbackSignal, max_steps, every_n_steps};
 
+#[allow(unused_imports)]
 use al::opt::sgd::Sgd;
 use al::opt::adam::Adam;
 

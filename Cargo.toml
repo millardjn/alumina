@@ -1,6 +1,6 @@
 [package]
 name = "alumina"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["J. Millard <millard.jn@gmail.com>"]
 description = "An Experimental Deep Learning Library"
 repository = "https://github.com/millardjn/alumina"
@@ -35,9 +35,7 @@ ordermap = "0.2"
 matches = "0.1"
 arrayvec = "0.4"
 
-[dependencies.matrixmultiply_mt]
-path = "D:/Repositories/matrixmultiply_mt"
-#matrixmultiply_mt = "0.1"
+matrixmultiply_mt = "0.1"
 #matrixmultiply_mt = {path = "D:/Repositories/matrixmultiply_mt"}
 
 [dev-dependencies]
