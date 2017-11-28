@@ -40,18 +40,18 @@ impl ShapeConstraint {
 	///
 	/// This method will overwrite any previous `joint()` rules, or `single()` rules which apply to this axis.
 	/// Any axis without a supplied rule with simply be unconstrained.
-	pub fn single<F: 'static + Fn(usize) -> NodeDim>(mut self, axis: usize, rule: F) -> Self {
+	pub fn single<D: Into<NodeDim>, F: 'static + Fn(usize) -> D>(mut self, axis: usize, rule: F) -> Self {
 		self.rules = match self.rules {
 			Rules::Individual(mut vec) => {
 				if axis + 1 > vec.len() {
 					vec.resize(axis + 1, None);
 				}
-				vec[axis] = Some(Arc::new(rule));
+				vec[axis] = Some(Arc::new(move |dim| rule(dim).into()));
 				Rules::Individual(vec)
 			},
 			Rules::Joint(_) => {
 				let mut vec: Vec<Option<Arc<Fn(usize) -> NodeDim>>> = vec![None; axis + 1];
-				vec[axis] = Some(Arc::new(rule));
+				vec[axis] = Some(Arc::new(move |dim| rule(dim).into()));
 				Rules::Individual(vec)
 			}
 		};
