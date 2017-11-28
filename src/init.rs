@@ -32,10 +32,10 @@ impl Initialiser {
 		}
 	}
 
-	/// Guassian initialisation
+	/// Gaussian initialisation
 	///
 	/// This initialises with gaussian values drawn from N(mean, std_dev^2).
-	pub fn guassian(mean: f32, std_dev: f32) -> Initialiser {
+	pub fn gaussian(mean: f32, std_dev: f32) -> Initialiser {
 		Initialiser::new("Gaussian Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			let mut rng = thread_rng().gen::<Isaac64Rng>();
 			let mut norm = Normal::new(mean as f64, std_dev as f64);
