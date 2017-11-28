@@ -8,7 +8,7 @@ pub mod shape;
 pub mod reduce;
 pub mod regularisation;
 
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, Error, ErrorKind, Result};
+use graph::{GraphDef, NodeID, DataID, OpID, PassID, OpTag, Storage, GraphShapes, Error, ErrorKind, Result};
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -146,6 +146,11 @@ pub trait Op: Any {
 	/// Arbitrary graph modification may occur allowing builders to implement high level effects by composing multiple low level `Op`s.
 	/// Also used to let an `Op` create parameter nodes as necessary.
 	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType>;
+
+	/// A convenience method which just calls GraphDef::new_op(..)
+	fn add_to(self, graph: &mut GraphDef, tags: Vec<OpTag>) -> Result<OpID> where Self: Sized{
+		graph.new_op(self, tags)
+	}
 }
 
 /// The `OpInstance` trait is used to record each `Op` that has been added to a `GraphDef`.
