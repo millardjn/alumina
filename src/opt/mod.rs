@@ -35,16 +35,12 @@ pub trait Opt {
 
 	fn add_boxed_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>);
 
-	fn add_callback<F: 'static + FnMut(&CallbackData)->CallbackSignal>(&mut self, func: F){
-		self.add_boxed_callback(Box::new(func));
-	}
-
-	fn optimise<S: DataStream>(&mut self, training_stream: &mut S) -> Result<Vec<ArrayD<f32>>>{
+	fn optimise(&mut self, training_stream: &mut DataStream) -> Result<Vec<ArrayD<f32>>>{
 		let params = self.subgraph().graph().initialise_nodes(self.parameters())?;
 		self.optimise_from(training_stream, params)
 	}
 
-	fn optimise_from<S: DataStream>(&mut self, training_stream: &mut S, mut params: Vec<ArrayD<f32>>) -> Result<Vec<ArrayD<f32>>>{
+	fn optimise_from(&mut self, training_stream: &mut DataStream, mut params: Vec<ArrayD<f32>>) -> Result<Vec<ArrayD<f32>>>{
 		let mut stop = false;
 		while !stop {
 			let (err, new_params) = self.step(training_stream.next(), params)?;
@@ -59,6 +55,13 @@ pub trait Opt {
 	}
 }
 
+pub trait UnboxedCallbacks: Opt {
+	fn add_callback<F: 'static + FnMut(&CallbackData)->CallbackSignal>(&mut self, func: F){
+		self.add_boxed_callback(Box::new(func));
+	}
+}
+
+impl<O: Opt> UnboxedCallbacks for O {}
 
 pub fn print_step_data() -> Box<FnMut(&CallbackData)->CallbackSignal>{
 	let mut step = 0;
