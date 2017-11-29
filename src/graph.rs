@@ -1107,15 +1107,19 @@ fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_pass
 			pass_order.push(pass_id.clone());
 			passes_ready[pass_id.index] = PassState::Ready;
 			for data_id in &dependencies.pass_outputs[pass_id.index] {
-				// If a data outptu of a pass is pending decrement
+				// If a data output of a pass is pending decrement
 				// If that data output can now be marked ready
 				match data_state[data_id.index] {
 					DataState::Unavailable | DataState::Input => {},
-					DataState::Pending(rem) if rem == 1 => {
-						mark_data_ready(data_id, data_state, passes_ready, &dependencies)
+					DataState::Pending(rem) => {
+						if rem == 1 {
+							mark_data_ready(data_id, data_state, passes_ready, &dependencies)
+						} else if rem > 1 {
+							data_state[data_id.index] = DataState::Pending(rem - 1)
+						} else {
+							panic!("Data with zero inputs should have already been marked Unavailable or Input")
+						}
 					},
-					DataState::Pending(rem) if rem > 1 => {data_state[data_id.index] = DataState::Pending(rem - 1)},
-					DataState::Pending(_) => panic!("Data with zero inputs should have already been marked Unavailable or Input"),
 					DataState::Ready => panic!("data marked ready before last input pass was processed. graph likely contains a requires pass which writes to a input tensor"), //TODO: create test to confirm this is caused by fan-out ops writing to a subgraph input
 				}
 			}

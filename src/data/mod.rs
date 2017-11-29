@@ -773,19 +773,22 @@ impl<S: DataStream> Batch<S> {
 impl<S: DataStream> DataStream for Batch<S> {
 	fn next(&mut self) -> Vec<ArrayD<f32>>{
 
-		let mut batch_data = self.stream.next().into_iter().map(|arr|{
+		let mut batch_data: Vec<_> = self.stream.next().into_iter().map(|arr|{
 			let batch_shape = iter::once(&self.batch_size).chain(arr.shape()).map(|&i|i).collect::<SmallVec<[usize;6]>>();
 			let mut batch_arr = unsafe{
 				ArrayD::uninitialized(IxDyn(&batch_shape))
 			};
-			// batch_arr.subview_mut(Axis(0), 0).assign(&arr); // unecessary extra logic
 			batch_arr.subview_mut(Axis(0), 0).as_slice_mut().unwrap().copy_from_slice(arr.as_slice().unwrap());
 			batch_arr
 		}).collect();
 
 		for i in 1..self.batch_size {
-			for (arr, batch_arr) in self.stream.next().into_iter().zip(&mut batch_data) {
-				(batch_arr as &mut ArrayD<f32>).subview_mut(Axis(0), i).as_slice_mut().unwrap().copy_from_slice(arr.as_slice().unwrap());
+			let input_vec = self.stream.next();
+			assert_eq!(input_vec.len(), batch_data.len());
+			for (input_arr, batch_arr) in input_vec.into_iter().zip(&mut batch_data) {
+				let mut batch_view = (batch_arr as &mut ArrayD<f32>).subview_mut(Axis(0), i);
+				assert_eq!(input_arr.shape(), batch_view.shape(), "Cannot batch arrays of different shapes.");
+				batch_view.as_slice_mut().unwrap().copy_from_slice(input_arr.as_slice().unwrap());
 			}
 		}
 
