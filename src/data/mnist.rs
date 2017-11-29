@@ -18,7 +18,8 @@ impl Mnist {
 		Mnist{data: joined}
 	}
 
-	pub fn training(folder_path: &Path) -> Self {
+	pub fn training<P: AsRef<Path>>(folder_path: P) -> Self {
+		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 'train-images.idx3-ubyte' and 'train-labels.idx1-ubyte'";
 		assert!(folder_path.is_dir(), err);
 		let label_file = File::open(folder_path.join("train-labels.idx1-ubyte").as_path()).expect(err);
@@ -26,7 +27,8 @@ impl Mnist {
 		Mnist::new(image_file, label_file)
 	}
 
-	pub fn testing(folder_path: &Path) -> Self {
+	pub fn testing<P: AsRef<Path>>(folder_path: P) -> Self {
+		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 't10k-images.idx3-ubyte' and 't10k-labels.idx1-ubyte'";
 		assert!(folder_path.is_dir(), err);
 		let label_file = File::open(folder_path.join("t10k-labels.idx1-ubyte").as_path()).expect(err);

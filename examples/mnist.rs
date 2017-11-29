@@ -36,7 +36,7 @@ fn learn_mnist() -> Result<()> {
 
 	let batch_size = 16;
 
-	let data = Mnist::training(Path::new("D:/ML/Mnist"));
+	let data = Mnist::training("D:/ML/Mnist");
 	let epoch = data.length();
 	let mut data_stream = data
 		.shuffle_random()
