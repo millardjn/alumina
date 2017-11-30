@@ -256,6 +256,19 @@ impl NodeShape{
 	}
 	
 	pub fn merge(&self, other: &NodeShape) -> Result<NodeShape>{
+		if self.ndim() != other.ndim() {
+			bail!(ErrorKind::MergeIncompatibleRank(self.clone(), other.clone()))
+		}
+		
+		let mut vec = SmallVec::new();
+		for (s, o) in self.dimensions.iter().zip(&other.dimensions){
+			vec.push(s.merge(o)?);
+		}
+		Ok(NodeShape{dimensions: vec})
+	}
+
+
+	fn _merge(&self, other: &NodeShape) -> Result<NodeShape>{
 
 		if self.is_known() && other.is_known() {
 			self.merge_known(other)	
@@ -273,7 +286,7 @@ impl NodeShape{
 	}
 	
 	#[inline(always)]
-	fn merge_known(&self, other: &NodeShape) -> Result<NodeShape>{
+	fn _merge_known(&self, other: &NodeShape) -> Result<NodeShape>{
 
 		match (self.flat_size(), other.flat_size()){
 			(Known(x), Known(y))  => {if x != y {bail!(ErrorKind::MergeIncompatibleFlatSize(x, y))}},
