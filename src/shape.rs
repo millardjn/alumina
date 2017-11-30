@@ -271,7 +271,7 @@ impl NodeShape{
 	fn _merge(&self, other: &NodeShape) -> Result<NodeShape>{
 
 		if self.is_known() && other.is_known() {
-			self.merge_known(other)	
+			self._merge_known(other)	
 		// } else if self.channels() != other.channels() {
 		// 	bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else if self.ndim() != other.ndim() {
