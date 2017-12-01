@@ -3,6 +3,7 @@ pub mod mse;
 pub mod mae;
 pub mod cross_entropy;
 pub mod prediction;
+pub mod robust_loss;
 
 
 use graph::{NodeID, PassID};
