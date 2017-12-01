@@ -19,15 +19,25 @@ use std::num;
 /// Based on the paper: A More General Robust Loss Function https://arxiv.org/pdf/1701.03077.pdf Eq.13 & Eq.14
 /// Note that:
 ///
-/// when power == 2, this is the L2 loss
+/// when power(α) == 2, this is the L2 loss
 ///
-/// when power == 1, this is the charbonnier loss (smooth L1 loss)
+/// when power(α) == 1, this is the pseudo-Huber/Charbonnier loss (smooth L1 loss)
 ///
-/// when power == 0, this is the Cauchy/Lorentzian loss
+/// when power(α) == 0, this is the Cauchy/Lorentzian loss
 ///
-/// The scale is the range of values either size of zero for which the loss will closely approximate the L2 loss.
+/// when power(α) == -2, this is the Geman-McClure loss
+///
+/// when power(α) == -∞, this is the Welsch/Leclerc loss
+///
+/// The scale(c) is the range of values either size of zero for which the loss will closely approximate the L2 loss.
 /// A small scale value will mean that small errors get treated as larger errors.
 /// See paper for futher details.
+///
+/// ρ(x,α,c) = 
+/// if α == 0 : log(0.5*(x/c)^2+ 1)
+/// if α == -∞: 1 - exp(-0.5 *(x/c)^2)
+/// else      : z(α)/α * (((x/c)^2/z(α) + 1)^(α/2) − 1)
+/// where z(α) = max(1, 2 - α)
 pub struct Robust {
 	input1_id: NodeID,
 	input2_id: NodeID,
