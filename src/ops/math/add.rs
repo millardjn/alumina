@@ -128,7 +128,7 @@ impl OpInstance for AddInstance {
 
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{
 
-		let output_len = shapes.get_shape(&self.output_id).ndim();
+		let output_len = shapes.get_output_shape(&self.output_id).ndim();
 		let input_shape = shapes.get_shape(&self.input_id).to_data_shape()?;
 
 		let effective_shape = effective_shape(input_shape.slice(), &self.extra_axes, output_len)?;

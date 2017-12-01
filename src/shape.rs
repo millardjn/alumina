@@ -256,6 +256,10 @@ impl NodeShape{
 	}
 	
 	pub fn merge(&self, other: &NodeShape) -> Result<NodeShape>{
+		self.merge_impl(other).chain_err(|| format!("Could not merge {:?} with {:?}", self.dimensions(), other.dimensions()))
+	}
+
+	fn merge_impl(&self, other: &NodeShape) -> Result<NodeShape>{
 		if self.ndim() != other.ndim() {
 			bail!(ErrorKind::MergeIncompatibleRank(self.clone(), other.clone()))
 		}

@@ -920,7 +920,7 @@ impl Subgraph {
 	///
 	/// todo
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
-		assert_eq!(inputs.len(), self.subgraph_inputs.len());
+		assert_eq!(inputs.len(), self.subgraph_inputs.len()); //TODO this should be an Error not a panic
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != inputs.len()
@@ -1434,7 +1434,7 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_
 	// for all inputs, merge data shape into existing graph shape
 	ensure!(inputs.len() == input_data.len(), ErrorKind::InputSizeError);
 	for (input, input_data) in inputs.iter().zip(input_data) {
-		shapes.merge_input(&input, input_data.shape())?;
+		shapes.merge_input(&input, input_data.shape()).chain_err(|| format!("Could not merge input value supplied to {}", subgraph.graph.data_name(input)))?;
 	}
 
 	// for all static inputs, if not in inputs, merge into graph shape
@@ -1442,7 +1442,7 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_
 	// iterate from the lowest dimension up, if the static_input dimension is not 1 then enforce it in the shape
 	for (static_input, static_input_data) in static_inputs.iter() {
 		if !inputs.contains(static_input) {
-			shapes.merge_static_input(&static_input, static_input_data.shape())?;
+			shapes.merge_static_input(&static_input, static_input_data.shape()).chain_err(|| format!("Could not merge static input for {}", subgraph.graph.data_name(static_input)))?;
 		}
 	}
 
@@ -1450,7 +1450,7 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &[DataID], input_
 	//let op_ids = passes.iter().filter(|pass| pass.is_forward()).map(|pass_id| pass_id.op_id());
 	for op_id in op_order {
 		shapes.set_current_op(Some(op_id.clone()));
-		subgraph.graph.ops[op_id.index].propagate_shape_constraints(&mut shapes)?;
+		subgraph.graph.ops[op_id.index].propagate_shape_constraints(&mut shapes).chain_err(|| format!("Could not complete shape inference for {}", subgraph.graph.op_name(op_id)))?;
 	}
 	shapes.set_current_op(None);
 
