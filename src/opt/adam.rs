@@ -11,7 +11,6 @@ use ndarray::{ArrayD, Zip};
 /// v_c = v / (1 - β2^t)
 /// θ = θ - α m_c / sqrt(v_c + eps)
 ///
-/// Default: None
 pub struct Adam {
 	subgraph: Subgraph,
 	inputs: Vec<DataID>,
@@ -21,6 +20,7 @@ pub struct Adam {
 	beta1: f32,
 	beta2: f32,
 	epsilon: f32,
+	bias_correct: bool,
 	momentum_vec: Vec<ArrayD<f32>>,
 	curvature_vec: Vec<ArrayD<f32>>,
 	step_count: usize,
@@ -43,6 +43,7 @@ impl Adam {
 			beta1: 0.9,
 			beta2: 0.995,
 			epsilon: 1e-8,
+			bias_correct: true,
 			momentum_vec: vec![],
 			curvature_vec: vec![],
 			step_count: 0,
@@ -75,6 +76,7 @@ impl Adam {
 			beta1: 0.9,
 			beta2: 0.995,
 			epsilon: 1e-7,
+			bias_correct: true,
 			momentum_vec: vec![],
 			curvature_vec: vec![],
 			step_count: 0,
@@ -109,6 +111,14 @@ impl Adam {
 	/// Default: 1e-8
 	pub fn epsilon(mut self, epsilon: f32) -> Self{
 		self.epsilon = epsilon;
+		self
+	}
+
+	/// Should bias correction be performed.
+	///
+	///Default: true
+	pub fn bias_correct(mut self, bias_correct: bool) -> Self {
+		self.bias_correct = bias_correct;
 		self
 	}
 }
@@ -156,16 +166,29 @@ impl Opt for Adam {
 		let curv_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta2.powi(self.step_count as i32 + 1))} else {1.0}; 
 
 		for (i, param_grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
-			Zip::from(&mut params[i])
-				.and(&mut self.momentum_vec[i])
-				.and(&mut self.curvature_vec[i])
-				.and(&param_grad)
-				.apply(|param, momentum, curv, param_grad| {
-					*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
-					*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
+			if self.bias_correct {
+				Zip::from(&mut params[i])
+					.and(&mut self.momentum_vec[i])
+					.and(&mut self.curvature_vec[i])
+					.and(&param_grad)
+					.apply(|param, momentum, curv, param_grad| {
+						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
+						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
 
-					*param += -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
-				});
+						*param += -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
+					});
+			} else {
+				Zip::from(&mut params[i])
+					.and(&mut self.momentum_vec[i])
+					.and(&mut self.curvature_vec[i])
+					.and(&param_grad)
+					.apply(|param, momentum, curv, param_grad| {
+						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
+						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
+
+						*param += -rate * (*momentum) /(curv.sqrt() + epsilon);
+					});
+			}
 		}
 
 		self.step_count += 1;
