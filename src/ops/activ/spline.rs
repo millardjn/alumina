@@ -62,7 +62,7 @@ impl Spline {
 		self
 	}
 
-	fn _init_custom(name: &'static str, left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser{
+	fn _custom(name: &'static str, left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser{
 		Initialiser::new(name.to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			if arr.shape()[0] == 3 {
 				let mut weights_iter = arr.outer_iter_mut();
@@ -75,24 +75,24 @@ impl Spline {
 		})
 	}
 
-	pub fn init_custom(left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser{
-		Spline::_init_custom("Custom Initialiser for Spline Op", left_slope, centre_slope, right_slope)
+	pub fn custom(left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser{
+		Spline::_custom("Custom Initialiser for Spline Op", left_slope, centre_slope, right_slope)
 	}
 
-	pub fn init_elu_like() -> Initialiser{
-		Spline::_init_custom("ELU-like Initialiser for Spline Op", 0.01, 1.0, 1.0)
+	pub fn elu_esque() -> Initialiser{
+		Spline::_custom("ELU-esque Initialiser for Spline Op", 0.01, 1.0, 1.0)
 	}
 
-	pub fn init_tanh_like() -> Initialiser{
-		Spline::_init_custom("Tanh-like Initialiser for Spline Op", 0.01, 1.0, 0.01)
+	pub fn tanh_esque() -> Initialiser{
+		Spline::_custom("Tanh-esque Initialiser for Spline Op", 0.01, 1.0, 0.01)
 	}
 
-	pub fn init_parabola_like() -> Initialiser{
-		Spline::_init_custom("Parabola-like Initialiser for Spline Op", -1.0, 0.0, 1.0)
+	pub fn parabola_esque() -> Initialiser{
+		Spline::_custom("Parabola-esque Initialiser for Spline Op", -1.0, 0.0, 1.0)
 	}
 
-	pub fn init_swan() -> Initialiser{
-		Spline::_init_custom("Swan Initialiser for Spline Op", 0.01, 1.0, 0.25)
+	pub fn swan() -> Initialiser{
+		Spline::_custom("Swan Initialiser for Spline Op", 0.01, 1.0, 0.25)
 	}
 }
 
@@ -435,8 +435,8 @@ fn _spline_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![7, 5, 16], "target", tag![])?;
 
 
-	let _o1 = g.new_op(Spline::new(&node1, &node2).init(Spline::init_elu_like()), tag![])?;
-	let _o2 = g.new_op(Spline::new(&node1, &node2).init(Spline::init_tanh_like()), tag![])?;
+	let _o1 = g.new_op(Spline::new(&node1, &node2).init(Spline::elu_esque()), tag![])?;
+	let _o2 = g.new_op(Spline::new(&node1, &node2).init(Spline::tanh_esque()), tag![])?;
 	let _o3 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;
@@ -468,8 +468,8 @@ fn _spline_shared_backprop() -> Result<()>{
 	let node3 = g.new_node(shape![7, 5, 16], "target", tag![])?;
 
 
-	let _o1 = g.new_op(Spline::new(&node1, &node2).shared_axes(&[0, -1]).init(Spline::init_elu_like()), tag![])?;
-	let _o2 = g.new_op(Spline::new(&node1, &node2).shared_axes(&[1]).init(Spline::init_tanh_like()), tag![])?;
+	let _o1 = g.new_op(Spline::new(&node1, &node2).shared_axes(&[0, -1]).init(Spline::elu_esque()), tag![])?;
+	let _o2 = g.new_op(Spline::new(&node1, &node2).shared_axes(&[1]).init(Spline::tanh_esque()), tag![])?;
 	let _o3 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
 	let iters = 100;

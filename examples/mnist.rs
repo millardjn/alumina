@@ -183,17 +183,17 @@ fn mnist_lenet(regularise: f32) -> Result<GraphDef> {
 
 	g.new_op(Conv::new(&input, &layer1, &[5, 5]).init(Conv::msra(1.0)), tag![])?;
 	g.new_op(Bias::new(&layer1), tag![])?;
-	g.new_op(Spline::new(&layer1, &layer1_activ).init(Spline::init_swan()), tag![])?;
+	g.new_op(Spline::new(&layer1, &layer1_activ).init(Spline::swan()), tag![])?;
 	g.new_op(AvgPool::new(&layer1_activ, &layer1_pool, &[1, 2, 2, 1]), tag![])?;
 
 	g.new_op(Conv::new(&layer1_pool, &layer2, &[5, 5]).init(Conv::msra(1.0)), tag![])?;
 	g.new_op(Bias::new(&layer2), tag![])?;
-	g.new_op(Spline::new(&layer2, &layer2_activ).init(Spline::init_swan()), tag![])?;
+	g.new_op(Spline::new(&layer2, &layer2_activ).init(Spline::swan()), tag![])?;
 	g.new_op(AvgPool::new(&layer2_activ, &layer2_pool, &[1, 2, 2, 1]), tag![])?;
 
 	g.new_op(Linear::new(&layer2_pool, &layer3).init(Linear::msra(1.0)), tag![])?;
 	g.new_op(Bias::new(&layer3), tag![])?;
-	g.new_op(Spline::new(&layer3, &layer3_activ).init(Spline::init_swan()), tag![])?;
+	g.new_op(Spline::new(&layer3, &layer3_activ).init(Spline::swan()), tag![])?;
 
 	g.new_op(Linear::new(&layer3_activ, &prediction).init(Linear::msra(1.0)), tag![])?;
 	g.new_op(Softmax::new(&prediction, &softmax), tag![])?;
