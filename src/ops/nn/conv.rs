@@ -106,7 +106,7 @@ impl Conv {
 	/// effect of the nonlinearity, e.g. use 2.0 with ReLU, and 1.0 with Tanh.
 	pub fn msra(multiplier: f32) -> Initialiser {
 		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
-			let k = arr.len()/arr.shape()[arr.ndim()-1];
+			let k = arr.len()/arr.shape()[0];
 
 			let mut rng = thread_rng().gen::<Isaac64Rng>();
 			let mut norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
