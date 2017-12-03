@@ -520,7 +520,10 @@ impl Pass for ConvBackward {
 			for axis in (1..filter.ndim()-1).map(Axis) {
 				inverted_filter_view.invert_axis(axis);
 			}
-			let inverted_filter = inverted_filter_view.to_owned();
+			
+			let mut inverted_filter = unsafe{ArrayD::uninitialized(inverted_filter_view.shape())};
+			inverted_filter.assign(&inverted_filter_view);
+
 			debug_assert!(inverted_filter.is_standard_layout());
 			let inverted_filter_slice = inverted_filter.as_slice().unwrap();
 
