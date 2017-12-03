@@ -137,7 +137,7 @@ impl Opt for Adam {
 		&self.parameters
 	}
 
-	fn step(&mut self, mut inputs: Vec<ArrayD<f32>>, mut parameters: Vec<ArrayD<f32>>) -> Result<(f32, Vec<ArrayD<f32>>)>{
+	fn step(&mut self, mut inputs: Vec<ArrayD<f32>>, mut parameters: Vec<ArrayD<f32>>) -> Result<(f32, usize, f32, Vec<ArrayD<f32>>)> {
 		assert_eq!(inputs.len(), self.inputs().len(), "Incorrect number of inputs supplied to optimiser.step()");
 		assert_eq!(parameters.len(), self.parameters().len(), "Incorrect number of prameters supplied to optimiser.step()");
 
@@ -165,6 +165,7 @@ impl Opt for Adam {
 		let momentum_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta1.powi(self.step_count as i32 + 1))} else {1.0}; 
 		let curv_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta2.powi(self.step_count as i32 + 1))} else {1.0}; 
 
+		let mut change_sqr = 0.0;
 		for (i, param_grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
 			if self.bias_correct {
 				Zip::from(&mut params[i])
@@ -174,8 +175,9 @@ impl Opt for Adam {
 					.apply(|param, momentum, curv, param_grad| {
 						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
 						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
-
-						*param += -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
+						let change = -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
+						change_sqr += change*change;
+						*param += change;
 					});
 			} else {
 				Zip::from(&mut params[i])
@@ -185,15 +187,16 @@ impl Opt for Adam {
 					.apply(|param, momentum, curv, param_grad| {
 						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
 						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
-
-						*param += -rate * (*momentum) /(curv.sqrt() + epsilon);
+						let change = -rate * (*momentum) /(curv.sqrt() + epsilon);
+						change_sqr += change*change;
+						*param += change;
 					});
 			}
 		}
 
 		self.step_count += 1;
 
-		Ok((loss, params))
+		Ok((loss, self.step_count, change_sqr.sqrt(), params))
 	}
 
 	fn callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{

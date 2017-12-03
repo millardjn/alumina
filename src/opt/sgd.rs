@@ -1,6 +1,6 @@
 use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
 use opt::{Opt, CallbackData, CallbackSignal};
-use ndarray::ArrayD;
+use ndarray::{ArrayD, Zip};
 
 pub struct Sgd {
 	subgraph: Subgraph,
@@ -10,6 +10,7 @@ pub struct Sgd {
 	rate: f32,
 	momentum: Option<f32>,
 	momentum_vec: Vec<ArrayD<f32>>,
+	step_count: usize,
 }
 
 
@@ -28,6 +29,7 @@ impl Sgd {
 			rate: 1e-3,
 			momentum: None,
 			momentum_vec: vec![],
+			step_count: 0,
 		})
 	}
 
@@ -56,6 +58,7 @@ impl Sgd {
 			rate: 1e-3,
 			momentum: None,
 			momentum_vec: vec![],
+			step_count: 0,
 		}
 	}
 
@@ -97,7 +100,7 @@ impl Opt for Sgd {
 		&self.parameters
 	}
 
-	fn step(&mut self, mut inputs: Vec<ArrayD<f32>>, mut parameters: Vec<ArrayD<f32>>) -> Result<(f32, Vec<ArrayD<f32>>)>{
+	fn step(&mut self, mut inputs: Vec<ArrayD<f32>>, mut parameters: Vec<ArrayD<f32>>) -> Result<(f32, usize, f32, Vec<ArrayD<f32>>)>{
 		assert_eq!(inputs.len(), self.inputs().len(), "Incorrect number of inputs supplied to optimiser.step()");
 		assert_eq!(parameters.len(), self.parameters().len(), "Incorrect number of prameters supplied to optimiser.step()");
 
@@ -111,24 +114,44 @@ impl Opt for Sgd {
 
 		let mut params: Vec<_> = self.parameters.iter().map(|p| map.remove(&p.value_id()).expect("Subgraph must have parameter values as outputs.")).collect();
 
+		let rate = self.rate;
+		let mut change_sqr = 0.0;
 		if let Some(momentum) = self.momentum {
 			if self.momentum_vec.len() != self.parameters.len() {
 				self.momentum_vec = params.iter().map(|param| ArrayD::zeros(param.shape())).collect();
 			}
 
 			for (i, grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
-				self.momentum_vec[i] *= momentum;
-				self.momentum_vec[i] += &grad;
-				params[i].scaled_add(-self.rate, &self.momentum_vec[i]);
+				// self.momentum_vec[i] *= momentum;
+				// self.momentum_vec[i] += &grad;
+				// params[i].scaled_add(-self.rate, &self.momentum_vec[i]);
+
+				Zip::from(&grad)
+					.and(&mut self.momentum_vec[i])
+					.and(&mut params[i])
+					.apply(|grad, grad_momentum, param| {
+						*grad_momentum = (*grad_momentum) * momentum + grad;
+						let change = -rate * (*grad_momentum);
+						change_sqr += change * change;
+						*param += change;
+					});
 			}
 
 		} else {
 			for (i, grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
-				params[i].scaled_add(-self.rate, &grad);
+				Zip::from(&grad)
+					.and(&mut params[i])
+					.apply(|grad, param| {
+						let change = -rate * (*grad);
+						change_sqr += change * change;
+						*param += change;
+					});
 			}
 		};
 
-		Ok((loss, params))
+		self.step_count += 1;
+
+		Ok((loss, self.step_count, change_sqr.sqrt(), params))
 	}
 
 	fn callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>]{

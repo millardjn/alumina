@@ -12,6 +12,8 @@ pub enum CallbackSignal{
 
 pub struct CallbackData<'a>{
 	pub err: f32,
+	pub step: usize,
+	pub change_norm: f32,
 	pub params: &'a [ArrayD<f32>],
 	pub stream: &'a DataStream,
 }
@@ -28,8 +30,8 @@ pub trait Opt {
 	/// excluding `NodeID`s which overlap with DataIDs included in `inputs()`
 	fn parameters(&self) -> &[NodeID];
 
-	/// Returns the error and the new parameters
-	fn step(&mut self, inputs: Vec<ArrayD<f32>>, parameters: Vec<ArrayD<f32>>) -> Result<(f32, Vec<ArrayD<f32>>)>;
+	/// Returns the error, step number, l2 norm of param change, and the new parameters
+	fn step(&mut self, inputs: Vec<ArrayD<f32>>, parameters: Vec<ArrayD<f32>>) -> Result<(f32, usize, f32, Vec<ArrayD<f32>>)>;
 
 	fn callbacks(&mut self) -> &mut [Box<FnMut(&CallbackData)->CallbackSignal>];
 
@@ -43,10 +45,10 @@ pub trait Opt {
 	fn optimise_from(&mut self, training_stream: &mut DataStream, mut params: Vec<ArrayD<f32>>) -> Result<Vec<ArrayD<f32>>>{
 		let mut stop = false;
 		while !stop {
-			let (err, new_params) = self.step(training_stream.next(), params)?;
+			let (err, step, change_norm, new_params) = self.step(training_stream.next(), params)?;
 			params = new_params;
 
-			let data = CallbackData{err: err, params: &params, stream: training_stream};
+			let data = CallbackData{err: err, step: step, change_norm: change_norm, params: &params, stream: training_stream};
 			for func in self.callbacks().iter_mut(){
 				stop = stop | matches!(func(&data), CallbackSignal::Stop);
 			}
