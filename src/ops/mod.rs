@@ -7,6 +7,7 @@ pub mod activ;
 pub mod shape;
 pub mod reduce;
 pub mod regularisation;
+pub mod fill;
 
 use graph::{GraphDef, NodeID, DataID, OpID, PassID, OpTag, Storage, GraphShapes, Error, ErrorKind, Result};
 use std::any::Any;
