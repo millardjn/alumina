@@ -21,7 +21,7 @@ extern crate scoped_threadpool;
 extern crate ordermap;
 #[macro_use] extern crate matches;
 extern crate arrayvec;
-
+extern crate image;
 
 //#![deny(missing_docs)]
 

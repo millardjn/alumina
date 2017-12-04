@@ -923,7 +923,7 @@ impl Subgraph {
 		assert_eq!(inputs.len(), self.subgraph_inputs.len()); //TODO this should be an Error not a panic
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
-		if self.shapes.len() != inputs.len()
+		if self.shapes.len() != self.graph.num_nodes()
 		|| inputs.iter().enumerate().any(|(i, input)|{input.shape() != self.shapes[self.subgraph_inputs[i].node_id().index].slice()}) {
 			self.shapes = find_shapes(&self, &self.op_order, &self.subgraph_inputs, &inputs, &self.filtered_static_inputs)?;
 		}

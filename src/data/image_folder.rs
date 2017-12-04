@@ -1,7 +1,7 @@
-extern crate image;
 
 use walkdir::WalkDir;
-use self::image::{GenericImage, DynamicImage, Pixel};
+use image;
+use image::{GenericImage, DynamicImage, Pixel};
 use ndarray::{ArrayD, ArrayViewD, IxDyn};
 use std::path::{PathBuf, Path};
 use data::DataSet;
