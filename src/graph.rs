@@ -920,7 +920,7 @@ impl Subgraph {
 	///
 	/// todo
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
-		assert_eq!(inputs.len(), self.subgraph_inputs.len()); //TODO this should be an Error not a panic
+		ensure!(inputs.len() == self.subgraph_inputs.len(), "The number of inputs provided ({}) did not match the number of expected inputs ({})", inputs.len(), self.subgraph_inputs.len());
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != self.graph.num_nodes()
@@ -1235,6 +1235,7 @@ fn find_pass_order(graph: &GraphDef, included_data: &[DataStatus], included_pass
 	
 	let unavailable_data: Vec<String> = (0..graph.num_data())
 		.filter(|&i| !matches!(included_data[i], DataStatus::NotIncluded) && matches!(data_state[i], DataState::Unavailable))
+		.filter(|&i| dependencies.data_inputs[i].len() == 0)
 		.map(|i| graph.data_name(&DataID{index: i})).collect();
 	if unavailable_data.len() > 0 {
 		bail!(ErrorKind::SubgraphInsufficientInputsForOutputs(unavailable_data))
@@ -1413,6 +1414,7 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 
 	let unavailable_nodes: Vec<String> = (0..graph.num_nodes())
 		.filter(|&i| !matches!(included_nodes[i], NodeStatus::NotIncluded) && matches!(node_state[i], NodeState::Unavailable))
+		.filter(|&i| dependencies.node_inputs[i].len() == 0)
 		.map(|i| graph.node_name(&NodeID{index: i}).to_string()).collect();
 	if unavailable_nodes.len() > 0 {
 		bail!(ErrorKind::SubgraphInsufficientInputsForShapeInference(unavailable_nodes))
