@@ -192,7 +192,7 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 		return;
 	}
 
-	if mask[axis] {
+	if mask[axis] && shape[axis] > 0 {
 		let mut val = 0.0;
 		let inc = 1.0/(shape[axis] - 1) as f32;
 		for i in 0..shape[axis]{
@@ -205,7 +205,7 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 			fill_coord(axis + 1, mask, shape, channel_ind + 2, channels, new_slice);
 			val += inc;
 		}
-	} else {
+	} else if shape[axis] > 0 {
 		for i in 0..shape[axis]{
 			//println!("false a{} i{}", axis, i);
 			let stride = slice.len()/shape[axis];
@@ -218,18 +218,66 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 
 
 #[test]
+fn test_coord_input(){
+	_coord_input().unwrap();
+}
+
+fn _coord_input() -> Result<()>{
+	use graph::{GraphDef, Dependencies};
+	use ndarray::{ArrayD, Axis, IxDyn};
+
+	let mut g = GraphDef::new();
+
+	let input = g.new_node(shape![7, 5, 13], "input", tag![])?;
+	let output = g.new_node(shape![Unknown, Unknown, 4], "output", tag![])?;
+	let _o1 = g.new_op(Coord::new(&output, &[0, 1]).input(&input), tag![])?;
+
+	let deps = Dependencies::new(&g);
+	println!("{:?}", deps);
+
+	let mut subgraph = g.subgraph(&[input.value_id()], &[output.value_id()])?;
+
+	let storage = subgraph.execute(vec![ArrayD::zeros(IxDyn(&[7, 5, 13]))])?;
+
+	let out = storage.get_mut(&output.value_id())?;
+
+	for x in out.axis_iter(Axis(2)) {
+		println!("{:?}", x);
+	}
+
+	// let out_slice = out.as_slice().unwrap();
+
+	// let expected = vec![
+	// 	0.0, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0, 0.0, 0.0,
+	// 	0.0, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0, 0.0, 0.0,
+	// 	0.0, 0.0, 1./9., 2./9., 3./9., 2./9., 1./9., 0.0, 0.0, 
+	// 	0.0, 0.0, 2./9., 4./9., 6./9., 4./9., 2./9., 0.0, 0.0, 
+	// 	0.0, 0.0, 3./9., 6./9.,	  1.0, 6./9., 3./9., 0.0, 0.0, 
+	// 	0.0, 0.0, 2./9., 4./9., 6./9., 4./9., 2./9., 0.0, 0.0, 
+	// 	0.0, 0.0, 1./9., 2./9., 3./9., 2./9., 1./9., 0.0, 0.0, 
+	// 	0.0, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0, 0.0, 0.0,
+	// 	0.0, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0, 0.0, 0.0,
+	// ];
+
+	Ok(())
+}
+
+#[test]
 fn test_coord(){
 	_coord().unwrap();
 }
 
 fn _coord() -> Result<()>{
-	use graph::GraphDef;
-	use ndarray::Axis;
+	use graph::{GraphDef, Dependencies};
+	use ndarray::{Axis};
 
 	let mut g = GraphDef::new();
 
-	let output = g.new_node(shape![7, 5, 4], "output", tag![])?;
+	let output = g.new_node(shape![Unknown, Unknown, 4], "output", tag![])?;
 	let _o1 = g.new_op(Coord::new(&output, &[0, 1]), tag![])?;
+
+	let deps = Dependencies::new(&g);
+	println!("{:?}", deps);
 
 	let mut subgraph = g.subgraph(&[], &[output.value_id()])?;
 
