@@ -18,6 +18,7 @@ impl ActivationFunc for ReLUFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct ReLU {
 	output: NodeID,

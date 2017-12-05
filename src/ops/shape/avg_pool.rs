@@ -11,7 +11,8 @@ use smallvec::SmallVec;
 ///
 /// Decrease size of dimensions by given factors.
 /// Output values are the average of windows of the input with the size of factors
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct AvgPool {
  	name: Option<String>,
  	input_id: NodeID,

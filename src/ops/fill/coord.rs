@@ -9,6 +9,8 @@ use odds;
 /// The op writes coordinates of selected higher dimensions to the channel dimensions (last axis).
 /// The number of output channels is equal to two times the number of coord_axes selected.
 /// Each coord axis produces one channel which increases from 0 to 1 with spaxel position in that axis and another which decreases from 1 to 0
+#[must_use]
+#[derive(Clone, Debug)] 
 pub struct Coord {
 	output_id: NodeID,
 	input: Option<NodeID>,

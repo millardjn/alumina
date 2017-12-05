@@ -7,7 +7,8 @@ use smallvec::SmallVec;
 
 
 /// ReduceSum
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct ReduceSum {
 	name: Option<String>,
 	input_id: NodeID,

@@ -10,7 +10,8 @@ use std::iter;
 ///
 /// Decrease size of higher dimensions by given factors by mapping from each spaxel to chunks of the channel dimension.
 /// Output channel dimension is increased by the product of the collapse factors. Inverse operation of Expand.
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Collapse {
 	name: Option<String>,
 	factors: Vec<usize>,
@@ -113,7 +114,8 @@ impl OpInstance for CollapseInstance {
 /// Increase size of higher dimensions by given factors by mapping from chunks of the channel dimension to each new spaxel. 
 /// Output channel dimension is reduced by the product of the expansion factors. Inverse operation of Collapse.
 /// Used in sub-pixel convolution.
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Expand {
 	name: Option<String>,
 	factors: Vec<usize>,

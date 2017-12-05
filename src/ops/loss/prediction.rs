@@ -12,7 +12,8 @@ use std::f32;
 /// This operation does not provide gradients but rather just returns a 1 or 0 depending if the max value in input group is paired with a `1.0` in the target group.
 /// The output shape is the same as the input/target shape with the axes provided for grouping removed.
 /// If `keep_dims(true)` then the provided axes arent removed but are instead replaced with `1`.
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Prediction {
 	name: Option<String>,
 	input_id: NodeID,

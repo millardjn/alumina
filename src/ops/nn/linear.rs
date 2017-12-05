@@ -12,6 +12,8 @@ use ndarray::ArrayViewMutD;
 /// Creates an Op which implements the differentiable matrix multiplication component of typical neural nets.
 /// Calculates C += A B, where B is a weights matrix, A is the input node, and C is the output node.
 /// Does not include bias.
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Linear {
 	input_id: NodeID,
 	output_id: NodeID,

@@ -8,6 +8,8 @@ use std::any::Any;
 ///
 /// Computed the elementwise division, which is then added to the output;
 /// By default the value of denominator is broadcast to the shape of the numerator, this can be overridden.
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Div {
 	numerator_id: NodeID,
 	denominator_id: NodeID,

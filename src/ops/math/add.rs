@@ -5,7 +5,8 @@ use ndarray::{ArrayViewMutD, ArrayViewD, Dimension};
 use smallvec::SmallVec;
 use std::any::Any;
 
-#[derive(Clone, Debug)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Add {
 	output: NodeID,
 	input: NodeID,

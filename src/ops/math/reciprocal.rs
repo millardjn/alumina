@@ -17,7 +17,8 @@ impl ActivationFunc for ReciprocalFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
-#[derive(Clone, Debug)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Reciprocal {
 	output: NodeID,
 	input: NodeID,

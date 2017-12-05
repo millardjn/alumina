@@ -18,7 +18,8 @@ impl fmt::Debug for Rules {
 }
 
 /// An Op with no passes or computation. Used purely to allow for customisable shape inference.
-#[derive(Debug, Clone)]
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct ShapeConstraint {
  	name: Option<String>,
 	rules: Rules,

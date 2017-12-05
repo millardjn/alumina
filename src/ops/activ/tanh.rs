@@ -19,6 +19,7 @@ impl ActivationFunc for TanhFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct Tanh {
 	output: NodeID,

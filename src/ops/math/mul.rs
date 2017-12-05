@@ -7,6 +7,8 @@ use std::any::Any;
 /// Mul Op
 ///
 /// The value of input2 is broadcast to the shape of input1, elementwise multiplied, then added to the output
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Mul {
 	input1: NodeID,
 	input2: NodeID,

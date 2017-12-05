@@ -25,6 +25,7 @@ impl ActivationFunc for ELUFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct ELU {
 	output: NodeID,

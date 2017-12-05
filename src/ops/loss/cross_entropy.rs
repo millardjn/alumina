@@ -13,7 +13,8 @@ use std::any::Any;
 /// If `output()` is set to a node of size 1, the Cross Entropy will be written to that Node, and the gradient will be backprop'd from the output node.
 ///
 /// If `separate_loss()` is set a scalar node will be added to the graph, and a `Loss` Op attached to it.
-#[derive(Clone, Debug)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct CrossEntropy {
 	logits_id: NodeID,
 	labels_id: NodeID,

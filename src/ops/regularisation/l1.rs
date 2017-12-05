@@ -12,6 +12,8 @@ use std::any::Any;
 ///
 /// If `output()` is set, the L1 loss will be written to that Node,
 /// and instead of generating gradients this loss function will backprop gradients from the output node.
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct L1 {
 	input_id: NodeID,
 	output: Option<NodeID>,

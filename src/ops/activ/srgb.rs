@@ -25,6 +25,7 @@ impl ActivationFunc for SrgbToLinearFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct SrgbToLinear {
 	output: NodeID,
@@ -88,6 +89,7 @@ impl ActivationFunc for LinearToSrgbFunc {
 }
 
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct LinearToSrgb {
 	output: NodeID,
@@ -146,6 +148,7 @@ impl ActivationFunc for SrgbToLinearSlowFunc {
 	fn backprop_requires_input_value() -> bool {true}
 }
 
+#[must_use]
 #[derive(Clone, Debug)] 
 pub struct SrgbToLinearSlow {
 	output: NodeID,
@@ -205,7 +208,8 @@ impl ActivationFunc for LinearToSrgbSlowFunc {
 }
 
 
-#[derive(Clone, Debug)] 
+#[must_use]
+#[derive(Clone, Debug)]  
 pub struct LinearToSrgbSlow {
 	output: NodeID,
 	input: NodeID,

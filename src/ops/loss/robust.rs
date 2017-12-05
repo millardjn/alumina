@@ -38,6 +38,8 @@ use std::num;
 /// if α == -∞: 1 - exp(-0.5 *(x/c)^2)
 /// else      : z(α)/α * (((x/c)^2/z(α) + 1)^(α/2) − 1)
 /// where z(α) = max(1, 2 - α)
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Robust {
 	input1_id: NodeID,
 	input2_id: NodeID,

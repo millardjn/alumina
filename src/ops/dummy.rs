@@ -1,6 +1,8 @@
 use graph::{GraphDef, NodeID, Storage, GraphShapes, Result};
 use ops::*;
 
+#[must_use]
+#[derive(Clone, Debug)] 
 pub struct Dummy {
 	name: Option<String>,
 	inputs: Vec<NodeID>,

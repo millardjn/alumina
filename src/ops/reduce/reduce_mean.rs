@@ -7,7 +7,8 @@ use smallvec::SmallVec;
 
 
 /// ReduceMean
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct ReduceMean {
 	name: Option<String>,
 	input_id: NodeID,

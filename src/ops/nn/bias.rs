@@ -5,6 +5,8 @@ use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
 use shape::NodeDim;
 use smallvec::SmallVec;
 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Bias {
 	output_id: NodeID,
 	weights_id: Option<NodeID>,

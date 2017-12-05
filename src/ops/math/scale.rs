@@ -4,7 +4,8 @@ use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
 use std::any::Any;
 
-#[derive(Clone, Debug)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Scale {
 	output: NodeID,
 	input: NodeID,

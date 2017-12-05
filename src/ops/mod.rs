@@ -281,7 +281,8 @@ impl Clone for Box<Pass> {
 }
 
 
-
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct NoOp {
 	name: Option<String>
 }

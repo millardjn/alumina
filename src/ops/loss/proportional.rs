@@ -3,6 +3,8 @@ use ops::{standard_op_name, Op, OpInstance, Pass};
 use std::any::Any;
 
 /// This `Op` applies a Proportional loss to every element of the input.
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Proportional {
 	input_id: NodeID,
 	multiplier: f32,

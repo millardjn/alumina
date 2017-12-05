@@ -12,7 +12,8 @@ use matrixmultiply;
 /// Linterp implements linear interpolation upscaling
 ///
 /// Increase size of each spatial dimension by given a factor by linear interpolating between spaxels in the input
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Linterp {
 	name: Option<String>,
 	factors: Vec<usize>,

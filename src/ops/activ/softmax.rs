@@ -12,6 +12,7 @@ use std::f32;
 /// By default all dimensions from the inner most outward until the first non-`Known` dimension will be grouped, and the Softmax operation repeated over the remaining dimensions.
 /// 
 /// This can be overridden using `inner()`, `outer()`, or most generally `mask()`.
+#[must_use]
 #[derive(Clone, Debug)]
 pub struct Softmax {
 	input_id: NodeID,

@@ -11,7 +11,8 @@ use arrayvec::ArrayVec;
 ///
 /// Defined as a cubic function in the domain (-1, 1) which passes through 0,0. Three learnable parameters control the gradients at x=-1, x=0 and x=1.
 /// Linear extensions are used outside the central region.
-#[derive(Clone)] 
+#[must_use]
+#[derive(Clone, Debug)] 
 pub struct Spline {
 	name: Option<String>,
 	input_id: NodeID,

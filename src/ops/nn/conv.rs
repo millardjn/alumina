@@ -47,7 +47,8 @@ pub enum Padding {
 /// and the filters are a rank (N+2) Tensor of shape
 ///
 /// `[num_output_channels, spatial_filter_shape[0], ..., spatial_filter_shape[N-1], num_input_channels]`
-#[derive(Debug, Clone)]
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct Conv {
 	name: Option<String>,
 	kernel_shape: Vec<usize>,

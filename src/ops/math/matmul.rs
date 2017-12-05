@@ -9,7 +9,8 @@ use std::any::Any;
 use matrixmultiply;
 
 /// Calculate C += α A B
-#[derive(Debug, Clone)]
+#[must_use]
+#[derive(Clone, Debug)]
 pub struct MatMul {
 	name: Option<String>,
 	A_id: NodeID,
