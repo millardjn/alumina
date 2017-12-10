@@ -343,7 +343,7 @@ impl GraphDef {
 	/// See `subgraph()`.
 	pub fn default_subgraph(&self) -> Result<Subgraph> {
 		let dependencies = Dependencies::new(self);
-		let input_ids: Vec<NodeID> = self.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !self.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+		let input_ids: Vec<NodeID> = self.nodes().iter().filter(|node_id| !self.static_inputs.contains_key(&node_id.value_id()) && dependencies.data_inputs(&node_id.value_id()).len() == 0 && !self.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
 		let parameter_ids: Vec<NodeID> = self.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && self.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
 		
 		self.subgraph(
@@ -1364,9 +1364,9 @@ fn find_op_order(graph: &GraphDef, included_nodes: &[NodeStatus], included_ops: 
 				mark_node_input(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
 			},
 			&NodeStatus::StaticInput => {
-				if !dependencies.node_shape_inputs[i].iter().all(|op_id| included_ops[op_id.index]) {
+				//if !dependencies.node_shape_inputs[i].iter().all(|op_id| included_ops[op_id.index]) {
 					mark_node_input(graph, &NodeID{index: i}, &mut node_state, &mut op_state, &dependencies)
-				}
+				//}
 			},
 			&NodeStatus::Infer => {
 				if dependencies.node_shape_inputs[i].len() == 0 {
