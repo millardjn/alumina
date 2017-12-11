@@ -1989,7 +1989,7 @@ fn _test_insufficient_input_detection() -> Result<()>{
 	assert!(matches!(sg_forward, Err(Error(ErrorKind::SubgraphInsufficientInputsForShapeInference(_), _))), "{:?}", sg_forward);
 
 	let sg_forward_backward = g.subgraph(&[node1.value_id()], &[node1.gradient_id()]);
-	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::SubgraphInsufficientInputsForShapeInference(_), _))), "{:?}", sg_forward_backward);
+	assert!(matches!(sg_forward_backward, Err(Error(ErrorKind::SubgraphInsufficientInputsForOutputs(_), _))), "{:?}", sg_forward_backward);
 
 	Ok(())
 }
