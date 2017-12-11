@@ -16,6 +16,11 @@ use init::Initialiser;
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal};
 use smallvec::SmallVec;
+use typenum::{UInt, UTerm, U1, U2, U3};
+use typenum::marker_traits::Unsigned;
+use typenum::bit::*;
+use typenum::operator_aliases::Sub1;
+use std::ops::Sub;
 
 /// Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -399,7 +404,13 @@ impl Pass for ConvForward {
 							let in_n = &input[n_ind*in_size..][..in_size];	
 
 							let output_ind = (spaxel_ind+i)%out_spaxels*output_channels;
-							unsafe_pack_patch_outer(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
+							match filter_spatial.len() {
+								1 => unsafe_pack_specialised::<U1>(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
+								2 => unsafe_pack_specialised::<U2>(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
+								3 => unsafe_pack_specialised::<U3>(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
+								_ => unsafe_pack(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
+							}
+							//unsafe_pack_patch_outer(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
 							//pack_patch_recurse(patch, in_n, &kernel_shape, input_channels, &input.shape.spatial_dimensions, &output_shape.spatial_dimensions, kernel_shape.len()-1, output_ind, out_size);
 						}
 					}
@@ -561,7 +572,13 @@ impl Pass for ConvBackward {
 							let outg_n = &output_grad[n_ind*out_size..][..out_size];
 
 							let input_ind = (spaxel_ind+i)%in_spaxels*input_channels;
-							unsafe_pack_patch_outer(patch, outg_n, output_channels, input_ind, &filter_spatial, &output_spatial, &input_spatial, &filter_strides, &output_strides, &input_strides);
+							match filter_spatial.len() {
+								1 => unsafe_pack_specialised::<U1>(patch, outg_n, output_channels, input_ind, &filter_spatial, &output_spatial, &input_spatial, &filter_strides, &output_strides, &input_strides),
+								2 => unsafe_pack_specialised::<U2>(patch, outg_n, output_channels, input_ind, &filter_spatial, &output_spatial, &input_spatial, &filter_strides, &output_strides, &input_strides),
+								3 => unsafe_pack_specialised::<U3>(patch, outg_n, output_channels, input_ind, &filter_spatial, &output_spatial, &input_spatial, &filter_strides, &output_strides, &input_strides),
+								_ => unsafe_pack(patch, outg_n, output_channels, input_ind, &filter_spatial, &output_spatial, &input_spatial, &filter_strides, &output_strides, &input_strides),
+							}
+							
 							//pack_patch_recurse(patch, outd_n, &kernel_shape, output_channels, &output.shape.spatial_dimensions, &input_shape.spatial_dimensions, kernel_shape.len()-1, input_ind, in_size);
 						}
 					}
@@ -718,8 +735,112 @@ fn stride_vec2(channels: usize, shape: &[usize]) -> SmallVec<[usize;6]>{
 	strides
 }
 
-//#[inline(never)]
-fn unsafe_pack_patch_outer(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
+fn unsafe_pack_specialised<Axes: PackSpecialised + Unsigned>(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
+	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
+	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
+	
+	debug_assert_eq!(Axes::to_usize(), kernel_shape.len());
+
+	let axis = 0;
+	let ox = output_ind/output_strides[axis];
+	let ix = ox as isize + (input_shape[axis] as isize - output_shape[axis] as isize)/2;
+	let (start, end) = kernel_range(ix, input_shape[axis], kernel_shape[axis]);
+
+	unsafe {Axes::pack(patch, input, channels, output_ind, ox, ix, start, end,
+	kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)};
+}
+
+trait PackSpecialised {
+	unsafe fn pack(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
+	ox: usize, ix: isize,
+	start: usize, end: usize, // valid range of the kernels in the current axis
+	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
+	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]);
+}
+
+impl<U: Unsigned, B: Bit, C: Bit> PackSpecialised for UInt<UInt<U, B>, C> where UInt<UInt<U, B>, C>: Sub<B1>, Sub1<UInt<UInt<U, B>, C>>: PackSpecialised {
+	#[inline(always)]
+	unsafe fn pack(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
+		ox: usize, ix: isize,
+		start: usize, end: usize, // valid range of the kernels in the current axis
+		kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
+		kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
+
+		let axis = kernel_shape.len() - Self::to_usize();
+
+		let i_stride = *odds::get_unchecked(input_strides, axis);
+		let o_stride = *odds::get_unchecked(output_strides, axis);
+		let k_stride = *odds::get_unchecked(kernel_strides, axis);
+		// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
+		
+		for i in 0..start*k_stride {
+			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		}
+		
+		debug_assert!(axis < kernel_shape.len() - 1);
+		for i in start..end{
+			let temp_ix = (ix + i as isize - (*odds::get_unchecked(kernel_shape, axis)/2) as isize) as usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
+			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
+			
+			let new_input = odds::slice_unchecked(input, i_stride*temp_ix, i_stride*(temp_ix+1));
+
+			let new_patch = odds::slice_unchecked_mut(patch, i*k_stride, (i+1)*k_stride);
+
+			let new_axis = axis+1;
+			let new_output_ind = output_ind - ox*o_stride;
+			let new_ox = new_output_ind/ *odds::get_unchecked(output_strides, new_axis);
+			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(output_shape, new_axis) as isize)/2;
+			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
+
+			<Sub1<Self>>::pack(new_patch, new_input, channels, new_output_ind, new_ox, new_ix,
+				new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
+		}
+
+		for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
+			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		}
+	}
+}
+
+impl PackSpecialised for UInt<UTerm, B1> {
+	#[inline(always)]
+	unsafe fn pack(patch: &mut [f32], input: &[f32], channels: usize, _output_ind: usize,
+		_ox: usize, ix: isize,
+		start: usize, end: usize, // valid range of the kernels in the current axis
+		kernel_shape: &[usize], _input_shape: &[usize], _output_shape: &[usize],
+		kernel_strides: &[usize], _input_strides: &[usize], _output_strides: &[usize]){
+
+		let axis = kernel_shape.len() - Self::to_usize();
+
+		let k_stride = *odds::get_unchecked(kernel_strides, axis);
+		// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
+		
+		for i in 0..start*k_stride {
+			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		}
+		
+		if end > start {
+			let offset = ((ix-*odds::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
+			let len = (end - start)*channels;
+
+			//let input_crop = &input[offset..][..len];
+			//let mut patch_crop = &mut patch[(start*channels)..][..len];
+			//patch_crop.copy_from_slice(input_crop);
+			let input_crop = odds::slice_unchecked(input, offset, offset + len);
+			let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
+			for i in 0..len{
+				*odds::get_unchecked_mut(patch_crop, i) = *odds::get_unchecked(input_crop, i);
+			}
+		}
+
+		for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
+			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		}
+	}
+}
+
+
+fn unsafe_pack(patch: &mut [f32], input: &[f32], channels: usize, output_ind: usize,
 	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
 	kernel_strides: &[usize], input_strides: &[usize], output_strides: &[usize]){
 	let axis = 0;
@@ -728,12 +849,11 @@ fn unsafe_pack_patch_outer(patch: &mut [f32], input: &[f32], channels: usize, ou
 	let ix = ox as isize + (input_shape[axis] as isize - output_shape[axis] as isize)/2;
 	let (start, end) = kernel_range(ix, input_shape[axis], kernel_shape[axis]);
 
-	unsafe {unsafe_pack_patch_recurse(patch, input, channels, axis, output_ind, ox, ix, start, end,
+	unsafe {_unsafe_pack_impl(patch, input, channels, axis, output_ind, ox, ix, start, end,
 	kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)};
 }
 
-//#[inline(always)]
-unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: usize, axis: usize, output_ind: usize,
+unsafe fn _unsafe_pack_impl(patch: &mut [f32], input: &[f32], channels: usize, axis: usize, output_ind: usize,
 	ox: usize, ix: isize,
 	start: usize, end: usize, // valid range of the kernels in the current axis
 	kernel_shape: &[usize], input_shape: &[usize], output_shape: &[usize],
@@ -765,7 +885,7 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(output_shape, new_axis) as isize)/2;
 			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
 
-			unsafe_pack_patch_recurse(new_patch, new_input, channels, new_axis, new_output_ind, new_ox, new_ix,
+			_unsafe_pack_impl(new_patch, new_input, channels, new_axis, new_output_ind, new_ox, new_ix,
 			new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
 		}
 
@@ -774,12 +894,10 @@ unsafe fn unsafe_pack_patch_recurse(patch: &mut [f32], input: &[f32], channels: 
 		let len = (end - start)*channels;
 
 		//let input_crop = &input[offset..][..len];
-		let input_crop = odds::slice_unchecked(input, offset, offset + len);
-		
 		//let mut patch_crop = &mut patch[(start*channels)..][..len];
-		let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
-		
 		//patch_crop.copy_from_slice(input_crop);
+		let input_crop = odds::slice_unchecked(input, offset, offset + len);
+		let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
 		for i in 0..len{
 			*odds::get_unchecked_mut(patch_crop, i) = *odds::get_unchecked(input_crop, i);
 		}
@@ -1066,13 +1184,20 @@ fn test_pack(){
 	
 	for (i, patch) in patches.chunks_mut(patch_size).enumerate(){
 		let output_ind = i*output_channels;
-		unsafe_pack_patch_outer(patch, &input, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
-		//pack_patch_recurse(patch, &input, &ks, in_channels, &input_shape, &output_shape, axis, output_ind, output_size);
+		unsafe_pack(patch, &input, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
 	}
 	
-	debug_assert!(!patches.iter().cloned().any(|x| x.is_nan() || x == -0.5), "{:?}", patches);
+	debug_assert!(!patches.iter().cloned().any(|x| x.is_nan() || x == -0.5), "test1: {:?}", patches);
 
 
+	let mut patches = vec![-0.5; patch_size*output_spaxel_count];
+	
+	for (i, patch) in patches.chunks_mut(patch_size).enumerate(){
+		let output_ind = i*output_channels;
+		unsafe_pack_specialised::<U2>(patch, &input, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
+	}
+	
+	debug_assert!(!patches.iter().cloned().any(|x| x.is_nan() || x == -0.5), "test2: {:?}", patches);
 
 	// for (i, patch) in patches.chunks(patch_size).enumerate(){
 	// 	let (y, x) = (i/output_spatial[1], i%output_spatial[1]);
