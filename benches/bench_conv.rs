@@ -1,77 +1,75 @@
 #![feature(test)]
 
 extern crate test;
+#[macro_use]
 extern crate alumina;
+extern crate ndarray;
 
 use test::Bencher;
-use alumina::graph::*;
-use alumina::ops::conv::Convolution;
-use alumina::ops::Operation;
+use alumina::graph::{GraphDef, Subgraph, Result};
+use alumina::ops::{Op, OpInstance};
+use alumina::ops::nn::conv::Conv;
+use alumina::ops::regularisation::l2::L2;
+
+use ndarray::{ArrayD, IxDyn};
 
 #[bench]
 fn conv_bench_128x128_5x5_3_3_forward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, true);
+	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, true).unwrap();
 }
 
 #[bench]
 fn conv_bench_128x128_5x5_3_3_backward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, false);
+	conv2D_bench(bench, 8, (128, 128), (5,5), 3, 3, false).unwrap();
 }
 
 #[bench]
 fn conv_bench_64x64_3x3_16_16_forward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, true);
+	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, true).unwrap();
 }
 
 #[bench]
 fn conv_bench_64x64_3x3_16_16_backward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, false);
+	conv2D_bench(bench, 8, (64, 64), (3,3), 16, 16, false).unwrap();
 }
 
 #[bench]
 fn conv_bench_64x64_3x3_64_64_forward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, true);
+	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, true).unwrap();
 }
 
 #[bench]
 fn conv_bench_64x64_3x3_64_64_backward(bench: &mut Bencher){
-	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, false);
+	conv2D_bench(bench, 8, (64, 64), (3,3), 64, 64, false).unwrap();
 }
 
-fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usize, usize), ch_in: usize, ch_out: usize, forward: bool){
-	let mut graph = Graph::new();
+fn conv2D_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (usize, usize), ch_in: usize, ch_out: usize, forward: bool) -> Result<()>{
 
-	let n1 = graph.add_input_node(Node::new_sized(ch_in, &[img.0, img.1], "nodein"));
-	let n2 = graph.add_output_node(Node::new_sized(ch_out, &[img.0, img.1], "nodeout"));
-
-	let ops: Vec<Box<Operation>> = vec![
-		Convolution::new_default(&n1, &n2, &[filter.0, filter.1]),
-	];
-	graph.add_operations(ops);
-
-	graph_bench(graph, bench, n, forward);
-}
-
-fn graph_bench(mut graph: Graph, bench: &mut Bencher, n: usize, forward: bool){
-	let input_0 = graph.input_nodes().iter().map(|node| {
-		let data_shape = node.shape.to_data_shape(n).unwrap();
-		let size = data_shape.flat_size_all();
-		NodeData::new(
-			data_shape,
-			vec![0.99; size]
-			//math::random_vector::normal(size, 0.0, 1.0)
-		)
-	}).collect::<Vec<NodeData>>();
-	let params_0 = graph.init_params();
+	let mut g = GraphDef::new();
 	
-	if forward {
-		bench.iter(|| {
-			let _node_data = graph.forward(n, input_0.clone(), &params_0);
-		});
+	let node1 = g.new_node(shape![n, img.0, img.1, ch_in], "input", tag![])?;
+	let node2 = g.new_node(shape![Unknown, Unknown, Unknown, ch_out], "conv", tag![])?;
+
+	let o1 = Conv::new(&node1, &node2, &[3, 5]).init(Conv::msra(1.0)).add_to(&mut g, tag![])?;
+	let _o2 = L2::new(&node2).add_to(&mut g, tag![])?;
+
+	let mut subgraph = if forward {
+		g.subgraph(&[node1.value_id(), g.op(&o1)?.inner_nodes()[0].value_id()], &[node2.value_id()])?
 	} else {
-		bench.iter(|| {
-			let (_loss, _grad_0, _node_data) = graph.backprop(n, input_0.clone(), vec![], &params_0);
-		});
-	}
+		g.default_subgraph()?
+	};
+
+	let input = ArrayD::zeros(IxDyn(&[n, img.0, img.1, ch_in]));
+
+	let params = subgraph.graph().initialise_nodes(&g.op(&o1)?.inner_nodes())?;
+	let mut input_vec = vec![input];
+	input_vec.extend(params);
+
+	bench.iter(|| {
+		let result = subgraph.execute(input_vec.clone()).unwrap();
+	});
+	Ok(())
 }
+
+
 
