@@ -1,6 +1,7 @@
 use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
 use opt::{Opt, CallbackData, CallbackSignal};
 use ndarray::{ArrayD, Zip};
+use std::num::FpCategory;
 
 pub struct Sgd {
 	subgraph: Subgraph,
@@ -134,6 +135,9 @@ impl Opt for Sgd {
 						let change = -rate * (*grad_momentum);
 						change_sqr += change * change;
 						*param += change;
+						if let FpCategory::Subnormal = param.classify(){
+							*param = 0.0;
+						}
 					});
 			}
 
@@ -145,6 +149,9 @@ impl Opt for Sgd {
 						let change = -rate * (*grad);
 						change_sqr += change * change;
 						*param += change;
+						if let FpCategory::Subnormal = param.classify(){
+							*param = 0.0;
+						}
 					});
 			}
 		};

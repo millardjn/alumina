@@ -1,6 +1,7 @@
 use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
 use opt::{Opt, CallbackData, CallbackSignal};
 use ndarray::{ArrayD, Zip};
+use std::num::FpCategory;
 
 /// Adam Optimiser
 ///
@@ -114,9 +115,10 @@ impl Adam {
 		self
 	}
 
-	/// Should bias correction be performed.
-	///
-	///Default: true
+	/// Should bias correction be performed for the momentum vector.
+	/// 
+	/// Note: the curvature vector is always corrected.
+	/// Default: true
 	pub fn bias_correct(mut self, bias_correct: bool) -> Self {
 		self.bias_correct = bias_correct;
 		self
@@ -178,6 +180,9 @@ impl Opt for Adam {
 						let change = -rate * (*momentum) * momentum_correction/((*curv*curv_correction).sqrt() + epsilon);
 						change_sqr += change*change;
 						*param += change;
+						if let FpCategory::Subnormal = param.classify(){
+							*param = 0.0;
+						}
 					});
 			} else {
 				Zip::from(&mut params[i])
@@ -187,9 +192,12 @@ impl Opt for Adam {
 					.apply(|param, momentum, curv, param_grad| {
 						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
 						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
-						let change = -rate * (*momentum) /(curv.sqrt() + epsilon);
+						let change = -rate * (*momentum) /((*curv*curv_correction).sqrt() + epsilon);
 						change_sqr += change*change;
 						*param += change;
+						if let FpCategory::Subnormal = param.classify(){
+							*param = 0.0;
+						}
 					});
 			}
 		}
