@@ -2,6 +2,7 @@ use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
 use opt::{Opt, CallbackData, CallbackSignal};
 use ndarray::{ArrayD, Zip};
 use std::num::FpCategory;
+use rayon::prelude::*;
 
 /// Adam Optimiser
 ///
@@ -166,14 +167,22 @@ impl Opt for Adam {
 		let epsilon = self.epsilon;
 		let momentum_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta1.powi(self.step_count as i32 + 1))} else {1.0}; 
 		let curv_correction = if self.step_count < 1_000_000{1.0/(1.0 - self.beta2.powi(self.step_count as i32 + 1))} else {1.0}; 
+		
+		
+		//let momentum_vec = &mut self.momentum_vec;
+		//let curvature_vec = &mut self.curvature_vec;
+		let bias_correct = self.bias_correct;
 
-		let mut change_sqr = 0.0;
-		for (i, param_grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
-			if self.bias_correct {
-				Zip::from(&mut params[i])
-					.and(&mut self.momentum_vec[i])
-					.and(&mut self.curvature_vec[i])
-					.and(&param_grad)
+		
+		//for (i, param_grad) in self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).enumerate() {
+		let param_grads: Vec<_> = self.parameters.iter().map(|p| map.remove(&p.gradient_id()).expect("Subgraph must have parameter gradients as outputs.")).collect();
+		let change_sqr: f32 = param_grads.par_iter().zip(self.momentum_vec.par_iter_mut()).zip(self.curvature_vec.par_iter_mut()).zip(params.par_iter_mut()).with_max_len(1).map(|(((param_grad_outer, momentum_outer), curvature_outer), params_outer)| {
+			let mut change_sqr = 0.0;
+			if bias_correct {
+				Zip::from(params_outer)
+					.and(momentum_outer)
+					.and(curvature_outer)
+					.and(param_grad_outer)
 					.apply(|param, momentum, curv, param_grad| {
 						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
 						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
@@ -185,10 +194,10 @@ impl Opt for Adam {
 						}
 					});
 			} else {
-				Zip::from(&mut params[i])
-					.and(&mut self.momentum_vec[i])
-					.and(&mut self.curvature_vec[i])
-					.and(&param_grad)
+				Zip::from(params_outer)
+					.and(momentum_outer)
+					.and(curvature_outer)
+					.and(param_grad_outer)
 					.apply(|param, momentum, curv, param_grad| {
 						*momentum = *momentum * beta1 + (1.0-beta1)*param_grad;
 						*curv = *curv * beta2 + (1.0-beta1)*param_grad*param_grad;
@@ -200,7 +209,8 @@ impl Opt for Adam {
 						}
 					});
 			}
-		}
+			change_sqr
+		}).sum();
 
 		self.step_count += 1;
 
