@@ -2,7 +2,7 @@ use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorK
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use std::any::Any;
 use std::fmt::Debug;
-
+use rayon::prelude::*;
 
 
 pub fn elementwise_build<O: Op, F: ActivationFunc>(graph: &mut GraphDef, op: &O, name: &Option<String>, input: &NodeID, output: &NodeID, func: F) -> Result<ElementwiseInstance<F>> {
@@ -26,7 +26,7 @@ pub fn elementwise_build<O: Op, F: ActivationFunc>(graph: &mut GraphDef, op: &O,
 
 
 /// Used to define graph op with no parameters, where the effect of the input on the output is entirely seperable.
-pub trait ActivationFunc: Clone + Debug + 'static {
+pub trait ActivationFunc: Sync + Clone + Debug + 'static {
 	#[inline(always)]
 	/// For a given input x, what is the output y, and the derivative dy/dx
 	fn value(&self, input: f32) -> f32;
@@ -109,9 +109,13 @@ impl<F: ActivationFunc> Pass for ElementwiseForward<F> {
 		let inp = &input[..len];
 		let out = &mut output[..len];
 
-		for i in 0..len{
-			out[i] += self.func.value(inp[i]);
-		}
+		inp.par_iter().zip(out.par_iter_mut()).for_each(|(inp, out)|{
+			*out += self.func.value(*inp);
+		});
+
+		// for i in 0..len{
+		// 	out[i] += self.func.value(inp[i]);
+		// }
 
 		Ok(Box::new(()))
 	}
@@ -175,17 +179,25 @@ impl<F: ActivationFunc> Pass for ElementwiseBackward<F> {
 			let outd = &output_grad[..len];
 			let inpd = &mut input_grad[..len];
 
-			for i in 0..len{
-				inpd[i] += self.func.gradient(inp[i], outd[i]);
-			}
+			// for i in 0..len{
+			// 	inpd[i] += self.func.gradient(inp[i], outd[i]);
+			// }
+
+			inpd.par_iter_mut().zip(outd.par_iter()).zip(inp.par_iter()).for_each(|((inpd, outd), inp)|{
+				*inpd += self.func.gradient(*inp, *outd);
+			});
 		} else {
 
 			let outd = &output_grad[..len];
 			let inpd = &mut input_grad[..len];
 
-			for i in 0..len{
-				inpd[i] += self.func.gradient(0.0, outd[i]);
-			}
+			// for i in 0..len{
+			// 	inpd[i] += self.func.gradient(0.0, outd[i]);
+			// }
+
+			inpd.par_iter_mut().zip(outd.par_iter()).for_each(|(inpd, outd)|{
+				*inpd += self.func.gradient(0.0, *outd);
+			});
 		}
 
 		Ok(Box::new(()))
