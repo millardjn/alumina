@@ -22,6 +22,7 @@ extern crate ordermap;
 #[macro_use] extern crate matches;
 extern crate arrayvec;
 extern crate image;
+extern crate rayon;
 
 //#![deny(missing_docs)]
 
