@@ -6,6 +6,7 @@ use std::any::Any;
 use smallvec::SmallVec;
 use init::Initialiser;
 use arrayvec::ArrayVec;
+use rayon::prelude::*;
 
 /// `Spline` A smooth continuous function consisting of linear components jointed by a central cubic region.
 ///
@@ -261,12 +262,16 @@ impl Pass for SplineForward {
 			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast weights_shape[1..]: {:?} to input/output shape: {:?}", weights_shape, input_shape))
 		);
 
-		let iter = output.exact_chunks_mut(weights_shape).into_iter()
-			.zip(input.exact_chunks(weights_shape));
+		// let iter = output.exact_chunks_mut(weights_shape).into_iter()
+		// 	.zip(input.exact_chunks(weights_shape));
 		
-		for (mut output, input) in iter {
-			Zip::from(&mut output)
-				.and(&input)
+		let mut outputs: Vec<_> = output.exact_chunks_mut(weights_shape).into_iter().collect();
+		let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
+
+		//for (mut output, input) in iter {
+		inputs.par_iter().zip(outputs.par_iter_mut()).for_each(|(input, output)|{
+			Zip::from(output)
+				.and(input)
 				.and(&weights[0])
 				.and(&weights[1])
 				.and(&weights[2])
@@ -287,7 +292,8 @@ impl Pass for SplineForward {
 							); // cubic spline passing through 0,0 connecting left and right
 					}
 				});
-		}
+		//}
+		});
 
 		Ok(Box::new(()))
 	}
