@@ -18,7 +18,7 @@ use init::Initialiser;
 use std::cell::{Cell, UnsafeCell};
 use std::mem;
 use std::collections::VecDeque;
-use ordermap::OrderMap;
+use ordermap::{OrderMap, OrderSet};
 use ops::*;
 use std::borrow::Borrow;
 use std::rc::Rc;
@@ -287,7 +287,7 @@ pub struct GraphDef {
 	node_ids: Vec<NodeID>,
 	node_shapes: Vec<NodeShape>,
 	node_names: OrderMap<String, NodeID>,
-	node_tags: OrderMap<NodeTag, OrderMap<NodeID, ()>>,
+	node_tags: OrderMap<NodeTag, OrderSet<NodeID>>,
 
 	pass_ids: Vec<PassID>,
 	passes: Vec<Box<Pass>>,
@@ -295,7 +295,7 @@ pub struct GraphDef {
 	op_ids: Vec<OpID>,
 	ops: Vec<Rc<OpInstance>>,
 	op_names: OrderMap<String, OpID>,
-	op_tags: OrderMap<OpTag, OrderMap<OpID, ()>>,
+	op_tags: OrderMap<OpTag, OrderSet<OpID>>,
 
 	static_inputs: OrderMap<DataID, ArrayD<f32>>,
 
@@ -395,7 +395,7 @@ impl GraphDef {
 
 		// ensure names are unique w.r.t other names and tags
 		ensure!(!self.node_names.contains_key(&name), ErrorKind::NodeNameConflict(name));
-		ensure!(!self.node_tags.contains_key(&name.as_str().into()), ErrorKind::NodeTagNameConflict(name));
+		ensure!(!self.node_tags.contains_key(&NodeTag::from(name.as_str())), ErrorKind::NodeTagNameConflict(name));
 		for tag in &tags{
 			// ensure that tags don't overlap with existing names
 			match tag {
@@ -423,7 +423,7 @@ impl GraphDef {
 			match tag {
 				NodeTag::Id(_) => {},
 				NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
-					self.node_tags.entry(tag).or_insert(OrderMap::new()).insert(node_id.clone(), ());
+					self.node_tags.entry(tag).or_insert(OrderSet::new()).insert(node_id.clone());
 				},
 			}
 		}
@@ -448,7 +448,7 @@ impl GraphDef {
 
 		// ensure names are unique w.r.t other names and tags
 		ensure!(!self.op_names.contains_key(&name), ErrorKind::OpNameConflict(name));
-		ensure!(!self.op_tags.contains_key(&name.as_str().into()), ErrorKind::OpTagNameConflict(name));
+		ensure!(!self.op_tags.contains_key(&OpTag::from(name.as_str())), ErrorKind::OpTagNameConflict(name));
 		for tag in &tags{
 			// ensure that tags don't overlap with existing names
 			match tag {
@@ -469,10 +469,10 @@ impl GraphDef {
 			match tag {
 				OpTag::Id(_) => {},
 				OpTag::Int(_) => {
-					self.op_tags.entry(tag).or_insert(OrderMap::new()).insert(op_id.clone(), ());
+					self.op_tags.entry(tag).or_insert(OrderSet::new()).insert(op_id.clone());
 				},
 				OpTag::Str(_) => {
-					self.op_tags.entry(tag).or_insert(OrderMap::new()).insert(op_id.clone(), ());
+					self.op_tags.entry(tag).or_insert(OrderSet::new()).insert(op_id.clone());
 				},
 			}
 		}
@@ -538,7 +538,7 @@ impl GraphDef {
 		self.node_id(tag).map(|id| &self.node_shapes[id.index])
 	}
 
-	pub fn parameter_ids<'a>(&'a self) -> OrderMap<NodeID, ()> {
+	pub fn parameter_ids<'a>(&'a self) -> OrderSet<NodeID> {
 		self.node_ids(NodeTag::Parameter)
 	}
 
@@ -553,7 +553,7 @@ impl GraphDef {
 			NodeTag::Id(ind) => {ind == node_id.index},
 			NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
 				match self.node_tags.get(&tag){
-					Some(set) => set.contains_key(node_id),
+					Some(set) => set.contains(node_id),
 					None => false,
 				}
 			}
@@ -567,7 +567,7 @@ impl GraphDef {
 			OpTag::Id(ind) => {ind == op_id.index},
 			OpTag::Int(_) | OpTag::Str(_) => {
 				match self.op_tags.get(&tag){
-					Some(set) => set.contains_key(op_id),
+					Some(set) => set.contains(op_id),
 					None => false,
 				}
 			}
@@ -590,7 +590,7 @@ impl GraphDef {
 					};
 					match set.len() {
 						0 => bail!(ErrorKind::ZeroNodesMatchTag(tag.clone())),
-						1 => Ok(set.keys().next().unwrap().clone()),
+						1 => Ok(set.iter().next().unwrap().clone()),
 						_ => bail!(ErrorKind::MultipleNodesMatchTag(tag.clone())),
 					}
 				}
@@ -602,32 +602,32 @@ impl GraphDef {
 				};
 				match set.len() {
 					0 => bail!(ErrorKind::ZeroNodesMatchTag(tag)),
-					1 => Ok(set.keys().next().unwrap().clone()),
+					1 => Ok(set.iter().next().unwrap().clone()),
 					_ => bail!(ErrorKind::MultipleNodesMatchTag(tag)),
 				}
 			}
 		}
 	}
 
-	pub fn node_ids<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderMap<NodeID, ()> {
+	pub fn node_ids<'a, T: Into<NodeTag>>(&'a self, tag: T) -> OrderSet<NodeID> {
 		let tag = tag.into();
 		match tag {
-			NodeTag::Id(ind) => iter::once((self.node_ids[ind].clone(), ())).collect(),
+			NodeTag::Id(ind) => iter::once(self.node_ids[ind].clone()).collect(),
 			NodeTag::Str(ref string) => {
 				// Check names first, then other string tags
 				if let Some(node_id) = self.node_names.get(string) {
-					iter::once((node_id.clone(), ())).collect()
+					iter::once(node_id.clone()).collect()
 				} else {
 					match self.node_tags.get(&tag){
 						Some(set) => set.clone(),
-						None => OrderMap::new(),
+						None => OrderSet::new(),
 					}
 				}
 			},
 			NodeTag::Int(_) | NodeTag::Parameter  => {
 				match self.node_tags.get(&tag){
 					Some(set) => set.clone(),
-					None => OrderMap::new(),
+					None => OrderSet::new(),
 				}
 			}
 		}
@@ -650,7 +650,7 @@ impl GraphDef {
 					};
 					match set.len() {
 						0 => bail!(ErrorKind::ZeroOpsMatchTag(tag.clone())),
-						1 => Ok(set.keys().next().unwrap().clone()),
+						1 => Ok(set.iter().next().unwrap().clone()),
 						_ => bail!(ErrorKind::MultipleOpsMatchTag(tag.clone())),
 					}
 				}
@@ -662,7 +662,7 @@ impl GraphDef {
 				};
 				match set.len() {
 					0 => bail!(ErrorKind::ZeroOpsMatchTag(tag)),
-					1 => Ok(set.keys().next().unwrap().clone()),
+					1 => Ok(set.iter().next().unwrap().clone()),
 					_ => bail!(ErrorKind::MultipleOpsMatchTag(tag)),
 				}
 			}
@@ -675,7 +675,7 @@ impl GraphDef {
 			OpTag::Id(ind) => Box::new(iter::once(OpID{index: ind})),
 			OpTag::Int(_) | OpTag::Str(_)  => {
 				match self.op_tags.get(&tag){
-					Some(set) => Box::new(set.keys().cloned()),
+					Some(set) => Box::new(set.iter().cloned()),
 					None => Box::new(iter::empty::<OpID>()),
 				}
 			}
