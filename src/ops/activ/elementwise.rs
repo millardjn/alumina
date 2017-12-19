@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use storage::Storage;
+use id::{NodeID, DataID, OpID, PassID};
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use std::any::Any;
 use std::fmt::Debug;
@@ -26,7 +28,7 @@ pub fn elementwise_build<O: Op, F: ActivationFunc>(graph: &mut GraphDef, op: &O,
 
 
 /// Used to define graph op with no parameters, where the effect of the input on the output is entirely seperable.
-pub trait ActivationFunc: Sync + Clone + Debug + 'static {
+pub trait ActivationFunc: Send + Sync + Clone + Debug + 'static {
 	#[inline(always)]
 	/// For a given input x, what is the output y, and the derivative dy/dx
 	fn value(&self, input: f32) -> f32;
@@ -46,9 +48,9 @@ pub struct ElementwiseInstance<F: ActivationFunc> {
 	backward_id: PassID,
 }
 
-impl<F: ActivationFunc> OpInstance for ElementwiseInstance<F> {
+impl<F: ActivationFunc> OpInstance for ElementwiseInstance<F> where F: Sync + Send {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input_id.clone()], vec![self.output_id.clone()])}
 
@@ -82,7 +84,7 @@ impl<F: ActivationFunc> ElementwiseForward<F> {
 	}
 }
 
-impl<F: ActivationFunc> Pass for ElementwiseForward<F> {
+impl<F: ActivationFunc> Pass for ElementwiseForward<F> where F: Send {
 	fn type_name(&self) -> &'static str {"ElementwiseForward"}
 
 	fn dependencies(&self) -> (Vec<DataID>, Vec<DataID>){
@@ -98,7 +100,7 @@ impl<F: ActivationFunc> Pass for ElementwiseForward<F> {
 
 		ensure!(
 			input.shape() == output.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
 		);
 
 		let input = input.as_slice().unwrap();
@@ -163,7 +165,7 @@ impl<F: ActivationFunc> Pass for ElementwiseBackward<F> {
 		
 		ensure!(
 			input_grad.shape() == output_grad.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input_grad.shape(), output_grad.shape()))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input_grad.shape(), output_grad.shape()))
 		);
 
 		let output_grad = output_grad.as_slice().unwrap();

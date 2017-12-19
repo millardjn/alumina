@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result, ErrorKind};
+use graph::{GraphDef, GraphShapes, Result, ErrorKind};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{Dimension, IxDyn};
@@ -66,11 +68,11 @@ impl Op for Prediction {
 		self
 	}
 
-	fn build(mut self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(mut self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]);
 
 		{
-			let input_shape = graph.node_shape(&self.input_id)?;
+			let input_shape = self.input_id.shape();
 			if self.axes.len() == 0 {
 				for i in 0..input_shape.ndim() {
 					if matches!(input_shape.dimensions()[i], NodeDim::Known(_)) {
@@ -110,7 +112,7 @@ pub struct PredictionInstance {
 }
 
 impl OpInstance for PredictionInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
@@ -209,7 +211,7 @@ impl Pass for PredictionForward {
 		//let output_shape_keep_dims = calc_output_shape(&input_shape, &self.axes, true);
 
 		ensure!(output_shape_actual.as_slice() == output_shape.as_slice(), "Output shape {:?} does not match reduced input shape {:?}", output_shape.as_slice(), output_shape_actual.as_slice());
-		ensure!(input.shape() == target.shape(),ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match target shape: {:?}", input.shape(), target.shape())));
+		ensure!(input.shape() == target.shape(),ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match target shape: {:?}", input.shape(), target.shape())));
 
 		let group_shape: Vec<usize> = input.shape().iter().enumerate().map(|(i, dim)| if group_mask[i] {*dim} else {1}).collect();
 

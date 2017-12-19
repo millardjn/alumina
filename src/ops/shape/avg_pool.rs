@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::NodeShape;
 use ndarray::{ArrayD, Dimension, IxDyn};
@@ -43,7 +45,7 @@ impl Op for AvgPool {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name =standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]);
 
 		Ok(AvgPoolInstance{
@@ -76,7 +78,7 @@ pub struct AvgPoolInstance {
 }
 
 impl OpInstance for AvgPoolInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(

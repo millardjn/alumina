@@ -1,4 +1,5 @@
-use graph::{GraphDef, NodeID, OpID, PassID, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, OpID, PassID};
 use init::Initialiser;
 use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
 use shape::{NodeShape, NodeDim};
@@ -116,7 +117,7 @@ impl Op for Linear {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let (name, weights_are_inner) = if let Some(ref weights) = self.weights_id {
 			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), weights.clone()], &[self.output_id.clone()]), false)
@@ -143,15 +144,15 @@ impl Op for Linear {
 			// TODO check that dimensions of param works
 			weights
 		} else {
-			if n.is_none() {n = Some(get_inner(graph.node_shape(&self.output_id)?));}
-			if k.is_none() {k = Some(get_inner(graph.node_shape(&self.input_id)?));}
+			if n.is_none() {n = Some(get_inner(self.output_id.shape()));}
+			if k.is_none() {k = Some(get_inner(self.input_id.shape()));}
 
 			let weights_name = standard_inner_parameter_name(&name, graph);
 			graph.new_node(shape![k.unwrap(), n.unwrap()], weights_name, tag![Parameter])?
 		};
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&weights, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&weights, initialiser);
 		}
 
 		let mut mat_mul = MatMul::new(&self.input_id.clone(), &weights, &self.output_id.clone());
@@ -185,7 +186,7 @@ pub struct LinearInstance{
 
 impl OpInstance for LinearInstance {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
@@ -235,7 +236,7 @@ fn _linear_init_backprop() -> Result<()>{
 	let o1 = g.new_op(Linear::new(&node1, &node2).init(Linear::msra(2.0)).k(5), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node2, &node3), tag![])?;
 
-	let init_values = g.initialise_nodes(&g.op(o1)?.inner_nodes())?;
+	let init_values = g.initialise_nodes(&o1.instance().inner_nodes())?;
 
 	assert_eq!(init_values.len(), 1);
 	assert_ne!(init_values[0].scalar_sum(), 0.0);

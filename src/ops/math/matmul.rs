@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::NodeDim;
 use ndarray::Dimension;
@@ -91,7 +93,7 @@ impl Op for MatMul {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.A_id.clone(), self.B_id.clone()], &[self.C_id.clone()]);
 		
 		Ok(MatMulInstance{
@@ -164,7 +166,7 @@ pub struct MatMulInstance {
 }
 
 impl OpInstance for MatMulInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(vec![self.A_id.clone(), self.B_id.clone()], vec![self.C_id.clone()])
@@ -294,7 +296,7 @@ impl OpInstance for MatMulInstance {
 		if outer_mat_dim - outer_val * outer_stride != 0
 		|| inner_mat_dim - inner_val * inner_stride != 0 {
 			bail!(ErrorKind::ShapePropagationError(
-				self.instance_name().to_string(),
+				self.name().to_string(),
 				format!("Could not infer shape of output. \
 				The M({}) and N({}) dimensions of the matrix multiplication, \
 				are not divisible by the product of the output dimensions before({}) and after({}) \
@@ -307,7 +309,7 @@ impl OpInstance for MatMulInstance {
 		if outer_ind == inner_ind { // one unknown
 			ensure!(cmp::min(inner_val, outer_val) == 1, 
 			ErrorKind::ShapePropagationError(
-				self.instance_name().to_string(),
+				self.name().to_string(),
 				format!("Could not infer shape of output. \
 				One of either the M({}) or N({}) dimensions of the matrix multiplication, \
 				must be exactly equal to the product of the output dimensions before({}) and after({}) \
@@ -322,7 +324,7 @@ impl OpInstance for MatMulInstance {
 			shapes.merge_with(&self.C_id, &C_shape)?;
 		} else {
 			bail!(ErrorKind::ShapePropagationError(
-				self.instance_name().to_string(),
+				self.name().to_string(),
 				format!("could not infer shape of output. \
 				The output shape contains non-adjacent unknown dimensions. This creates ambiguity.",)
 			))
@@ -464,7 +466,7 @@ impl Pass for MatMulPass {
 		let mut mat_C = data.get_mut(&self.mat_C)?;
 
 		let (m, n, k) = match self.find_mnk(mat_A.shape(), mat_B.shape(), mat_C.shape()){
-			Err(message) => bail!(ErrorKind::PassError(self.instance_name(data.graph()), message)),
+			Err(message) => bail!(ErrorKind::PassError(self.name(), message)),
 			Ok(x) => x,
 		};
 

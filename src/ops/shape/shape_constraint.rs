@@ -1,4 +1,5 @@
-use graph::{GraphDef, NodeID, OpID, PassID, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, OpID, PassID};
 use ops::{standard_op_name, Op, OpInstance};
 use shape::{NodeDim, NodeShape};
 use ndarray::Dimension;
@@ -7,8 +8,8 @@ use std::fmt;
 
 #[derive(Clone)]
 enum Rules {
-	Individual(Vec<Option<Arc<Fn(usize) -> NodeDim>>>),
-	Joint(Arc<Fn(&[usize]) -> NodeShape>),
+	Individual(Vec<Option<Arc<Fn(usize) -> NodeDim + Sync + Send>>>),
+	Joint(Arc<Fn(&[usize]) -> NodeShape + Sync + Send>),
 }
 
 impl fmt::Debug for Rules {
@@ -41,7 +42,7 @@ impl ShapeConstraint {
 	///
 	/// This method will overwrite any previous `joint()` rules, or `single()` rules which apply to this axis.
 	/// Any axis without a supplied rule with simply be unconstrained.
-	pub fn single<D: Into<NodeDim>, F: 'static + Fn(usize) -> D>(mut self, axis: usize, rule: F) -> Self {
+	pub fn single<D: Into<NodeDim>, F: 'static + Fn(usize) -> D + Sync + Send>(mut self, axis: usize, rule: F) -> Self {
 		self.rules = match self.rules {
 			Rules::Individual(mut vec) => {
 				if axis + 1 > vec.len() {
@@ -51,7 +52,7 @@ impl ShapeConstraint {
 				Rules::Individual(vec)
 			},
 			Rules::Joint(_) => {
-				let mut vec: Vec<Option<Arc<Fn(usize) -> NodeDim>>> = vec![None; axis + 1];
+				let mut vec: Vec<Option<Arc<Fn(usize) -> NodeDim + Sync + Send>>> = vec![None; axis + 1];
 				vec[axis] = Some(Arc::new(move |dim| rule(dim).into()));
 				Rules::Individual(vec)
 			}
@@ -62,7 +63,7 @@ impl ShapeConstraint {
 	/// Apply a rule for mapping from a known input shape to a constraint on the output shape.
 	///
 	/// This method will overwrite any previous rules for generating constraints.
-	pub fn joint<F: 'static + Fn(&[usize]) -> NodeShape>(mut self, rule: F) -> Self {
+	pub fn joint<F: 'static + Fn(&[usize]) -> NodeShape + Sync + Send>(mut self, rule: F) -> Self {
 		self.rules = Rules::Joint(Arc::new(rule));
 		self
 	}
@@ -80,7 +81,7 @@ impl Op for ShapeConstraint {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]);
 
 		Ok(ShapeConstraintInstance{
@@ -101,7 +102,7 @@ pub struct ShapeConstraintInstance {
 }
 
 impl OpInstance for ShapeConstraintInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(

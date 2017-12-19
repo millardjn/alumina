@@ -1,4 +1,5 @@
-use graph::{GraphDef, Subgraph, NodeTag, NodeID, DataID, Result};
+use graph::{GraphDef, Subgraph, Result};
+use id::{NodeTag, NodeID, DataID};
 use opt::{Opt, CallbackData, CallbackSignal};
 use ndarray::{ArrayD, Zip};
 use std::num::FpCategory;
@@ -24,8 +25,8 @@ impl Sgd {
 		let subgraph = graph.default_subgraph()?;
 
 		Ok(Sgd {
-			inputs: subgraph.inputs().iter().filter(|data_id| !graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter)).cloned().collect(),
-			parameters: subgraph.inputs().iter().filter_map(|data_id| if graph.is_node_tagged(&data_id.node_id(), NodeTag::Parameter) {Some(data_id.node_id())} else {None}).collect(),
+			inputs: subgraph.inputs().iter().filter(|data_id| !data_id.tags().contains(&NodeTag::Parameter)).cloned().collect(),
+			parameters: subgraph.inputs().iter().filter_map(|data_id| if data_id.tags().contains(&NodeTag::Parameter) {Some(data_id.node_id())} else {None}).collect(),
 			subgraph: subgraph,
 			callbacks: vec![],
 			rate: 1e-3,

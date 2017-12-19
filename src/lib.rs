@@ -2,7 +2,8 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![recursion_limit = "1024"]
 
-#[macro_use] extern crate error_chain;
+#[macro_use] 
+extern crate error_chain;
 extern crate ndarray;
 extern crate odds;
 extern crate walkdir;
@@ -46,7 +47,7 @@ extern crate rayon;
 /// ```
 /// #[macro_use]
 /// extern crate alumina;
-/// use alumina::graph::NodeTag;
+/// use alumina::id::NodeTag;
 ///
 /// fn main() {
 ///		let s1: Vec<NodeTag> = tag![Parameter, 5, "input"];
@@ -63,7 +64,7 @@ macro_rules! tag(
     ( $($x:expr),* ) => {
         {
 			#[allow(unused_imports)]
-			use $crate::graph::NodeTag::Parameter;
+			use $crate::id::NodeTag::Parameter;
 			vec![
 				$(
 					tag![@parse $x],
@@ -129,3 +130,5 @@ pub mod ops;
 pub mod opt;
 pub mod data;
 pub mod init;
+pub mod id;
+pub mod storage;

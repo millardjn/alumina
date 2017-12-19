@@ -2,7 +2,7 @@ use std::sync::{Mutex, Arc};
 use std::fmt;
 use std::ops::DerefMut;
 use ops::{OpInstance};
-use graph::OpID;
+use id::OpID;
 use ndarray::ArrayViewMutD;
 use rand::{thread_rng, Isaac64Rng, Rng};
 use rand::distributions::{Sample, Normal, Range};

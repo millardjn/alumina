@@ -1,4 +1,5 @@
-use graph::{GraphDef, NodeID, OpID, Result};
+use graph::{GraphDef, Result};
+use id::NodeID;
 use ops::Op;
 use ops::activ::elementwise::{ActivationFunc, ElementwiseInstance, elementwise_build};
 
@@ -55,7 +56,7 @@ impl Op for SrgbToLinear {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, SrgbToLinearFunc{})
 	}
 }
@@ -119,7 +120,7 @@ impl Op for LinearToSrgb {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LinearToSrgbFunc{})
 	}
 }
@@ -178,7 +179,7 @@ impl Op for SrgbToLinearSlow {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, SrgbToLinearSlowFunc{})
 	}
 }
@@ -238,7 +239,7 @@ impl Op for LinearToSrgbSlow {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LinearToSrgbSlowFunc{})
 	}
 }

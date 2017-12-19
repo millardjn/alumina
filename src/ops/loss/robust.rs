@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use ops::loss::LossType;
 use shape::NodeShape;
@@ -114,7 +116,7 @@ impl Op for Robust {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let name =  if let Some(ref output_id) = self.output {
 			standard_op_name(&self, &self.name, graph, &[self.input1_id.clone(), self.input2_id.clone()], &[output_id.clone()])
@@ -186,7 +188,7 @@ pub struct RobustInstance {
 
 impl OpInstance for RobustInstance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {
@@ -286,7 +288,7 @@ impl Pass for RobustJointPass {
 
 		ensure!(
 			input2.shape() == input1.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
+			ErrorKind::PassError(self.name(), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
 		);
 
 		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
@@ -537,7 +539,7 @@ impl Pass for RobustForward {
 
 		ensure!(
 			input2.shape() == input1.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
+			ErrorKind::PassError(self.name(), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
 		);
 
 		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
@@ -649,7 +651,7 @@ impl Pass for RobustBackward {
 
 		ensure!(
 			input2.shape() == input1.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
+			ErrorKind::PassError(self.name(), format!("input1 shape: {:?} did not match input2 shape: {:?}", input2.shape(), input1.shape()))
 		);
 
 		let input_shape: SmallVec<[usize; 6]> = input1.shape().iter().cloned().collect();
@@ -1034,7 +1036,7 @@ fn _robust_rand_backprop() -> Result<()>{
 
 		let iters = 10;
 		let failures = 1;
-		let tolerance = 0.001;
+		let tolerance = 0.002;
 		let step_size = 1E-2;
 		let default_variance = 1.0;
 		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
@@ -1234,7 +1236,7 @@ fn _robust_rand_output_backprop() -> Result<()>{
 
 		let iters = 10;
 		let failures = 1;
-		let tolerance = 0.001;
+		let tolerance = 0.002;
 		let step_size = 1E-2;
 		let default_variance = 1.0;
 		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;

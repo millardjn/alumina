@@ -1,4 +1,5 @@
-use graph::{GraphDef, DataID, NodeID, NodeTag, Result, Dependencies};
+use graph::{GraphDef, Result, Dependencies};
+use id::{NodeID, DataID, NodeTag};
 use ndarray::ArrayD;
 use rand::thread_rng;
 use rand::distributions::{Normal, Sample};
@@ -21,10 +22,10 @@ pub fn func_fill(v: &mut [f32], func: &mut FnMut()->f64){
 	}
 }
 
-pub fn generate_input_data(graph: &GraphDef, node_ids:&[NodeID], default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<Vec<ArrayD<f32>>> {
+pub fn generate_input_data(node_ids:&[NodeID], default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<Vec<ArrayD<f32>>> {
 	let mut input_data: Vec<ArrayD<f32>> = vec!{};
 	for node_id in node_ids {
-		let shape = graph.node_shape(node_id)?.to_data_shape()?;
+		let shape = node_id.shape().to_data_shape()?;
 
 		let mut data = ArrayD::zeros(shape);
 
@@ -90,11 +91,11 @@ pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &Graph
 pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
 	let dependencies = Dependencies::new(&graph);
 
-	let input_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
-	let parameter_ids: Vec<NodeID> = graph.nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && graph.is_node_tagged(*node_id, NodeTag::Parameter)).cloned().collect();
+	let input_ids: Vec<NodeID> = graph.get_nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !node_id.tags().contains(&NodeTag::Parameter)).cloned().collect();
+	let parameter_ids: Vec<NodeID> = graph.get_nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && node_id.tags().contains(&NodeTag::Parameter)).cloned().collect();
 
-	let inputs_0 = generate_input_data(&graph, &input_ids, default_variance, override_distributions)?;
-	let params_0 = generate_input_data(&graph, &parameter_ids, default_variance, override_distributions)?;
+	let inputs_0 = generate_input_data(&input_ids, default_variance, override_distributions)?;
+	let params_0 = generate_input_data(&parameter_ids, default_variance, override_distributions)?;
 
 	let mut subgraph = graph.subgraph(
 		&input_ids.iter().chain(&parameter_ids).map(|node_id| node_id.value_id()).collect::<Vec<_>>(),

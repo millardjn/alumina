@@ -6,7 +6,7 @@ pub mod prediction;
 pub mod robust;
 
 
-use graph::{NodeID, PassID};
+use id::{NodeID, PassID};
 
 #[derive(Clone, Debug)] 
 pub(crate) enum LossType {

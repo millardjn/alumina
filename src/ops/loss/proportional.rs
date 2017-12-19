@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use std::any::Any;
 
@@ -39,7 +41,7 @@ impl Op for Proportional {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[]);
 
 		Ok(ProportionalInstance{
@@ -64,7 +66,7 @@ pub struct ProportionalInstance{
 
 impl OpInstance for ProportionalInstance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input_id.clone()], vec![])}
 

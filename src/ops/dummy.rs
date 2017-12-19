@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, Storage, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::NodeID;
+use storage::Storage;
 use ops::*;
 
 #[must_use]
@@ -64,7 +66,7 @@ impl Op for Dummy {
 	}
 
 	/// Called by GraphDef::new_op to construct the op instance
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &self.inputs, &self.outputs);
 
 		
@@ -98,7 +100,7 @@ pub struct DummyInstance {
 
 impl OpInstance for DummyInstance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(self.inputs.clone(), self.outputs.clone())}
 

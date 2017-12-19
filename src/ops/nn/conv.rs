@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
 use shape::{NodeDim, NodeShape};
 use ndarray::{ArrayViewMutD, ArrayD, Dimension, Axis, IxDyn};
@@ -143,7 +145,7 @@ impl Op for Conv {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let (name, filter_is_inner) = if let Some(ref filter) = self.filter_id {
 			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), filter.clone()], &[self.output_id.clone()]), false)
 		} else {
@@ -155,7 +157,7 @@ impl Op for Conv {
 
 
 		let filter = if let Some(filter) = self.filter_id {
-			let filter_shape = graph.node_shape(&filter)?.to_data_shape()?;
+			let filter_shape = filter.shape().to_data_shape()?;
 			let filter_shape = filter_shape.slice();
 			//TODO also check in_shape and out_shape
 			ensure!(&self.kernel_shape[..] == &filter_shape[1..filter_shape.len()-1], "If a filter node is supplied, it must have a fixed shape");
@@ -163,8 +165,8 @@ impl Op for Conv {
 		} else {
 			let filter_name = standard_inner_parameter_name(&name, graph);
 			let shape: NodeShape = {
-				let in_shape = graph.node_shape(&self.input_id)?;
-				let out_shape = graph.node_shape(&self.output_id)?;
+				let in_shape = self.input_id.shape();
+				let out_shape = self.output_id.shape();
 
 				let c_in = &in_shape.dimensions()[in_shape.ndims()-1];
 				let c_out = &out_shape.dimensions()[out_shape.ndims()-1];
@@ -179,7 +181,7 @@ impl Op for Conv {
 
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&filter, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&filter, initialiser);
 		};
 
 		Ok(ConvInstance{
@@ -222,7 +224,7 @@ pub struct ConvInstance {
 }
 
 impl OpInstance for ConvInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(

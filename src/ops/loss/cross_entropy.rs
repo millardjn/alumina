@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use ops::loss::LossType;
 use std::any::Any;
@@ -62,7 +64,7 @@ impl Op for CrossEntropy {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let name =  if let Some(ref output_id) = self.output {
 			standard_op_name(&self, &self.name, graph, &[self.logits_id.clone(), self.labels_id.clone()], &[output_id.clone()])
@@ -114,7 +116,7 @@ pub struct CrossEntropyInstance {
 }
 
 impl OpInstance for CrossEntropyInstance {
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {
@@ -185,7 +187,7 @@ impl Pass for CrossEntropyJointPass {
 
 		ensure!(
 			labels_val.shape() == logits_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			ErrorKind::PassError(self.name(), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
 			);
 
 
@@ -276,7 +278,7 @@ impl Pass for CrossEntropyForward {
 
 		ensure!(
 			labels_val.shape() == logits_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			ErrorKind::PassError(self.name(), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
 			);
 
 		let logits_val = logits_val.as_slice().unwrap();
@@ -331,7 +333,7 @@ impl Pass for CrossEntropyBackward {
 
 		ensure!(
 			labels_val.shape() == logits_val.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
+			ErrorKind::PassError(self.name(), format!("labels shape: {:?} did not match logits shape: {:?}", labels_val.shape(), logits_val.shape()))
 			);
 
 		let logits_val = logits_val.as_slice().unwrap();

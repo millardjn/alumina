@@ -1,4 +1,5 @@
-use graph::{GraphDef, PassID, NodeID, OpID, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, OpID, PassID};
 use init::Initialiser;
 use ops::math::add::Add;
 use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
@@ -69,7 +70,7 @@ impl Op for Bias {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let (name, weights_are_inner) = if let Some(ref weights_id) = self.weights_id {
 			(standard_op_name(&self, &self.name, graph, &[weights_id.clone()], &[self.output_id.clone()]), false)
@@ -81,7 +82,7 @@ impl Op for Bias {
 			weights_id
 		} else {
 			let weights_shape = {
-				let output_shape = graph.node_shape(&self.output_id)?;
+				let output_shape = self.output_id.shape();
 				let mut weights_shape = vec![1; output_shape.ndim()];
 
 				for axis in 0..output_shape.ndim() {
@@ -102,7 +103,7 @@ impl Op for Bias {
 		};
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&weights_id, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&weights_id, initialiser);
 		}
 
 		let add_id = graph.new_op(Add::new(&weights_id, &self.output_id.clone()), tag![])?;
@@ -131,7 +132,7 @@ pub struct BiasInstance{
 
 impl OpInstance for BiasInstance {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
@@ -180,10 +181,10 @@ fn _bias_init_backprop() -> Result<()>{
 	let o1 = g.new_op(Bias::new(&node1).shared_axes(&[0]), tag![])?;
 	let _o2 = g.new_op(Mse::new(&node1, &node2), tag![])?;
 
-	let parameter_node = &g.op(&o1)?.inner_nodes()[0];
+	let parameter_node = &o1.instance().inner_nodes()[0];
 	g.set_initialiser(parameter_node, Initialiser::fill(1.0));
 
-	let init_values = g.initialise_nodes(&g.op(o1)?.inner_nodes())?;
+	let init_values = g.initialise_nodes(&o1.instance().inner_nodes())?;
 
 	assert_eq!(init_values.len(), 1);
 	assert_ne!(init_values[0].scalar_sum(), 0.0);

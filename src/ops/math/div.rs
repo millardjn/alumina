@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD, Zip};
@@ -50,7 +52,7 @@ impl Op for Div {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.numerator_id.clone(), self.denominator_id.clone()], &[self.output_id.clone()]);
 
 		Ok(DivInstance{
@@ -87,7 +89,7 @@ pub struct DivInstance{
 
 impl OpInstance for DivInstance {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.numerator_id.clone(),self.denominator_id.clone()], vec![self.output_id.clone()])}
 
@@ -164,11 +166,11 @@ impl Pass for DivForward {
 		if self.broadcast_numerator {
 			ensure!(
 				denominator.shape() == output.shape(),
-				ErrorKind::PassError(self.instance_name(data.graph()), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output.shape()))
+				ErrorKind::PassError(self.name(), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output.shape()))
 			);
 			ensure!(
 				numerator.broadcast(output.shape()).is_some(), 
-				ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output.shape()))
+				ErrorKind::PassError(self.name(), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output.shape()))
 			);
 			let iter = denominator.exact_chunks(numerator.shape()).into_iter()
 				.zip(output.exact_chunks_mut(numerator.shape()));
@@ -183,11 +185,11 @@ impl Pass for DivForward {
 		} else {
 			ensure!(
 				numerator.shape() == output.shape(),
-				ErrorKind::PassError(self.instance_name(data.graph()), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output.shape()))
+				ErrorKind::PassError(self.name(), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output.shape()))
 			);
 			ensure!(
 				denominator.broadcast(output.shape()).is_some(), 
-				ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output.shape()))
+				ErrorKind::PassError(self.name(), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output.shape()))
 			);
 			let iter = numerator.exact_chunks(denominator.shape()).into_iter()
 				.zip(output.exact_chunks_mut(denominator.shape()));
@@ -245,11 +247,11 @@ impl Pass for DivBackward {
 		if self.broadcast_numerator {
 				ensure!(
 					denominator.shape() == output_grad.shape(),
-					ErrorKind::PassError(self.instance_name(data.graph()), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output_grad.shape()))
+					ErrorKind::PassError(self.name(), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output_grad.shape()))
 				);
 				ensure!(
 					numerator.broadcast(output_grad.shape()).is_some(), 
-					ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output_grad.shape()))
+					ErrorKind::PassError(self.name(), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output_grad.shape()))
 				);
 			if data.is_required(&self.numerator_id.gradient_id()) && data.is_required(&self.denominator_id.gradient_id()) {
 				let mut numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
@@ -314,11 +316,11 @@ impl Pass for DivBackward {
 		} else {
 				ensure!(
 					numerator.shape() == output_grad.shape(),
-					ErrorKind::PassError(self.instance_name(data.graph()), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output_grad.shape()))
+					ErrorKind::PassError(self.name(), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output_grad.shape()))
 				);
 						ensure!(
 					denominator.broadcast(output_grad.shape()).is_some(), 
-					ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output_grad.shape()))
+					ErrorKind::PassError(self.name(), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output_grad.shape()))
 				);
 
 				if data.is_required(&self.numerator_id.gradient_id()) && data.is_required(&self.denominator_id.gradient_id()) {

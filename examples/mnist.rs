@@ -5,7 +5,8 @@ extern crate ndarray;
 use std::path::Path;
 use std::sync::Arc;
 use std::cell::Cell;
-use al::graph::{GraphDef, NodeTag, Result};
+use al::graph::{GraphDef, Result};
+use al::id::NodeTag;
 use al::ops::nn::linear::Linear;
 use al::ops::shape::avg_pool::AvgPool;
 use al::ops::nn::bias::Bias;
@@ -31,8 +32,8 @@ fn main(){
 }
 
 fn learn_mnist() -> Result<()> {
-	//let g = mnist_tanh_800(1.0e-3)?;
-	let g = mnist_lenet(1.0e-3)?;
+	let g = mnist_tanh_800(1.0e-3)?;
+	//let g = mnist_lenet(1.0e-3)?;
 
 	let batch_size = 16;
 
@@ -43,44 +44,36 @@ fn learn_mnist() -> Result<()> {
 		.batch(batch_size)
 		.buffered(32);
 
+	let mut solver = Adam::new(&g)?
+		.rate(1e-2)
+		.beta1(0.9)
+		.beta2(0.995);
 
-	let mut params = None;
-	let avg_err = Arc::new(Cell::new(2.3));
+	let mut params = g.initialise_nodes(solver.parameters())?;
+	
+	let mut validation = validation(&g)?;
+	solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |data| {
+		validation(data.params);
+		CallbackSignal::Continue
+	})));
+	let mut i = 0;
+	solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |_| {i += 1; println!("epoch:{}", i); CallbackSignal::Continue})));
+	solver.add_boxed_callback(max_steps(10 * epoch/batch_size));
+	
+	
+	let mut avg_err1 = Arc::new(Cell::new(2.3));
+	let mut avg_err2 = avg_err1.clone();
+	solver.add_callback(move |data| {
+		let new_avg_err = 0.95 * avg_err1.get() + 0.05 * data.err/batch_size as f32;
+		avg_err1.set(new_avg_err);
+		CallbackSignal::Continue
+	});
+	solver.add_boxed_callback(every_n_steps(100, Box::new(move |_data| {
+		println!("err: {}", avg_err2.get());
+		CallbackSignal::Continue
+	})));
 
-	for &lr in &[1e-2, 1e-4, 1e-5] {
-		// let mut solver = Sgd::new(&g)?
-		// 	.rate(lr)
-		// 	.momentum(0.9);
-
-		let mut solver = Adam::new(&g)?
-			.rate(lr)
-			.beta1(0.9)
-			.beta2(0.995);
-
-		params = if params.is_some() {params} else {Some(g.initialise_nodes(solver.parameters())?)};
-		
-		let mut validation = validation(&g)?;
-		solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |data| {
-			validation(data.params);
-			CallbackSignal::Continue
-		})));
-		let mut i = 0;
-		solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |_| {i += 1; println!("epoch:{}", i); CallbackSignal::Continue})));
-		solver.add_boxed_callback(max_steps(3 * epoch/batch_size));
-		let mut avg_err1 = avg_err.clone();
-		solver.add_callback(move |data| {
-			let new_avg_err = 0.95 * avg_err1.get() + 0.05 * data.err/batch_size as f32;
-			avg_err1.set(new_avg_err);
-			CallbackSignal::Continue
-		});
-		let mut avg_err2 = avg_err.clone();
-		solver.add_boxed_callback(every_n_steps(100, Box::new(move |_data| {
-			println!("err: {}", avg_err2.get());
-			CallbackSignal::Continue
-		})));
-
-		params = Some(solver.optimise_from(&mut data_stream, params.unwrap()).unwrap());
-	}
+	params = solver.optimise_from(&mut data_stream, params).unwrap();
 
 	Ok(())
 }
@@ -94,17 +87,15 @@ fn validation(g: &GraphDef) -> Result<Box<FnMut(&[ArrayD<f32>])>>{
 		.batch(batch_size)
 		.buffered(32);
 
-	let inputs: Vec<_> = [g.node_id("input")?, g.node_id("labels")?].iter()
-		.chain(g.node_ids(NodeTag::Parameter).keys())
+	let inputs: Vec<_> = [g.node_id("input"), g.node_id("labels")].iter()
+		.chain(&g.node_ids(NodeTag::Parameter))
 		.map(|node_id| node_id.value_id()).collect();
-	let prediction_loss = g.node_id("prediction_loss")?;
+	let prediction_loss = g.node_id("prediction_loss");
 	let mut subgraph = g.subgraph(&inputs, &[prediction_loss.value_id()])?;
 	
 	Ok(Box::new(move |parameters: &[ArrayD<f32>]|{
-		//println!("Params moved:{}", data.params.add_scaled(&start_params, -1.0).norm2());
 		
 		let mut err = 0.0;
-		
 		for _ in 0..epoch/batch_size {
 			let mut inputs = data_stream.next();
 			inputs.extend(parameters.iter().cloned());

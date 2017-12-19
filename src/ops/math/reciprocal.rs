@@ -1,4 +1,5 @@
-use graph::{GraphDef, NodeID, OpID, Result};
+use graph::{GraphDef, Result};
+use id::NodeID;
 use ops::Op;
 use ops::activ::elementwise::{ActivationFunc, ElementwiseInstance, elementwise_build};
 
@@ -47,7 +48,7 @@ impl Op for Reciprocal {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, ReciprocalFunc{})
 	}
 }
@@ -84,7 +85,7 @@ fn _reciprocal_backprop() -> Result<()>{
 
 	let sample: Box<::std::ops::FnMut() -> f64 + 'static> = Box::new(|| {
 		let rng = &mut thread_rng();
-		let mut range = Range::new(0.2, 10.0);
+		let mut range = Range::new(0.5, 10.0);
 		range.sample(rng)
 	});
 	let mut override_dist = OrderMap::new();

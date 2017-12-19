@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use ops::loss::LossType;
 use shape::NodeShape;
@@ -82,7 +84,7 @@ impl Op for L2 {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let name =  if let Some(ref output_id) = self.output {
 			standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[output_id.clone()])
@@ -139,7 +141,7 @@ pub struct L2Instance {
 
 impl OpInstance for L2Instance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		match &self.loss_type {

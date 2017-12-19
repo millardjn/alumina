@@ -1,4 +1,5 @@
-use graph::{GraphDef, NodeID, OpID, Result};
+use graph::{GraphDef, Result};
+use id::NodeID;
 use ops::Op;
 use ops::activ::elementwise::{ActivationFunc, ElementwiseInstance, elementwise_build};
 
@@ -58,7 +59,7 @@ impl Op for LeakyReLU {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		elementwise_build(graph, &self, &self.name, &self.input, &self.output, LeakyReLUFunc{alpha: self.alpha})
 	}
 }

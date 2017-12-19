@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance, Pass};
 use shape::NodeDim;
 use ndarray::{ArrayViewMutD, Zip};
@@ -110,7 +112,7 @@ impl Op for Spline {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let (name, weights_are_inner) = if let Some(ref weights) = self.weights_id {
 			(standard_op_name(&self, &self.name, graph, &[self.input_id.clone(), weights.clone()], &[self.output_id.clone()]), false)
 		} else {
@@ -122,7 +124,7 @@ impl Op for Spline {
 			weights
 		} else {
 			let weights_shape = {
-				let input_shape = graph.node_shape(&self.input_id)?;
+				let input_shape = self.input_id.shape();
 				let mut weights_shape = vec![1; input_shape.ndim() + 1];
 				weights_shape[0] = 3;
 				for axis in 0..input_shape.ndim() {
@@ -144,7 +146,7 @@ impl Op for Spline {
 		};
 
 		if let Some(initialiser) = self.initialiser {
-			graph.set_initialiser(&weights, initialiser.set_op_id(op_id.clone()));
+			graph.set_initialiser(&weights, initialiser);
 		}
 
 		Ok(SplineInstance{
@@ -183,7 +185,7 @@ pub struct SplineInstance {
 
 impl OpInstance for SplineInstance {
 	
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		(
@@ -255,11 +257,11 @@ impl Pass for SplineForward {
 		
 		ensure!(
 			input_shape == &output_shape[..],
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input_shape, output_shape))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input_shape, output_shape))
 		);
 		ensure!(
 			weights[0].broadcast(output_shape).is_some(), 
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast weights_shape[1..]: {:?} to input/output shape: {:?}", weights_shape, input_shape))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast weights_shape[1..]: {:?} to input/output shape: {:?}", weights_shape, input_shape))
 		);
 
 		// let iter = output.exact_chunks_mut(weights_shape).into_iter()
@@ -339,15 +341,15 @@ impl Pass for SplineBackward {
 
 		ensure!(
 			input_shape == &output_shape[..],
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input_shape, output_shape))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input_shape, output_shape))
 		);
 		ensure!(
 			weights_outer_shape[0] == 3,
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("The outermost dimension of the weights shape must be 3 not {}", weights_outer_shape[0]))
+			ErrorKind::PassError(self.name(), format!("The outermost dimension of the weights shape must be 3 not {}", weights_outer_shape[0]))
 		);
 		ensure!(
 			weights[0].broadcast(output_shape).is_some(), 
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast weights_shape[1..]: {:?} to input/output shape: {:?}", weights_shape, input_shape))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast weights_shape[1..]: {:?} to input/output shape: {:?}", weights_shape, input_shape))
 		);
 
 

@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD};
@@ -36,7 +38,7 @@ impl Op for Scale {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input.clone()], &[self.output.clone()]);
 
 		Ok(ScaleInstance{
@@ -71,7 +73,7 @@ pub struct ScaleInstance{
 
 impl OpInstance for ScaleInstance {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input_id.clone()], vec![self.output_id.clone()])}
 
@@ -127,7 +129,7 @@ impl Pass for ScaleForward {
 		let input_broadcast = if let Some(view) = input.broadcast(output.shape()) {
 			view
 		} else {
-			bail!(ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input.shape(), output.shape())));
+			bail!(ErrorKind::PassError(self.name(), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input.shape(), output.shape())));
 		};
 
 		output += &input_broadcast;
@@ -169,7 +171,7 @@ impl Pass for ScaleBackward {
 		
 		ensure!(
 			input_grad.broadcast(output_grad.shape()).is_some(), 
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input_grad.shape(), output_grad.shape()))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast input shape: {:?} to output shape: {:?}", input_grad.shape(), output_grad.shape()))
 		);
 
 		for chunk in output_grad.exact_chunks(input_grad.shape()){

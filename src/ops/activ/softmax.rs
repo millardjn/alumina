@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::NodeDim;
 use ndarray::{ArrayViewMutD, ArrayViewD};
@@ -54,11 +56,11 @@ impl Op for Softmax {
 		self
 	}
 
-	fn build(mut self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(mut self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input_id.clone()], &[self.output_id.clone()]);
 
 		let mask = {
-			let input_shape = graph.node_shape(&self.input_id)?;
+			let input_shape = self.input_id.shape();
 			if self.axes.len() == 0 {
 				for i in 0..input_shape.ndim() {
 					if matches!(input_shape.dimensions()[i], NodeDim::Known(_)) {
@@ -101,7 +103,7 @@ pub struct SoftmaxInstance {
 
 impl OpInstance for SoftmaxInstance {
 	
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input_id.clone()], vec![self.output_id.clone()])}
 
@@ -166,7 +168,7 @@ impl Pass for SoftmaxForward {
 
 		ensure!(
 			input.shape() == output.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output.shape()))
 		);
 
 		let iter = input.exact_chunks(group_shape.as_slice()).into_iter()
@@ -219,7 +221,7 @@ impl Pass for SoftmaxBackward {
 
 		ensure!(
 			input.shape() == output_grad.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output_grad.shape()))
+			ErrorKind::PassError(self.name(), format!("input shape: {:?} did not match output shape: {:?}", input.shape(), output_grad.shape()))
 		);
 
 

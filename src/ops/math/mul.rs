@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD, Zip};
@@ -39,7 +41,7 @@ impl Op for Mul {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[self.input1.clone(), self.input2.clone()], &[self.output.clone()]);
 
 		Ok(MulInstance{
@@ -75,7 +77,7 @@ pub struct MulInstance{
 
 impl OpInstance for MulInstance {
 
-	fn instance_name(&self) -> &str{&self.name}
+	fn name(&self) -> &str{&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![self.input1_id.clone(),self.input2_id.clone()], vec![self.output_id.clone()])}
 
@@ -134,15 +136,15 @@ impl Pass for MulForward {
 
 		ensure!(
 			input1.shape() == output.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output.shape()))
+			ErrorKind::PassError(self.name(), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output.shape()))
 		);
 		ensure!(
 			input2.broadcast(input1.shape()).is_some(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
 		);
 		ensure!(
 			input2.broadcast(output.shape()).is_some(), 
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output.shape()))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output.shape()))
 		);
 
 		let iter = input1.exact_chunks(input2.shape()).into_iter()
@@ -195,15 +197,15 @@ impl Pass for MulBackward {
 		
 		ensure!(
 			input1.shape() == output_grad.shape(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output_grad.shape()))
+			ErrorKind::PassError(self.name(), format!("input1 shape: {:?} did not match output shape: {:?}", input1.shape(), output_grad.shape()))
 		);
 		ensure!(
 			input2.broadcast(input1.shape()).is_some(),
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to input1 shape: {:?}", input2.shape(), input1.shape()))
 		);
 		ensure!(
 			input2.broadcast(output_grad.shape()).is_some(), 
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output_grad.shape()))
+			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output_grad.shape()))
 		);
 
 

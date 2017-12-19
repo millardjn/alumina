@@ -9,7 +9,9 @@ pub mod reduce;
 pub mod regularisation;
 pub mod fill;
 
-use graph::{GraphDef, NodeID, DataID, OpID, PassID, OpTag, Storage, GraphShapes, Error, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, Result};
+use storage::Storage;
+use id::{NodeID, DataID, OpID, PassID, OpTag};
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -26,7 +28,7 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, 
 	}
 
 	let mut node_string = "(".to_string();
-	let mut input_names = inputs.iter().map(|id| graph.node_name(id));
+	let mut input_names = inputs.iter().map(|id| id.name());
 	if let Some(name) = input_names.next(){
 		node_string.push_str(name);
 		for name in input_names {
@@ -35,7 +37,7 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, 
 		}
 	}
 	node_string.push_str("=>");
-	let mut output_names = outputs.iter().map(|id| graph.node_name(id));
+	let mut output_names = outputs.iter().map(|id| id.name());
 	if let Some(name) = output_names.next(){
 		node_string.push_str(name);
 		for name in output_names {
@@ -49,43 +51,43 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, 
 	let mut i = 0;
 	loop {
 		let next_op_name = format!("{}{}{}", op.type_name(), i, node_string);
-		let result = graph.op_id(&*next_op_name);
+		let list = graph.op_ids(&*next_op_name);
 		i += 1;
-		if matches!(result, Err(Error(ErrorKind::ZeroOpsMatchTag(_), _))) {
+		if list.len() == 0 {
 			return next_op_name;
 		}
 	}
 }
 
-/// Generated default names for `Pass`s
-///
-/// Names for passes may not be unique.
-/// A default name will be generated using the `type_name()` and the names of input and output data.
-/// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), data1_name, data2_name, data3_name, data4_name)`
-pub fn standard_pass_name(pass: &Pass, graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> String {
+// /// Generated default names for `Pass`s
+// ///
+// /// Names for passes may not be unique.
+// /// A default name will be generated using the `type_name()` and the names of input and output data.
+// /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), data1_name, data2_name, data3_name, data4_name)`
+// pub fn standard_pass_name(pass: &Pass, inputs: &[DataID], outputs: &[DataID]) -> String {
 
-	let mut name_string = pass.type_name().to_string();
-	name_string.push_str("(");
-	let mut input_names = inputs.iter().map(|id| graph.data_name(id));
-	if let Some(name) = input_names.next(){
-		name_string.push_str(&name);
-		for name in input_names {
-			name_string.push_str(",");
-			name_string.push_str(&name);
-		}
-	}
-	name_string.push_str("=>");
-	let mut output_names = outputs.iter().map(|id| graph.data_name(id));
-	if let Some(name) = output_names.next(){
-		name_string.push_str(&name);
-		for name in output_names {
-			name_string.push_str(",");
-			name_string.push_str(&name);
-		}
-	}
-	name_string.push_str(")");
-	name_string
-}
+// 	let mut name_string = pass.type_name().to_string();
+// 	name_string.push_str("(");
+// 	let mut input_names = inputs.iter().map(|id| id.name());
+// 	if let Some(name) = input_names.next(){
+// 		name_string.push_str(&name);
+// 		for name in input_names {
+// 			name_string.push_str(",");
+// 			name_string.push_str(&name);
+// 		}
+// 	}
+// 	name_string.push_str("=>");
+// 	let mut output_names = outputs.iter().map(|id| id.name());
+// 	if let Some(name) = output_names.next(){
+// 		name_string.push_str(&name);
+// 		for name in output_names {
+// 			name_string.push_str(",");
+// 			name_string.push_str(&name);
+// 		}
+// 	}
+// 	name_string.push_str(")");
+// 	name_string
+// }
 
 /// Generated default names for parameter nodes created by `OpBuilder`s
 ///
@@ -95,9 +97,9 @@ pub fn standard_inner_parameter_name(builder_name: &str, graph: &mut GraphDef) -
 	let mut i = 0;
 	loop {
 		let next_param_name = format!("P{}_{}", i, builder_name);
-		let result = graph.node_id(&*next_param_name);
+		let list = graph.node_ids(&*next_param_name);
 		i += 1;
-		if matches!(result, Err(Error(ErrorKind::ZeroNodesMatchTag(_), _))) {
+		if list.len() == 0 {
 			return next_param_name;
 		}
 	}
@@ -112,9 +114,9 @@ pub fn standard_inner_node_name(builder_name: &str, graph: &mut GraphDef) -> Str
 	let mut i = 0;
 	loop {
 		let next_param_name = format!("N{}_{}", i, builder_name);
-		let result = graph.node_id(&*next_param_name);
+		let list = graph.node_ids(&*next_param_name);
 		i += 1;
-		if matches!(result, Err(Error(ErrorKind::ZeroNodesMatchTag(_), _))) {
+		if list.len() == 0 {
 			return next_param_name;
 		}
 	}
@@ -146,7 +148,7 @@ pub trait Op: Any {
 	///
 	/// Arbitrary graph modification may occur allowing builders to implement high level effects by composing multiple low level `Op`s.
 	/// Also used to let an `Op` create parameter nodes as necessary.
-	fn build(self, graph: &mut GraphDef, op_id: &OpID) -> Result<Self::InstanceType>;
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType>;
 
 	/// A convenience method which just calls GraphDef::new_op(..)
 	fn add_to(self, graph: &mut GraphDef, tags: Vec<OpTag>) -> Result<OpID> where Self: Sized{
@@ -157,10 +159,10 @@ pub trait Op: Any {
 /// The `OpInstance` trait is used to record each `Op` that has been added to a `GraphDef`.
 ///
 /// An OpInstance is produced when `build()` is called on an Op
-pub trait OpInstance: Any + OpClone + OpAny + Debug{
+pub trait OpInstance: Any + OpClone + OpAny + Debug + Send + Sync{
 
 	/// The name of this instance of the Op
-	fn instance_name(&self) -> &str;
+	fn name(&self) -> &str;
 	
 	/// Returns the (input, output) nodeIDs of the nodes use when creating this Op. This does not include nodes created by this Op which are returns in `inner_nodes()`.
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>);
@@ -182,17 +184,17 @@ pub trait OpInstance: Any + OpClone + OpAny + Debug{
 }
 
 
-pub trait Pass: Any + PassClone + Debug {
+pub trait Pass: Any + PassClone + Debug + Send + Sync{
 	/// The name of the `Pass` type
 	fn type_name(&self) -> &'static str;
 
 	/// This name may not be unique, unlike node and op names
-	fn instance_name(&self, graph: &GraphDef) -> String where Self:Pass{
+	fn name(&self) -> String where Self:Pass{
 		let (inputs, outputs) = self.dependencies();
 
 		let mut name_string = self.type_name().to_string();
 		name_string.push_str("(");
-		let mut input_names = inputs.iter().map(|id| graph.data_name(id));
+		let mut input_names = inputs.iter().map(|id| id.name());
 		if let Some(name) = input_names.next(){
 			name_string.push_str(&name);
 			for name in input_names {
@@ -201,7 +203,7 @@ pub trait Pass: Any + PassClone + Debug {
 			}
 		}
 		name_string.push_str("=>");
-		let mut output_names = outputs.iter().map(|id| graph.data_name(id));
+		let mut output_names = outputs.iter().map(|id| id.name());
 		if let Some(name) = output_names.next(){
 			name_string.push_str(&name);
 			for name in output_names {
@@ -303,7 +305,7 @@ impl Op for NoOp {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 		let name = standard_op_name(&self, &self.name, graph, &[], &[]);
 		Ok(NoOpInstance{name})
 	}
@@ -317,7 +319,7 @@ pub struct NoOpInstance {
 
 impl OpInstance for NoOpInstance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){(vec![], vec![])}
 
@@ -369,7 +371,7 @@ fn _test_name_generation() -> Result<()>{
 
 	let o1 = g.new_op(Dummy::new().input(&node1).input(&node2).output(&node3).output(&node4), tag![])?;
 
-	assert_eq!("Dummy0(node1,node2=>node3,node4)", g.op_name(&o1));
+	assert_eq!("Dummy0(node1,node2=>node3,node4)", o1.name());
 
 	Ok(())
 }

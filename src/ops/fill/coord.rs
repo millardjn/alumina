@@ -1,4 +1,6 @@
-use graph::{GraphDef, NodeID, OpID, PassID, DataID, Storage, GraphShapes, ErrorKind, Result};
+use graph::{GraphDef, GraphShapes, ErrorKind, Result};
+use id::{NodeID, DataID, OpID, PassID};
+use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::NodeDim;
 use smallvec::SmallVec;
@@ -49,7 +51,7 @@ impl Op for Coord {
 		self
 	}
 
-	fn build(self, graph: &mut GraphDef, _op_id: &OpID) -> Result<Self::InstanceType> {
+	fn build(self, graph: &mut GraphDef) -> Result<Self::InstanceType> {
 
 		let name = if let Some(ref input_id) = self.input {
 			standard_op_name(&self, &self.name, graph, &[input_id.clone()], &[self.output_id.clone()])
@@ -81,7 +83,7 @@ pub struct CoordInstance {
 
 impl OpInstance for CoordInstance {
 
-	fn instance_name(&self) -> &str {&self.name}
+	fn name(&self) -> &str {&self.name}
 
 	fn dependencies(&self) -> (Vec<NodeID>, Vec<NodeID>){
 		if let Some(ref input_id) = self.input {
@@ -168,7 +170,7 @@ impl Pass for CoordForward {
 
 		ensure!(
 			output_shape[output_shape.len()-1] == output_channels,
-			ErrorKind::PassError(self.instance_name(data.graph()), format!("output shape channel(last) dimension: {:?} did not match {:?}", output_shape.as_slice(), output_channels))
+			ErrorKind::PassError(self.name(), format!("output shape channel(last) dimension: {:?} did not match {:?}", output_shape.as_slice(), output_channels))
 		);
 
 		let output_slice = output.as_slice_mut().unwrap();
