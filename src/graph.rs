@@ -599,6 +599,22 @@ impl Dependencies {
 		Dependencies{pass_inputs, pass_outputs, pass_is_forward, data_inputs, data_outputs, op_inputs, op_outputs, op_shape_outputs, node_inputs, node_shape_inputs, node_outputs}
 	}
 
+	pub fn contains_data(&self, data_id: &DataID) -> bool {
+		self.data_inputs.get(data_id).is_some()
+	}
+
+	pub fn contains_pass(&self, pass_id: &PassID) -> bool {
+		self.pass_inputs.get(pass_id).is_some()
+	}
+	
+	pub fn contains_node(&self, node_id: &NodeID) -> bool {
+		self.node_inputs.get(node_id).is_some()
+	}
+
+	pub fn contains_op(&self, op_id: &OpID) -> bool {
+		self.op_inputs.get(op_id).is_some()
+	}
+
 	pub fn data_inputs(&self, data_id: &DataID) -> &OrderSet<PassID> {
 		self.data_inputs.get(data_id).unwrap()
 	}
@@ -702,6 +718,9 @@ impl Subgraph {
 		assert_eq!(outputs.len(), output_set.len(), "Outputs contains duplicates");
 
 		let dependencies = Dependencies::new(graph);
+
+		assert!(inputs.iter().all(|id| dependencies.contains_data(id)), "Inputs contained DataIDs from another graph");
+		assert!(outputs.iter().all(|id| dependencies.contains_data(id)), "Outputs contained DataIDs from another graph");
 
 		let strict_op_inclusion = true;
 		// Find the minimum set of data, passes, nodes and ops required to perform shape inference and calculate the `outputs` of the subgraph
