@@ -59,36 +59,6 @@ pub fn standard_op_name<O: Op>(op: &O, name: &Option<String>, graph: &GraphDef, 
 	}
 }
 
-// /// Generated default names for `Pass`s
-// ///
-// /// Names for passes may not be unique.
-// /// A default name will be generated using the `type_name()` and the names of input and output data.
-// /// Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), data1_name, data2_name, data3_name, data4_name)`
-// pub fn standard_pass_name(pass: &Pass, inputs: &[DataID], outputs: &[DataID]) -> String {
-
-// 	let mut name_string = pass.type_name().to_string();
-// 	name_string.push_str("(");
-// 	let mut input_names = inputs.iter().map(|id| id.name());
-// 	if let Some(name) = input_names.next(){
-// 		name_string.push_str(&name);
-// 		for name in input_names {
-// 			name_string.push_str(",");
-// 			name_string.push_str(&name);
-// 		}
-// 	}
-// 	name_string.push_str("=>");
-// 	let mut output_names = outputs.iter().map(|id| id.name());
-// 	if let Some(name) = output_names.next(){
-// 		name_string.push_str(&name);
-// 		for name in output_names {
-// 			name_string.push_str(",");
-// 			name_string.push_str(&name);
-// 		}
-// 	}
-// 	name_string.push_str(")");
-// 	name_string
-// }
-
 /// Generated default names for parameter nodes created by `OpBuilder`s
 ///
 /// Names are generated from the name of the `Op` returned by the `OpBuilder`, using the following: `format!("P{}_{}", i, builder_name)`

@@ -155,7 +155,6 @@ impl GraphDef {
 			node_ids: Vec::new(),
 			op_ids: Vec::new(),
 			pass_ids: Vec::new(),
-			
 
 			static_inputs: OrderMap::new(),
 			initialisers: OrderMap::new(),
@@ -741,7 +740,6 @@ impl Subgraph {
 		}
 
 		let graph = Subgraph{
-			//graph: graph.clone(),
 			dependencies: dependencies,
 
 			filtered_static_inputs: filtered_static_inputs,

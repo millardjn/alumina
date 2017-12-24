@@ -1,7 +1,7 @@
 pub mod sgd;
 pub mod adam;
 
-use graph::{Subgraph, Result};
+use graph::{GraphDef, Subgraph, Result};
 use id::{NodeID, DataID};
 use data::DataStream;
 use ndarray::ArrayD;
@@ -38,10 +38,10 @@ pub trait Opt {
 
 	fn add_boxed_callback(&mut self, func: Box<FnMut(&CallbackData)->CallbackSignal>);
 
-	// fn optimise(&mut self, training_stream: &mut DataStream) -> Result<Vec<ArrayD<f32>>>{
-	// 	let params = self.subgraph().graph().initialise_nodes(self.parameters())?;
-	// 	self.optimise_from(training_stream, params)
-	// }
+	fn optimise(&mut self, training_stream: &mut DataStream, graph: &GraphDef) -> Result<Vec<ArrayD<f32>>>{
+		let params = graph.initialise_nodes(self.parameters())?;
+		self.optimise_from(training_stream, params)
+	}
 
 	fn optimise_from(&mut self, training_stream: &mut DataStream, mut params: Vec<ArrayD<f32>>) -> Result<Vec<ArrayD<f32>>>{
 		let mut stop = false;
