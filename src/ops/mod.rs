@@ -7,6 +7,7 @@ pub mod activ;
 pub mod shape;
 pub mod reduce;
 pub mod regularisation;
+pub mod grad;
 pub mod fill;
 
 use graph::{GraphDef, GraphShapes, Result};
