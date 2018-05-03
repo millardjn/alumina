@@ -9,7 +9,7 @@ use init::Initialiser;
 use std::collections::VecDeque;
 use ordermap::{OrderMap, OrderSet};
 use ops::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use id::*;
 use storage::Storage;
 
@@ -115,11 +115,10 @@ error_chain!{
 }
 
 
-lazy_static! {
-	static ref NODE_COUNT: AtomicUsize = {AtomicUsize::new(0)};
-	static ref OP_COUNT: AtomicUsize = {AtomicUsize::new(0)};
-	static ref PASS_COUNT: AtomicUsize = {AtomicUsize::new(0)};
-}
+static NODE_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
+static OP_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
+static PASS_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
+
 
 /// Used to construct the definition of the computational hypergraph.
 /// This cannot be executed, an executable `Subgraph` can be built by calling `subgraph()`
@@ -171,17 +170,17 @@ impl GraphDef {
 
 	/// Returns a usize guarenteed to be unique amongst nodes in the graph
 	fn next_node_id(&self) -> usize {
-		NODE_COUNT.fetch_add(1, Ordering::Relaxed)
+		NODE_COUNT.fetch_add(1, Ordering::SeqCst)
 	}
 
 	/// Returns a usize guarenteed to be unique amongst ops in the graph
 	fn next_op_id(&self) -> usize {
-		OP_COUNT.fetch_add(1, Ordering::Relaxed)
+		OP_COUNT.fetch_add(1, Ordering::SeqCst)
 	}
 
 	/// Returns a usize guarenteed to be unique amongst passes in the graph
 	fn next_pass_id(&self) -> usize {
-		PASS_COUNT.fetch_add(1, Ordering::Relaxed)
+		PASS_COUNT.fetch_add(1, Ordering::SeqCst)
 	}
 
 

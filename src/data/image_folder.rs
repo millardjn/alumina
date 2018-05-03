@@ -23,7 +23,7 @@ impl ImageFolder {
 		stdout().flush().ok();
 
 		let walker = WalkDir::new(root_path).max_depth(if subfolders {usize::MAX} else {1}).into_iter();
-		let paths = walker.filter_map(|e| e.ok()).filter_map(|e| {
+		let mut paths = walker.filter_map(|e| e.ok()).filter_map(|e| {
 			let path = e.path();
 			
 			if path.is_file() {
@@ -41,8 +41,8 @@ impl ImageFolder {
 				None
 			}
 		}).collect::<Vec<_>>();
-		println!("loaded {} paths.", paths.len());
-
+		println!("loaded {} paths.", paths.len()); //TODO change to info!() logging
+		paths.sort();
 		ImageFolder{
 			paths: paths,
 		}

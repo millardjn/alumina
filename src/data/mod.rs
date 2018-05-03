@@ -37,8 +37,9 @@ pub trait DataSet {
 		Box::new(iter)
 	}
 
-	fn boxed(self) -> Box<Self> where Self: Sized {
-		Box::new(self)
+	fn boxed(self) -> BoxedSet where Self: 'static + Sized + Send {
+		//Box::new(self)
+		BoxedSet{inner: Box::new(self)}
 	}
 
 	fn reorder_components(self, order: &[usize]) -> ReorderComponents<Self> where Self: Sized {
@@ -82,6 +83,29 @@ pub trait DataSet {
 	}
 }
 
+
+/// Its just a box, but the newtype avoids deref not Sized nonsense
+pub struct BoxedSet {
+	inner: Box<DataSet + Send>
+}
+
+impl DataSet for BoxedSet {
+	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>>{
+		self.inner.get(i)
+	}
+
+	fn length(&self) -> usize{
+		self.inner.length()
+	}
+
+	fn width(&self) -> usize{
+		self.inner.width()
+	}
+
+	fn components(&self) -> Vec<String>{
+		self.inner.components()
+	}
+}
 
 /// Reorder the components within each element of the set
 ///
