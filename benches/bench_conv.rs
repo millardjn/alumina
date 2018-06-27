@@ -54,14 +54,14 @@ fn conv_2d_bench(bench: &mut Bencher, n: usize, img: (usize, usize), filter: (us
 	let _o2 = L2::new(&node2).add_to(&mut g, tag![])?;
 
 	let mut subgraph = if forward {
-		g.subgraph(&[node1.value_id(), g.op(&o1)?.inner_nodes()[0].value_id()], &[node2.value_id()])?
+		g.subgraph(&[node1.value_id(), o1.instance().inner_nodes()[0].value_id()], &[node2.value_id()])?
 	} else {
-		g.subgraph(&[node1.value_id(), g.op(&o1)?.inner_nodes()[0].value_id()], &[node1.gradient_id(), g.op(&o1)?.inner_nodes()[0].gradient_id()])?
+		g.subgraph(&[node1.value_id(), o1.instance().inner_nodes()[0].value_id()], &[node1.gradient_id(), o1.instance().inner_nodes()[0].gradient_id()])?
 	};
 
 	let input = ArrayD::zeros(IxDyn(&[n, img.0, img.1, ch_in]));
 
-	let params = subgraph.graph().initialise_nodes(&g.op(&o1)?.inner_nodes())?;
+	let params = g.initialise_nodes(&o1.instance().inner_nodes())?;
 	let mut input_vec = vec![input];
 	input_vec.extend(params);
 
