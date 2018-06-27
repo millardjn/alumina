@@ -340,7 +340,7 @@ impl Pass for ConvForward {
 	fn run (&self, data: &Storage) -> Result<Box<Any>> {
 		let input = data.get(&self.input_id.value_id())?;
 		let filter = data.get(&self.filter_id.value_id())?;
-		let mut output = data.get_mut(&self.output_id.value_id())?;
+		let output = data.get_mut(&self.output_id.value_id())?;
 
 		let n = input.shape()[0]; //TODO use ensure to guard against zero length shapes
 		let in_size: usize = input.shape()[1..].iter().product();
@@ -369,37 +369,36 @@ impl Pass for ConvForward {
 
 		let input = input.as_slice().unwrap();
 		let filter = filter.as_slice().unwrap();
-		let output = output.as_slice_mut().unwrap();
+		let output = output.as_slice().unwrap();
 		debug_assert!(!filter.iter().cloned().any(f32::is_nan), "{:?}", filter);
 
+		let filter_strides = stride_vec2(input_channels, &filter_spatial);
+		let input_strides = stride_vec2(input_channels, &input_spatial);
+		let output_strides = stride_vec2(output_channels, &output_spatial);
 
 		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		let n_threads = pool.thread_count() as usize;
 		pool.scoped(|scope|{
 
 			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*size_of::<f32>())), out_spaxels*n); // number of spaxels to combine in one sgemm
 			let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
 
+			for batch_range in (0..n_batches).divide_evenly_into(n_threads) {
+				let filter_strides = &filter_strides;
+				let input_strides = &input_strides;
+				let output_strides = &output_strides;
+				let output_spatial = &output_spatial;
 
-			let filter_strides = stride_vec2(input_channels, &filter_spatial);
-			let input_strides = stride_vec2(input_channels, &input_spatial);
-			let output_strides = stride_vec2(output_channels, &output_spatial);
+				scope.execute(move|| {
+					let mut patches_alloc = Vec::with_capacity(patch_size * max_spaxels); 
+					unsafe{patches_alloc.set_len(patch_size * max_spaxels);}
 
-			let (tx, rx) = sync_channel(1);
-			let (tx2, rx2) = sync_channel(1);
-			let mut spare_patches = Vec::with_capacity(patch_size * max_spaxels); 
-			unsafe{spare_patches.set_len(patch_size * max_spaxels);}
-			let mut spare_patches_opt = Some(spare_patches);
-			scope.execute(move|| {
-				let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
-				unsafe{patches.set_len(patch_size * max_spaxels);}
-				let mut patches_opt = Some(patches);
 
-				for batch in 0..n_batches {
-					let spaxel_ind = batch*max_spaxels;
-					
-					let batch_spaxels = min(out_spaxels*n - spaxel_ind, max_spaxels);
-					{
-						let patches = &mut patches_opt.as_mut().expect("conv patches missing")[..batch_spaxels*patch_size];
+					for batch in batch_range {
+						let spaxel_ind = batch*max_spaxels;
+						let batch_spaxels = min(out_spaxels*n - spaxel_ind, max_spaxels);
+						
+						let patches = &mut patches_alloc[..batch_spaxels*patch_size];
 						for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
 							debug_assert_eq!(patch_size, patch.len());
 							let n_ind = (spaxel_ind+i)/out_spaxels;
@@ -413,36 +412,30 @@ impl Pass for ConvForward {
 								3 => unsafe_pack_specialised::<U3>(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
 								_ => unsafe_pack(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides),
 							}
-							//unsafe_pack_patch_outer(patch, in_n, input_channels, output_ind, &filter_spatial, &input_spatial, &output_spatial, &filter_strides, &input_strides, &output_strides);
 							//pack_patch_recurse(patch, in_n, &kernel_shape, input_channels, &input.shape.spatial_dimensions, &output_shape.spatial_dimensions, kernel_shape.len()-1, output_ind, out_size);
 						}
+
+						let out_batch = &output[spaxel_ind*output_channels..][..batch_spaxels*output_channels];
+
+						let m = output_channels;
+						let n = batch_spaxels;
+						let k = patch_size;
+						debug_assert_eq!(filter.len(), k*m);
+						debug_assert!(patches.len() >= n*k);
+						debug_assert_eq!(out_batch.len(), n*m);
+						unsafe{
+							matrixmultiply::sgemm_st(m, k, n,
+								1.0,
+								filter.as_ptr(), k as isize, 1, // A is params, row major
+								patches.as_ptr(), 1, k as isize, // B, input patches column major
+								1.0,
+								out_batch.as_ptr() as *mut f32, 1, m as isize); // C output values column major
+						}
 					}
-					tx.send(Some((patches_opt.take().expect("conv patches missing"), spaxel_ind, batch_spaxels))).expect("conv patch send err");
-					patches_opt = Some(rx2.recv().expect("conv patches missing"));
-				}
-				tx.send(None).expect("conv patch send err");
-			});
 
-			while let Some((patches, spaxel_ind, batch_spaxels)) = rx.recv().expect("Convolution channel receive error") {
-				tx2.send(spare_patches_opt.take().expect("conv patches missing")).expect("conv patch send err");
-				let out_batch = &mut output[spaxel_ind*output_channels..][..batch_spaxels*output_channels];
-
-				let m = output_channels;
-				let n = batch_spaxels;
-				let k = patch_size;
-				debug_assert_eq!(filter.len(), k*m);
-				debug_assert!(patches.len() >= n*k);
-				debug_assert_eq!(out_batch.len(), n*m);
-				unsafe{
-					matrixmultiply::sgemm(m, k, n,
-						1.0,
-						filter.as_ptr(), k as isize, 1, // A is params, row major
-						patches.as_ptr(), 1, k as isize, // B, input patches column major
-						1.0,
-						out_batch.as_mut_ptr(), 1, m as isize); // C output values column major
-				}
-				spare_patches_opt = Some(patches);
+				});
 			}
+
 		});
 		Ok(Box::new(()))
 	}
@@ -518,9 +511,6 @@ impl Pass for ConvBackward {
 
 		let input_grad_slice = input_grad.as_ref().map(|ig| ig.as_slice().unwrap());
 
-		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
-		let n_threads = pool.thread_count() as usize;
-		let (tx, rx) = sync_channel(n_threads);
 
 		let filter_strides = stride_vec2(output_channels, &filter_spatial);
 		let input_strides = stride_vec2(input_channels, &input_spatial);
@@ -543,33 +533,15 @@ impl Pass for ConvBackward {
 		let inverted_filter_slice = inverted_filter.as_slice().unwrap();
 
 
-
+		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		let n_threads = pool.thread_count() as usize;
+		let (tx, rx) = sync_channel(n_threads);
 		pool.scoped(|scope|{
 
 			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
 			let n_batches = (in_spaxels*n + max_spaxels -1)/max_spaxels;
 
-
-
-
-
-
-
-			// let mut start_batch = 0;
-			// let mut end_batch = 0;
-			// let mut batches_remaining = n_batches;
-			// for i in 0..n_threads {
-			// 	let x = batches_remaining / (n_threads - i);
-			// 	end_batch += x;
-
-			// 	// do a thing
-
-			// 	start_batch = 
-			// }
-
 			for batch_range in (0..n_batches).divide_evenly_into(n_threads) {
-
-			
 				let inverted_filter_shape = inverted_filter.shape();
 				let filter_strides = &filter_strides;
 				let input_strides = &input_strides;
