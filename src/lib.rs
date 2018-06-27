@@ -24,6 +24,7 @@ extern crate ordermap;
 extern crate arrayvec;
 extern crate image;
 extern crate rayon;
+extern crate divide_range;
 
 //#![deny(missing_docs)]
 

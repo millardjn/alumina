@@ -38,7 +38,8 @@ matches = "0.1"
 arrayvec = "0.4"
 rayon = "0.9"
 
-matrixmultiply_mt = "0.1"
+matrixmultiply_mt = "0.1.6"
+divide_range = "0.1"
 #matrixmultiply_mt = {path = "D:/Repositories/matrixmultiply_mt"}
 
 #[dev-dependencies]

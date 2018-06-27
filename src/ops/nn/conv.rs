@@ -23,6 +23,7 @@ use typenum::marker_traits::Unsigned;
 use typenum::bit::*;
 use typenum::operator_aliases::Sub1;
 use std::ops::Sub;
+use divide_range::RangeDivisions;
 
 /// Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -77,7 +78,7 @@ impl Conv {
 			output_id: output_id.clone(),
 			filter_id: None,
 			initialiser: None,
-			lowering_memory: 1024*1024*2,
+			lowering_memory: 1024*512,
 		}
 	}
 
@@ -495,6 +496,8 @@ impl Pass for ConvBackward {
 		let in_spaxels: usize = input_spatial.iter().product();
 		let _out_spaxels: usize = output_spatial.iter().product();
 
+		let require_filter_gradients = data.is_required(&self.filter_id.gradient_id());
+
 		// Checks
 		ensure!(input.shape().len() == output_grad.shape().len(), "Input ndims does not match output ndims");
 		ensure!(input.shape().len() == filter.shape().len(), "Filter ndims does not match input ndims");
@@ -507,66 +510,91 @@ impl Pass for ConvBackward {
 		let input = input.as_slice().unwrap();
 		let output_grad = output_grad.as_slice().unwrap();
 
-		let mut input_grad = if data.is_required(&self.input_id.gradient_id()) {
+		let input_grad = if data.is_required(&self.input_id.gradient_id()) {
 			Some(data.get_mut(&self.input_id.gradient_id())?)
 		} else {
 			None
 		};
-		let mut filter_grad = if data.is_required(&self.filter_id.gradient_id()) {
-			Some(data.get_mut(&self.filter_id.gradient_id())?)
-		} else {
-			None
-		};
 
+		let input_grad_slice = input_grad.as_ref().map(|ig| ig.as_slice().unwrap());
 
 		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		let n_threads = pool.thread_count() as usize;
+		let (tx, rx) = sync_channel(n_threads);
+
+		let filter_strides = stride_vec2(output_channels, &filter_spatial);
+		let input_strides = stride_vec2(input_channels, &input_spatial);
+		let output_strides = stride_vec2(output_channels, &output_spatial);
+
+
+		// Rot180, or filter inversion
+		// Convert filter from [C_out, H, W, C_in] to [C_in, -H, -W, C_out]
+		// where negative dimensions indicate the dimension has been inverted
+		let mut inverted_filter_view = filter.view();
+		inverted_filter_view.swap_axes(0, filter.ndim()-1);
+		for axis in (1..filter.ndim()-1).map(Axis) {
+			inverted_filter_view.invert_axis(axis);
+		}
+		
+		let mut inverted_filter = unsafe{ArrayD::uninitialized(inverted_filter_view.shape())};
+		inverted_filter.assign(&inverted_filter_view);
+
+		debug_assert!(inverted_filter.is_standard_layout());
+		let inverted_filter_slice = inverted_filter.as_slice().unwrap();
+
+
+
 		pool.scoped(|scope|{
 
 			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
 			let n_batches = (in_spaxels*n + max_spaxels -1)/max_spaxels;
 
 
-			// Rot180, or filter inversion
-			// Convert filter from [C_out, H, W, C_in] to [C_in, -H, -W, C_out]
-			// where negative dimensions indicate the dimension has been inverted
-			let mut inverted_filter_view = filter.view();
-			inverted_filter_view.swap_axes(0, filter.ndim()-1);
-			for axis in (1..filter.ndim()-1).map(Axis) {
-				inverted_filter_view.invert_axis(axis);
-			}
+
+
+
+
+
+			// let mut start_batch = 0;
+			// let mut end_batch = 0;
+			// let mut batches_remaining = n_batches;
+			// for i in 0..n_threads {
+			// 	let x = batches_remaining / (n_threads - i);
+			// 	end_batch += x;
+
+			// 	// do a thing
+
+			// 	start_batch = 
+			// }
+
+			for batch_range in (0..n_batches).divide_evenly_into(n_threads) {
+
 			
-			let mut inverted_filter = unsafe{ArrayD::uninitialized(inverted_filter_view.shape())};
-			inverted_filter.assign(&inverted_filter_view);
+				let inverted_filter_shape = inverted_filter.shape();
+				let filter_strides = &filter_strides;
+				let input_strides = &input_strides;
+				let output_strides = &output_strides;
+				let output_spatial = &output_spatial;
 
-			debug_assert!(inverted_filter.is_standard_layout());
-			let inverted_filter_slice = inverted_filter.as_slice().unwrap();
+				let tx = tx.clone();
+				scope.execute(move|| {
+					let mut patches_alloc = Vec::with_capacity(patch_size * max_spaxels); 
+					unsafe{patches_alloc.set_len(patch_size * max_spaxels);}
 
 
-			let mut inverted_filter_grad: ArrayD<f32> = if filter_grad.is_some() {
-				ArrayD::zeros(inverted_filter.shape())
-			} else {
-				ArrayD::default(IxDyn(&[]))
-			};
-			
-			let filter_strides = stride_vec2(output_channels, &filter_spatial);
-			let input_strides = stride_vec2(input_channels, &input_spatial);
-			let output_strides = stride_vec2(output_channels, &output_spatial);
-			
-			let (tx, rx) = sync_channel(1);
-			let (tx2, rx2) = sync_channel(1);
-			let mut spare_patches = Vec::with_capacity(patch_size * max_spaxels); 
-			unsafe{spare_patches.set_len(patch_size * max_spaxels);}
-			let mut spare_patches_opt = Some(spare_patches);
-			scope.execute(move|| {
-				let mut patches = Vec::with_capacity(patch_size * max_spaxels); 
-				unsafe{patches.set_len(patch_size * max_spaxels);}
-				let mut patches_opt = Some(patches);
-				for batch in 0..n_batches {
-					let spaxel_ind = batch*max_spaxels;
-					let batch_spaxels = min(in_spaxels*n - spaxel_ind, max_spaxels);
+					let mut inverted_filter_grad: ArrayD<f32> = if require_filter_gradients {
+						ArrayD::zeros(inverted_filter_shape)
+					} else {
+						ArrayD::default(IxDyn(&[]))
+					};
 
-					{
-						let patches = &mut patches_opt.as_mut().expect("conv patches missing")[..batch_spaxels*patch_size];
+					for batch in batch_range { //0..n_batches
+						
+						let spaxel_ind = batch*max_spaxels;
+						let batch_spaxels = min(in_spaxels*n - spaxel_ind, max_spaxels);
+
+					
+						let patches = &mut patches_alloc[..batch_spaxels*patch_size];
 						for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
 							debug_assert_eq!(patch_size, patch.len());
 							let n_ind = (spaxel_ind+i)/in_spaxels;
@@ -583,73 +611,77 @@ impl Pass for ConvBackward {
 							
 							//pack_patch_recurse(patch, outd_n, &kernel_shape, output_channels, &output.shape.spatial_dimensions, &input_shape.spatial_dimensions, kernel_shape.len()-1, input_ind, in_size);
 						}
+						
+
+						// mult
+						let in_b = &input[spaxel_ind*input_channels..][..batch_spaxels*input_channels];
+
+						if let Some(input_grad_slice) = input_grad_slice {
+							//let mut input_grad_slice = input_grad.as_slice_mut().unwrap();
+							let m1 = input_channels;
+							let n1 = batch_spaxels;
+							let k1 = patch_size;
+							let ind_b = &input_grad_slice[spaxel_ind*input_channels..][..batch_spaxels*input_channels];
+							//let inverted_filter_slice = inverted_filter.as_slice().unwrap();
+							debug_assert_eq!(inverted_filter_slice.len(), k1*m1);
+							debug_assert!(patches.len() >= n1*k1);
+							debug_assert_eq!(ind_b.len(), n1*m1);
+							unsafe{
+								// input derivatives
+								matrixmultiply::sgemm_st(m1, k1, n1,
+									1.0,
+									inverted_filter_slice.as_ptr(), k1 as isize, 1, // A is params, row major
+									patches.as_ptr(), 1, k1 as isize, // B, input values, column major
+									1.0,
+									ind_b.as_ptr() as *mut f32, 1, m1 as isize // C output values, column major
+								); 
+							}
+						}
+
+						if require_filter_gradients {
+							let inverted_filter_grad_slice = inverted_filter_grad.as_slice_mut().unwrap();
+							let m2 = input_channels;
+							let n2 = patch_size;
+							let k2 = batch_spaxels;
+							debug_assert_eq!(in_b.len(), k2*m2);
+							debug_assert!(patches.len() >= n2*k2);
+							debug_assert_eq!(inverted_filter_grad_slice.len(), n2*m2);
+							unsafe{
+								// parameter derivatives
+								matrixmultiply::sgemm(m2, k2, n2,
+									1.0,
+									in_b.as_ptr(), 1, m2 as isize, // A is input image, col major
+									patches.as_ptr(), n2 as isize, 1, // B, derivative patches, row major
+									1.0,
+									inverted_filter_grad_slice.as_mut_ptr(), n2 as isize, 1 // C shuffled parameter derivatives, row major
+								);
+							}
+						}
 					}
-					tx.send(Some((patches_opt.take().expect("conv patches missing"), spaxel_ind, batch_spaxels))).expect("conv patch send err");
-					patches_opt = Some(rx2.recv().expect("conv patches missing"));
-				}
-				tx.send(None).expect("conv patch send err");
-			});
-			
 
-			while let Some((patches, spaxel_ind, batch_spaxels)) = rx.recv().expect("Convolution channel receive error") {
-				tx2.send(spare_patches_opt.take().expect("conv patches missing")).expect("conv patch send err");
-
-				let in_b = &input[spaxel_ind*input_channels..][..batch_spaxels*input_channels];
-
-				if let Some(ref mut input_grad) = input_grad {
-					let mut input_grad_slice = input_grad.as_slice_mut().unwrap();
-					let m1 = input_channels;
-					let n1 = batch_spaxels;
-					let k1 = patch_size;
-					let ind_b = &mut input_grad_slice[spaxel_ind*input_channels..][..batch_spaxels*input_channels];
-					debug_assert_eq!(inverted_filter_slice.len(), k1*m1);
-					debug_assert!(patches.len() >= n1*k1);
-					debug_assert_eq!(ind_b.len(), n1*m1);
-					unsafe{
-						// input derivatives
-						matrixmultiply::sgemm(m1, k1, n1,
-							1.0,
-							inverted_filter_slice.as_ptr(), k1 as isize, 1, // A is params, row major
-							patches.as_ptr(), 1, k1 as isize, // B, input values, column major
-							1.0,
-							ind_b.as_mut_ptr(), 1, m1 as isize // C output values, column major
-						); 
+					if require_filter_gradients {
+						tx.send(inverted_filter_grad).unwrap();
 					}
-				}
-
-				if let Some(ref mut _filter_grad) = filter_grad {
-					let inverted_filter_grad_slice = inverted_filter_grad.as_slice_mut().unwrap();
-					let m2 = input_channels;
-					let n2 = patch_size;
-					let k2 = batch_spaxels;
-					debug_assert_eq!(in_b.len(), k2*m2);
-					debug_assert!(patches.len() >= n2*k2);
-					debug_assert_eq!(inverted_filter_grad_slice.len(), n2*m2);
-					unsafe{
-						matrixmultiply::sgemm(m2, k2, n2,
-							1.0,
-							in_b.as_ptr(), 1, m2 as isize, // A is input image, col major
-							patches.as_ptr(), n2 as isize, 1, // B, derivative patches, row major
-							1.0,
-							inverted_filter_grad_slice.as_mut_ptr(), n2 as isize, 1 // C shuffled parameter derivatives, row major
-						);
-					}
-				}
-
-				spare_patches_opt = Some(patches);
+				});
 			}
+		});
 
-			// Write accumulated gradients back to the original (non-ROT180) format
-			if let Some(ref mut filter_grad) = filter_grad {
-				let mut inverted_filter_grad_actual = filter_grad.view_mut();
-				inverted_filter_grad_actual.swap_axes(0, filter.ndim()-1);
-				for axis in (1..filter.ndim()-1).map(Axis) {
-					inverted_filter_grad_actual.invert_axis(axis);
-				}
+
+		// Write accumulated gradients back to the original (non-ROT180) format
+		if require_filter_gradients {
+			let mut filter_grad = data.get_mut(&self.filter_id.gradient_id())?;
+
+			let mut inverted_filter_grad_actual = filter_grad.view_mut();
+			inverted_filter_grad_actual.swap_axes(0, filter.ndim()-1);
+			for axis in (1..filter.ndim()-1).map(Axis) {
+				inverted_filter_grad_actual.invert_axis(axis);
+			}
+			for _ in 0..n_threads{
+				let inverted_filter_grad = rx.recv().unwrap();
 				inverted_filter_grad_actual += &inverted_filter_grad;
 			}
+		}
 
-		});
 
 		Ok(Box::new(()))
 	}		
