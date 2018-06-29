@@ -361,7 +361,7 @@ impl Pass for SplineBackward {
 			let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
 			let mut input_grads: Vec<_> = input_grad.exact_chunks_mut(weights_shape).into_iter().collect();
 
-			output_grads.par_iter().zip(inputs.par_iter()).zip(input_grads.par_iter_mut()).for_each(|((output_grad, input), mut input_grad)|{
+			output_grads.par_iter().zip(inputs.par_iter()).zip(input_grads.par_iter_mut()).for_each(|((output_grad, input), input_grad)|{
 				Zip::from(output_grad)
 					.and(input)
 					.and(&weights[0])
