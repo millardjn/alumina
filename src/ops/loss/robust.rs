@@ -297,7 +297,7 @@ impl Pass for RobustJointPass {
 		let multiplier = self.multiplier/divisor as f32;
 
 		//let output_shape_actual = calc_output_shape(&input_shape, &self.axes, self.keep_dims);
-		let output_shape_keep_dims = calc_output_shape(&input_shape, &self.mean_axes, true);
+		//let output_shape_keep_dims = calc_output_shape(&input_shape, &self.mean_axes, true);
 
 		let mut error = 0.0;
 
@@ -305,189 +305,184 @@ impl Pass for RobustJointPass {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
 
-			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
-				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
-			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter()
-				.zip(input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()));
-
-			for ((input1_chunk, input2_chunk), (mut input1_grad_chunk, mut input2_grad_chunk)) in iter1.zip(iter2) {
-				let c = self.scale; // use notation from paper
-				let a = self.power;
-				if a.classify() == num::FpCategory::Zero {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input1_grad, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
-							*input1_grad +=  multiplier * 2.0 * x / (x*x + 2.0*c*c);
-							*input2_grad += -multiplier * 2.0 * x / (x*x + 2.0*c*c);
-						});
-				} else if a == f32::NEG_INFINITY {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input1_grad, input2_grad| { 
-							let x = input1-input2;
-							error += -multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
-							*input1_grad +=  multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
-							*input2_grad += -multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
-						});
-				} else if a == 1.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input1_grad, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
-							*input1_grad +=  multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
-							*input2_grad += -multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
-						});
-				} else if a == 2.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input1_grad, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * ((x/c)*(x/c))/a;;
-							*input1_grad +=  multiplier * x/(c*c);
-							*input2_grad += -multiplier * x/(c*c);
-						});
-				} else {
-					let za = 1.0f32.max(2.0-a);
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input1_grad, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
-							*input1_grad +=  multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
-							*input2_grad += -multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
-						});
-				}
+			// let iter1 = input1.into_iter().zip(input2);
+			// let iter2 = input1_grad.into_iter().zip(input2_grad);
+		
+			let c = self.scale; // use notation from paper
+			let a = self.power;
+			if a == 0.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input1_grad, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
+						*input1_grad +=  multiplier * 2.0 * x / (x*x + 2.0*c*c);
+						*input2_grad += -multiplier * 2.0 * x / (x*x + 2.0*c*c);
+					});
+			} else if a == f32::NEG_INFINITY {
+				Zip::from(input1) 
+					.and(input2)
+					.and(&mut input1_grad) 
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input1_grad, input2_grad| { 
+						let x = input1-input2;
+						error += -multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
+						*input1_grad +=  multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+						*input2_grad += -multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+					});
+			} else if a == 1.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input1_grad, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
+						*input1_grad +=  multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
+						*input2_grad += -multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
+					});
+			} else if a == 2.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input1_grad, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * ((x/c)*(x/c))/a;;
+						*input1_grad +=  multiplier * x/(c*c);
+						*input2_grad += -multiplier * x/(c*c);
+					});
+			} else {
+				let za = 1.0f32.max(2.0-a);
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input1_grad, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
+						*input1_grad +=  multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
+						*input2_grad += -multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
+					});
 			}
+			
 
 		} else if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
 
-			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
-				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
-			let iter2 = input1_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
+			// let iter1 = input1.into_iter().zip(input2);
+			// let iter2 = input1_grad.into_iter();
 
-			for ((input1_chunk, input2_chunk), mut input1_grad_chunk) in iter1.zip(iter2) {
-				let c = self.scale; // use notation from paper
-				let a = self.power;
-				if a.classify() == num::FpCategory::Zero {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.apply(|input1, input2, input1_grad| { 
-							let x = input1-input2;
-							error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
-							*input1_grad +=  multiplier * 2.0 * x / (x*x + 2.0*c*c);
-						});
-				} else if a == f32::NEG_INFINITY {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.apply(|input1, input2, input1_grad| { 
-							let x = input1-input2;
-							error += multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
-							*input1_grad +=  multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
-						});
-				} else if a == 1.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.apply(|input1, input2, input1_grad| { 
-							let x = input1-input2;
-							error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
-							*input1_grad +=  multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
-						});
-				} else if a == 2.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.apply(|input1, input2, input1_grad| { 
-							let x = input1-input2;
-							error += multiplier * ((x/c)*(x/c))/a;;
-							*input1_grad +=  multiplier * x/(c*c);
-						});
-				} else {
-					let za = 1.0f32.max(2.0-a);
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input1_grad_chunk) 
-						.apply(|input1, input2, input1_grad| { 
-							let x = input1-input2;
-							error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
-							*input1_grad +=  multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
-						});
-				}
+			let c = self.scale; // use notation from paper
+			let a = self.power;
+			if a == 0.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.apply(|input1, input2, input1_grad| { 
+						let x = input1-input2;
+						error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
+						*input1_grad +=  multiplier * 2.0 * x / (x*x + 2.0*c*c);
+					});
+			} else if a == f32::NEG_INFINITY {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.apply(|input1, input2, input1_grad| { 
+						let x = input1-input2;
+						error += multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
+						*input1_grad +=  multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+					});
+			} else if a == 1.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.apply(|input1, input2, input1_grad| { 
+						let x = input1-input2;
+						error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
+						*input1_grad +=  multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
+					});
+			} else if a == 2.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.apply(|input1, input2, input1_grad| { 
+						let x = input1-input2;
+						error += multiplier * ((x/c)*(x/c))/a;;
+						*input1_grad +=  multiplier * x/(c*c);
+					});
+			} else {
+				let za = 1.0f32.max(2.0-a);
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input1_grad) 
+					.apply(|input1, input2, input1_grad| { 
+						let x = input1-input2;
+						error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
+						*input1_grad +=  multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
+					});
 			}
+
 		} else if data.is_required(&self.input2_id.gradient_id()) {
 			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
 
-			let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
-				.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
-			let iter2 = input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
+			// let iter1 = input1.exact_chunks(output_shape_keep_dims.as_slice()).into_iter()
+			// 	.zip(input2.exact_chunks(output_shape_keep_dims.as_slice()));
+			// let iter2 = input2_grad.exact_chunks_mut(output_shape_keep_dims.as_slice()).into_iter();
 
-			for ((input1_chunk, input2_chunk), mut input2_grad_chunk) in iter1.zip(iter2) {
-				let c = self.scale; // use notation from paper
-				let a = self.power;
-				if a.classify() == num::FpCategory::Zero {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
-							*input2_grad += -multiplier * 2.0 * x / (x*x + 2.0*c*c);
-						});
-				} else if a == f32::NEG_INFINITY {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
-							*input2_grad += -multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
-						});
-				} else if a == 1.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
-							*input2_grad += -multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
-						});
-				} else if a == 2.0 {
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * ((x/c)*(x/c))/a;;
-							*input2_grad += -multiplier * x/(c*c);
-						});
-				} else {
-					let za = 1.0f32.max(2.0-a);
-					Zip::from(&input1_chunk) 
-						.and(&input2_chunk)
-						.and(&mut input2_grad_chunk) 
-						.apply(|input1, input2, input2_grad| { 
-							let x = input1-input2;
-							error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
-							*input2_grad += -multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
-						});
-				}
+			
+			let c = self.scale; // use notation from paper
+			let a = self.power;
+			if a == 0.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * (0.5*(x/c)*(x/c)).ln_1p();
+						*input2_grad += -multiplier * 2.0 * x / (x*x + 2.0*c*c);
+					});
+			} else if a == f32::NEG_INFINITY {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * (-0.5*(x/c)*(x/c)).exp_m1();
+						*input2_grad += -multiplier * x/(c*c) * (-0.5*(x/c)*(x/c)).exp();
+					});
+			} else if a == 1.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * (((x/c)*(x/c) + 1.0).sqrt() - 1.0); //TODO change to numerically stable version https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
+						*input2_grad += -multiplier * x/((c*c) * ((x/c)*(x/c) + 1.0).sqrt());
+					});
+			} else if a == 2.0 {
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * ((x/c)*(x/c))/a;;
+						*input2_grad += -multiplier * x/(c*c);
+					});
+			} else {
+				let za = 1.0f32.max(2.0-a);
+				Zip::from(&input1) 
+					.and(&input2)
+					.and(&mut input2_grad) 
+					.apply(|input1, input2, input2_grad| { 
+						let x = input1-input2;
+						error += multiplier * za / a *(((x/c)*(x/c)/za + 1.0).powf(0.5 * a) - 1.0);
+						*input2_grad += -multiplier * x/(c*c) * ((x/c)*(x/c)/za + 1.0).powf(0.5*a - 1.0);
+					});
 			}
+			
 		}
 
 		data.loss_add(error);
@@ -561,7 +556,7 @@ impl Pass for RobustForward {
 		for (input1_chunk, input2_chunk) in iter {
 			let c = self.scale; // use notation from paper
 			let a = self.power;
-			if a.classify() == num::FpCategory::Zero {
+			if a == 0.0 {
 				Zip::from(&mut output) 
 					.and(&input1_chunk) 
 					.and(&input2_chunk) 
@@ -679,7 +674,7 @@ impl Pass for RobustBackward {
 			for ((input1_chunk, input2_chunk), (mut input1_grad_chunk, mut input2_grad_chunk)) in iter1.zip(iter2) {
 				let c = self.scale; // use notation from paper
 				let a = self.power;
-				if a.classify() == num::FpCategory::Zero {
+				if a == 0.0 {
 					Zip::from(&output_grad) 
 						.and(&input1_chunk) 
 						.and(&input2_chunk)
