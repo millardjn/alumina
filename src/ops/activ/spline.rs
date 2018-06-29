@@ -356,18 +356,18 @@ impl Pass for SplineBackward {
 		
 		if data.is_required(&self.input_id.gradient_id()) {
 			let mut input_grad = data.get_mut(&self.input_id.gradient_id())?;
-			let iter = output_grad.exact_chunks(weights_shape).into_iter()
-				.zip(input.exact_chunks(weights_shape))
-				.zip(input_grad.exact_chunks_mut(weights_shape));
 
-			for ((output_grad, input), mut input_grad) in iter {
+			let output_grads: Vec<_> = output_grad.exact_chunks(weights_shape).into_iter().collect();
+			let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
+			let mut input_grads: Vec<_> = input_grad.exact_chunks_mut(weights_shape).into_iter().collect();
 
-				Zip::from(&output_grad)
-					.and(&input)
+			output_grads.par_iter().zip(inputs.par_iter()).zip(input_grads.par_iter_mut()).for_each(|((output_grad, input), mut input_grad)|{
+				Zip::from(output_grad)
+					.and(input)
 					.and(&weights[0])
 					.and(&weights[1])
 					.and(&weights[2])
-					.and(&mut input_grad)
+					.and(input_grad)
 					.apply(|&output_grad, &input, &left, &centre, &right, input_grad| {
 						let x = input;
 						if x <= -1.0 {
@@ -380,8 +380,8 @@ impl Pass for SplineBackward {
 							*input_grad += output_grad * (centre*(1.0-x2) + x*(left*(0.5*x-0.5) + right*(0.5*x+0.5)));
 						}
 					});
+			});
 
-			}
 		}
 
 		if data.is_required(&self.weights_id.gradient_id()) {
