@@ -6,6 +6,7 @@ use shape::{NodeDim, NodeShape};
 use ndarray::{ArrayViewMutD, ArrayD, Dimension, Axis, IxDyn};
 use std::any::Any;
 use std::iter;
+use std::sync::atomic::{ATOMIC_USIZE_INIT, Ordering};
 use std::sync::Mutex;
 use std::sync::mpsc::sync_channel;
 use std::cmp::{min, max};
@@ -23,7 +24,6 @@ use typenum::marker_traits::Unsigned;
 use typenum::bit::*;
 use typenum::operator_aliases::Sub1;
 use std::ops::Sub;
-use divide_range::RangeDivisions;
 
 /// Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -78,7 +78,7 @@ impl Conv {
 			output_id: output_id.clone(),
 			filter_id: None,
 			initialiser: None,
-			lowering_memory: 1024*512,
+			lowering_memory: 1024*384,
 		}
 	}
 
@@ -378,23 +378,28 @@ impl Pass for ConvForward {
 
 		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
 		let n_threads = pool.thread_count() as usize;
+
+		let batch_atomic = ATOMIC_USIZE_INIT;
 		pool.scoped(|scope|{
 
-			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*size_of::<f32>())), out_spaxels*n); // number of spaxels to combine in one sgemm
+			let max_spaxels = min(max(16, self.lowering_memory/(patch_size*size_of::<f32>())), out_spaxels*n); // number of spaxels to combine in one sgemm
 			let n_batches = (out_spaxels*n + max_spaxels -1)/max_spaxels;
 
-			for batch_range in (0..n_batches).divide_evenly_into(n_threads) {
+			for _ in 0..n_threads {
 				let filter_strides = &filter_strides;
 				let input_strides = &input_strides;
 				let output_strides = &output_strides;
 				let output_spatial = &output_spatial;
+				let batch_atomic = &batch_atomic;
 
 				scope.execute(move|| {
 					let mut patches_alloc = Vec::with_capacity(patch_size * max_spaxels); 
 					unsafe{patches_alloc.set_len(patch_size * max_spaxels);}
 
+					loop {
+						let batch = batch_atomic.fetch_add(1, Ordering::Relaxed);
+						if batch >= n_batches {break;}
 
-					for batch in batch_range {
 						let spaxel_ind = batch*max_spaxels;
 						let batch_spaxels = min(out_spaxels*n - spaxel_ind, max_spaxels);
 						
@@ -535,18 +540,21 @@ impl Pass for ConvBackward {
 
 		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
 		let n_threads = pool.thread_count() as usize;
+		let batch_atomic = ATOMIC_USIZE_INIT;
+
 		let (tx, rx) = sync_channel(n_threads);
 		pool.scoped(|scope|{
 
-			let max_spaxels = min(max(1, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
+			let max_spaxels = min(max(16, self.lowering_memory/(patch_size*4)), in_spaxels*n); // number of spaxels to combine in one sgemm
 			let n_batches = (in_spaxels*n + max_spaxels -1)/max_spaxels;
 
-			for batch_range in (0..n_batches).divide_evenly_into(n_threads) {
+			for _ in 0..n_threads {
 				let inverted_filter_shape = inverted_filter.shape();
 				let filter_strides = &filter_strides;
 				let input_strides = &input_strides;
 				let output_strides = &output_strides;
 				let output_spatial = &output_spatial;
+				let batch_atomic = &batch_atomic;
 
 				let tx = tx.clone();
 				scope.execute(move|| {
@@ -560,8 +568,10 @@ impl Pass for ConvBackward {
 						ArrayD::default(IxDyn(&[]))
 					};
 
-					for batch in batch_range { //0..n_batches
-						
+					loop {
+						let batch = batch_atomic.fetch_add(1, Ordering::Relaxed);
+						if batch >= n_batches {break;}
+
 						let spaxel_ind = batch*max_spaxels;
 						let batch_spaxels = min(in_spaxels*n - spaxel_ind, max_spaxels);
 

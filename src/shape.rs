@@ -17,9 +17,6 @@ error_chain!{
 			display("Shapes could not be merged as the had different flat sizes. Size1:{:?} Size2:{:?}", x, y)
 		}
 		
-		/// Cannot merge shapes which have a different number of channels
-		MergeIncompatibleChannelDimension{}
-		
 		/// Cant merge shapes which have different numbers of higher dimensions, unless one has no higher dimensions
 		MergeIncompatibleRank(shape1: NodeShape, shape2: NodeShape){
 			display("Can't merge shape{:?} with shape {:?} as they have different numbers of dimensions", shape1, shape2)
@@ -276,8 +273,6 @@ impl NodeShape{
 
 		if self.is_known() && other.is_known() {
 			self._merge_known(other)	
-		// } else if self.channels() != other.channels() {
-		// 	bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else if self.ndim() != other.ndim() {
 			bail!(ErrorKind::MergeIncompatibleRank(self.clone(), other.clone()))
 		} else {
@@ -303,8 +298,6 @@ impl NodeShape{
 			Ok(self.clone())
 		} else if self.ndim() != other.ndim() {
 			bail!(ErrorKind::MergeIncompatibleRank(self.clone(), other.clone()))
-		// } else if self.channels() != other.channels() {	
-		// 	bail!(ErrorKind::MergeIncompatibleChannelDimension)
 		} else {
 			let mut vec = SmallVec::new();
 			for (s, o) in self.dimensions.iter().zip(&other.dimensions){
