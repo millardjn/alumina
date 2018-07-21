@@ -160,7 +160,7 @@ pub trait Pass: Any + PassClone + Debug + Send + Sync{
 	fn type_name(&self) -> &'static str;
 
 	/// This name may not be unique, unlike node and op names
-	fn name(&self) -> String where Self:Pass{
+	fn name(&self) -> String {
 		let (inputs, outputs) = self.dependencies();
 
 		let mut name_string = self.type_name().to_string();
