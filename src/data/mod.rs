@@ -612,6 +612,10 @@ pub trait DataStream {
 		Zip::new(self, stream)
 	}
 
+	fn interleave<S: DataStream + 'static>(self, stream: S) -> Interleave where Self: 'static + Sized {
+		Interleave::new(self, stream)
+	}
+
 	fn count<S: DataStream>(self) -> Count<Self> where Self: Sized {
 		Count::new(self)
 	}
@@ -721,6 +725,46 @@ impl<S1: DataStream, S2: DataStream> DataStream for Zip<S1, S2> {
 	fn next(&mut self) -> Vec<ArrayD<f32>>{
 		let mut data = self.stream1.next();
 		data.append(&mut self.stream2.next());
+		data
+	}
+}
+
+
+/// Alternates returning from each provided `DataStream`s
+pub struct Interleave {
+	streams: Vec<Box<DataStream>>,
+	next: usize,
+}
+
+impl Interleave {
+	pub fn new<S1: DataStream + 'static, S2: DataStream + 'static>(stream1: S1, stream2: S2) -> Self {
+		Interleave{
+			streams: vec![],
+			next: 0,
+		}.and(stream1).and(stream2)
+	}
+
+	pub fn and<S: DataStream + 'static>(mut self, stream: S) -> Self {
+		self.streams.push(stream.boxed());
+		self
+	}
+
+	/// Borrows the first wrapped datastream
+	pub fn inner(&self) -> &[Box<DataStream>] {
+		&self.streams
+	}
+
+
+	/// Returns the wrapped datastreams
+	pub fn into_inner(self) -> Vec<Box<DataStream>> {
+		self.streams
+	}
+}
+
+impl DataStream for Interleave {
+	fn next(&mut self) -> Vec<ArrayD<f32>>{
+		let data = self.streams[self.next].next();
+		self.next = (self.next + 1) % self.streams.len();
 		data
 	}
 }

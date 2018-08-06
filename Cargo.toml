@@ -1,6 +1,6 @@
 [package]
 name = "alumina"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["J. Millard <millard.jn@gmail.com>"]
 description = "An Experimental Deep Learning Library"
 repository = "https://github.com/millardjn/alumina"
