@@ -12,12 +12,12 @@ use std::sync::mpsc::sync_channel;
 use std::cmp::{min, max};
 use std::mem::size_of;
 use scoped_threadpool::Pool;
-use odds;
+use unchecked_index as ui;
 use num_cpus;
 use matrixmultiply;
 use init::Initialiser;
-use rand::{thread_rng, Isaac64Rng, Rng};
-use rand::distributions::{Sample, Normal};
+use rand::{thread_rng, Isaac64Rng, SeedableRng};
+use rand::distributions::{Distribution, Normal};
 use smallvec::SmallVec;
 use typenum::{UInt, UTerm, U1, U2, U3};
 use typenum::marker_traits::Unsigned;
@@ -117,8 +117,8 @@ impl Conv {
 		Initialiser::new("MSRA Initialiser for Linear Op".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
 			let k = arr.len()/arr.shape()[0];
 
-			let mut rng = thread_rng().gen::<Isaac64Rng>();
-			let mut norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
+			let mut rng = Isaac64Rng::from_rng(thread_rng()).unwrap();
+			let norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
 			for e in arr.iter_mut() {
 				*e = norm.sample(&mut rng) as f32;
 			}
@@ -784,36 +784,36 @@ impl<U: Unsigned, B: Bit, C: Bit> PackSpecialised for UInt<UInt<U, B>, C> where 
 
 		let axis = kernel_shape.len() - Self::to_usize();
 
-		let i_stride = *odds::get_unchecked(input_strides, axis);
-		let o_stride = *odds::get_unchecked(output_strides, axis);
-		let k_stride = *odds::get_unchecked(kernel_strides, axis);
+		let i_stride = *ui::get_unchecked(input_strides, axis);
+		let o_stride = *ui::get_unchecked(output_strides, axis);
+		let k_stride = *ui::get_unchecked(kernel_strides, axis);
 		// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
 		
 		for i in 0..start*k_stride {
-			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+			*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 		}
 		
 		debug_assert!(axis < kernel_shape.len() - 1);
 		for i in start..end{
-			let temp_ix = (ix + i as isize - (*odds::get_unchecked(kernel_shape, axis)/2) as isize) as usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
+			let temp_ix = (ix + i as isize - (*ui::get_unchecked(kernel_shape, axis)/2) as isize) as usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
 			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
 			
-			let new_input = odds::slice_unchecked(input, i_stride*temp_ix, i_stride*(temp_ix+1));
+			let new_input = ui::get_unchecked(input, i_stride*temp_ix .. i_stride*(temp_ix+1));
 
-			let new_patch = odds::slice_unchecked_mut(patch, i*k_stride, (i+1)*k_stride);
+			let new_patch = ui::get_unchecked_mut(patch, i*k_stride .. (i+1)*k_stride);
 
 			let new_axis = axis+1;
 			let new_output_ind = output_ind - ox*o_stride;
-			let new_ox = new_output_ind/ *odds::get_unchecked(output_strides, new_axis);
-			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(output_shape, new_axis) as isize)/2;
-			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
+			let new_ox = new_output_ind/ *ui::get_unchecked(output_strides, new_axis);
+			let new_ix = new_ox as isize + (*ui::get_unchecked(input_shape, new_axis) as isize - *ui::get_unchecked(output_shape, new_axis) as isize)/2;
+			let (new_start, new_end) = kernel_range(new_ix, *ui::get_unchecked(input_shape, new_axis), *ui::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
 
 			<Sub1<Self>>::pack(new_patch, new_input, channels, new_output_ind, new_ox, new_ix,
 				new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
 		}
 
-		for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
-			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		for i in (end*k_stride)..(*ui::get_unchecked(kernel_shape, axis)*k_stride){
+			*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 		}
 	}
 }
@@ -828,29 +828,29 @@ impl PackSpecialised for UInt<UTerm, B1> {
 
 		let axis = kernel_shape.len() - Self::to_usize();
 
-		let k_stride = *odds::get_unchecked(kernel_strides, axis);
+		let k_stride = *ui::get_unchecked(kernel_strides, axis);
 		// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
 		
 		for i in 0..start*k_stride {
-			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+			*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 		}
 		
 		if end > start {
-			let offset = ((ix-*odds::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
+			let offset = ((ix-*ui::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
 			let len = (end - start)*channels;
 
 			//let input_crop = &input[offset..][..len];
 			//let mut patch_crop = &mut patch[(start*channels)..][..len];
 			//patch_crop.copy_from_slice(input_crop);
-			let input_crop = odds::slice_unchecked(input, offset, offset + len);
-			let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
+			let input_crop = ui::get_unchecked(input, offset .. offset + len);
+			let patch_crop = ui::get_unchecked_mut(patch, start*channels .. start*channels + len);
 			for i in 0..len{
-				*odds::get_unchecked_mut(patch_crop, i) = *odds::get_unchecked(input_crop, i);
+				*ui::get_unchecked_mut(patch_crop, i) = *ui::get_unchecked(input_crop, i);
 			}
 		}
 
-		for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
-			*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		for i in (end*k_stride)..(*ui::get_unchecked(kernel_shape, axis)*k_stride){
+			*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 		}
 	}
 }
@@ -877,50 +877,50 @@ unsafe fn _unsafe_pack_impl(patch: &mut [f32], input: &[f32], channels: usize, a
 	
 	//println!("a:{} s:{} e:{} ind: {} ox:{}, ix:{}", axis, start, end, output_ind, ox, ix);
 
-	let i_stride = *odds::get_unchecked(input_strides, axis);
-	let o_stride = *odds::get_unchecked(output_strides, axis);
-	let k_stride = *odds::get_unchecked(kernel_strides, axis);
+	let i_stride = *ui::get_unchecked(input_strides, axis);
+	let o_stride = *ui::get_unchecked(output_strides, axis);
+	let k_stride = *ui::get_unchecked(kernel_strides, axis);
 	// coordinates of the centre spaxel of the kernel, for the current axis, for both the output and the kernel itself
 	
 	for i in 0..start*k_stride {
-		*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+		*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 	}
 				
 	if axis < kernel_shape.len() - 1 {
 		for i in start..end{
-			let temp_ix = (ix + i as isize - (*odds::get_unchecked(kernel_shape, axis)/2) as isize) as usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
+			let temp_ix = (ix + i as isize - (*ui::get_unchecked(kernel_shape, axis)/2) as isize) as usize; // temp_ix is the coordinate for the current iteration, rather than the centre of the kernel.
 			debug_assert!(ix + i as isize - (kernel_shape[axis]/2) as isize >= 0);
 			
-			let new_input = odds::slice_unchecked(input, i_stride*temp_ix, i_stride*(temp_ix+1));
+			let new_input = ui::get_unchecked(input, i_stride*temp_ix .. i_stride*(temp_ix+1));
 
-			let new_patch = odds::slice_unchecked_mut(patch, i*k_stride, (i+1)*k_stride);
+			let new_patch = ui::get_unchecked_mut(patch, i*k_stride .. (i+1)*k_stride);
 
 			let new_axis = axis+1;
 			let new_output_ind = output_ind - ox*o_stride;
-			let new_ox = new_output_ind/ *odds::get_unchecked(output_strides, new_axis);
-			let new_ix = new_ox as isize + (*odds::get_unchecked(input_shape, new_axis) as isize - *odds::get_unchecked(output_shape, new_axis) as isize)/2;
-			let (new_start, new_end) = kernel_range(new_ix, *odds::get_unchecked(input_shape, new_axis), *odds::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
+			let new_ox = new_output_ind/ *ui::get_unchecked(output_strides, new_axis);
+			let new_ix = new_ox as isize + (*ui::get_unchecked(input_shape, new_axis) as isize - *ui::get_unchecked(output_shape, new_axis) as isize)/2;
+			let (new_start, new_end) = kernel_range(new_ix, *ui::get_unchecked(input_shape, new_axis), *ui::get_unchecked(kernel_shape, new_axis));// input_shape[new_axis]    kernel_shape[new_axis]);
 
 			_unsafe_pack_impl(new_patch, new_input, channels, new_axis, new_output_ind, new_ox, new_ix,
 			new_start, new_end, kernel_shape, input_shape, output_shape, kernel_strides, input_strides, output_strides)
 		}
 
 	} else if end > start {
-		let offset = ((ix-*odds::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
+		let offset = ((ix-*ui::get_unchecked(kernel_shape, axis) as isize/2)*channels as isize + (start*channels) as isize) as usize;
 		let len = (end - start)*channels;
 
 		//let input_crop = &input[offset..][..len];
 		//let mut patch_crop = &mut patch[(start*channels)..][..len];
 		//patch_crop.copy_from_slice(input_crop);
-		let input_crop = odds::slice_unchecked(input, offset, offset + len);
-		let patch_crop = odds::slice_unchecked_mut(patch, start*channels, start*channels + len);
+		let input_crop = ui::get_unchecked(input, offset .. offset + len);
+		let patch_crop = ui::get_unchecked_mut(patch, start*channels .. start*channels + len);
 		for i in 0..len{
-			*odds::get_unchecked_mut(patch_crop, i) = *odds::get_unchecked(input_crop, i);
+			*ui::get_unchecked_mut(patch_crop, i) = *ui::get_unchecked(input_crop, i);
 		}
 	}
 
-	for i in (end*k_stride)..(*odds::get_unchecked(kernel_shape, axis)*k_stride){
-		*odds::get_unchecked_mut(patch, i) = 0.0; // fill zero
+	for i in (end*k_stride)..(*ui::get_unchecked(kernel_shape, axis)*k_stride){
+		*ui::get_unchecked_mut(patch, i) = 0.0; // fill zero
 	}
 }
 
@@ -1083,7 +1083,6 @@ fn _conv_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 	
@@ -1099,7 +1098,7 @@ fn _conv_backprop() -> Result<()>{
 	let tolerance = 0.01;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 	
 	Ok(())
 }

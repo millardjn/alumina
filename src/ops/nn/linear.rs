@@ -4,8 +4,8 @@ use init::Initialiser;
 use ops::{standard_op_name, standard_inner_parameter_name, Op, OpInstance};
 use shape::{NodeShape, NodeDim};
 use ops::math::matmul::{MatMul, MatMulInstance};
-use rand::{thread_rng, Isaac64Rng, Rng};
-use rand::distributions::{Sample, Normal};
+use rand::{thread_rng, Isaac64Rng, SeedableRng};
+use rand::distributions::{Distribution, Normal};
 use ndarray::ArrayViewMutD;
 
 /// The Linear portion of a fully connected layer
@@ -88,8 +88,8 @@ impl Linear {
 				.and_then(|matmul_instance| matmul_instance.K)
 				.unwrap_or(arr.shape()[0]); //TODO use ensure to guard against zero length shapes
 
-			let mut rng = thread_rng().gen::<Isaac64Rng>();
-			let mut norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
+			let mut rng = Isaac64Rng::from_rng(thread_rng()).unwrap();
+			let norm = Normal::new(0.0, (multiplier as f64 / k as f64).sqrt());
 			for e in arr.iter_mut() {
 				*e = norm.sample(&mut rng) as f32;
 			}
@@ -225,7 +225,6 @@ fn _linear_init_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -247,7 +246,7 @@ fn _linear_init_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }

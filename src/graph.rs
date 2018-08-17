@@ -7,7 +7,7 @@ use shape;
 use shape::{NodeShape, NodeDim};
 use init::Initialiser;
 use std::collections::VecDeque;
-use ordermap::{OrderMap, OrderSet};
+use indexmap::{IndexMap, IndexSet};
 use ops::*;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use id::*;
@@ -130,15 +130,15 @@ pub struct GraphDef {
 	pass_ids: Vec<PassID>,
 	
 	// Extra information pertaining to nodes
-	static_inputs: OrderMap<DataID, ArrayD<f32>>,
-	initialisers: OrderMap<NodeID, Initialiser>,
+	static_inputs: IndexMap<DataID, ArrayD<f32>>,
+	initialisers: IndexMap<NodeID, Initialiser>,
 
 	// These are used to quickly look op names and tags
 	// Just duplicates data from node_ids/op_ids
-	node_names: OrderMap<String, NodeID>,
-	node_tags: OrderMap<NodeTag, OrderSet<NodeID>>,
-	op_names: OrderMap<String, OpID>,
-	op_tags: OrderMap<OpTag, OrderSet<OpID>>,
+	node_names: IndexMap<String, NodeID>,
+	node_tags: IndexMap<NodeTag, IndexSet<NodeID>>,
+	op_names: IndexMap<String, OpID>,
+	op_tags: IndexMap<OpTag, IndexSet<OpID>>,
 
 	// Used to track potentially recursive build calls inside add_op()
 	// and ensure each Initialiser added in set_initialiser gets tagged with the Op that created it
@@ -155,13 +155,13 @@ impl GraphDef {
 			op_ids: Vec::new(),
 			pass_ids: Vec::new(),
 
-			static_inputs: OrderMap::new(),
-			initialisers: OrderMap::new(),
+			static_inputs: indexmap![],
+			initialisers: indexmap![],
 
-			node_names: OrderMap::new(),
-			node_tags: OrderMap::new(),
-			op_names: OrderMap::new(),
-			op_tags: OrderMap::new(),
+			node_names: indexmap![],
+			node_tags: indexmap![],
+			op_names: indexmap![],
+			op_tags: indexmap![],
 
 			in_flight_op_builds: Vec::new(),
 			deferred_initialisers: Vec::new(),
@@ -293,7 +293,7 @@ impl GraphDef {
 			match tag {
 				NodeTag::Id(_) => {},
 				NodeTag::Int(_) | NodeTag::Str(_) | NodeTag::Parameter => {
-					self.node_tags.entry(tag).or_insert_with(OrderSet::new).insert(node_id.clone());
+					self.node_tags.entry(tag).or_insert_with(IndexSet::new).insert(node_id.clone());
 				},
 			}
 		}
@@ -359,10 +359,10 @@ impl GraphDef {
 			match tag {
 				OpTag::Id(_) => {},
 				OpTag::Int(_) => {
-					self.op_tags.entry(tag).or_insert_with(OrderSet::new).insert(op_id.clone());
+					self.op_tags.entry(tag).or_insert_with(IndexSet::new).insert(op_id.clone());
 				},
 				OpTag::Str(_) => {
-					self.op_tags.entry(tag).or_insert_with(OrderSet::new).insert(op_id.clone());
+					self.op_tags.entry(tag).or_insert_with(IndexSet::new).insert(op_id.clone());
 				},
 			}
 		}
@@ -512,46 +512,46 @@ impl GraphDef {
 /// Denormalised data about dependencies
 #[derive(Clone, Debug)]
 pub struct Dependencies {
-	pass_inputs: OrderMap<PassID, OrderSet<DataID>>,
-	pass_outputs: OrderMap<PassID, OrderSet<DataID>>,
-	pass_is_forward: OrderMap<PassID, bool>,
+	pass_inputs: IndexMap<PassID, IndexSet<DataID>>,
+	pass_outputs: IndexMap<PassID, IndexSet<DataID>>,
+	pass_is_forward: IndexMap<PassID, bool>,
 
-	data_inputs: OrderMap<DataID, OrderSet<PassID>>,
-	data_outputs: OrderMap<DataID, OrderSet<PassID>>,
+	data_inputs: IndexMap<DataID, IndexSet<PassID>>,
+	data_outputs: IndexMap<DataID, IndexSet<PassID>>,
 
-	op_inputs: OrderMap<OpID, OrderSet<NodeID>>,
-	op_outputs: OrderMap<OpID, OrderSet<NodeID>>,
-	op_shape_outputs: OrderMap<OpID, OrderSet<NodeID>>,
+	op_inputs: IndexMap<OpID, IndexSet<NodeID>>,
+	op_outputs: IndexMap<OpID, IndexSet<NodeID>>,
+	op_shape_outputs: IndexMap<OpID, IndexSet<NodeID>>,
 
-	node_inputs: OrderMap<NodeID, OrderSet<OpID>>,
-	node_shape_inputs: OrderMap<NodeID, OrderSet<OpID>>,
-	node_outputs: OrderMap<NodeID, OrderSet<OpID>>,
+	node_inputs: IndexMap<NodeID, IndexSet<OpID>>,
+	node_shape_inputs: IndexMap<NodeID, IndexSet<OpID>>,
+	node_outputs: IndexMap<NodeID, IndexSet<OpID>>,
 }
 
 impl Dependencies {
 	pub fn new(graph: &GraphDef) -> Dependencies {
 
-		let mut data_inputs = OrderMap::new();
-		let mut data_outputs = OrderMap::new();
+		let mut data_inputs = indexmap![];
+		let mut data_outputs = indexmap![];
 
-		let mut node_inputs = OrderMap::new();
-		let mut node_shape_inputs = OrderMap::new();
-		let mut node_outputs = OrderMap::new();
+		let mut node_inputs = indexmap![];
+		let mut node_shape_inputs = indexmap![];
+		let mut node_outputs = indexmap![];
 
 		for node_id in graph.get_nodes() {
-			data_inputs.insert(node_id.value_id(), OrderSet::new());
-			data_inputs.insert(node_id.gradient_id(), OrderSet::new());
-			data_outputs.insert(node_id.value_id(), OrderSet::new());
-			data_outputs.insert(node_id.gradient_id(), OrderSet::new());
+			data_inputs.insert(node_id.value_id(), indexset![]);
+			data_inputs.insert(node_id.gradient_id(), indexset![]);
+			data_outputs.insert(node_id.value_id(), indexset![]);
+			data_outputs.insert(node_id.gradient_id(), indexset![]);
 
-			node_inputs.insert(node_id.clone(), OrderSet::new());
-			node_shape_inputs.insert(node_id.clone(), OrderSet::new());
-			node_outputs.insert(node_id.clone(), OrderSet::new());
+			node_inputs.insert(node_id.clone(), indexset![]);
+			node_shape_inputs.insert(node_id.clone(), indexset![]);
+			node_outputs.insert(node_id.clone(), indexset![]);
 		}
 
-		let mut pass_inputs: OrderMap<PassID, OrderSet<DataID>> = OrderMap::new();
-		let mut pass_outputs: OrderMap<PassID, OrderSet<DataID>> = OrderMap::new();
-		let mut pass_is_forward = OrderMap::new();
+		let mut pass_inputs: IndexMap<PassID, IndexSet<DataID>> = indexmap![];
+		let mut pass_outputs: IndexMap<PassID, IndexSet<DataID>> = indexmap![];
+		let mut pass_is_forward = indexmap![];
 
 		for pass_id in graph.get_passes() {
 			let (inputs, outputs) = pass_id.instance().dependencies();
@@ -570,9 +570,9 @@ impl Dependencies {
 		}
 
 
-		let mut op_inputs: OrderMap<OpID, OrderSet<NodeID>> = OrderMap::new();
-		let mut op_outputs: OrderMap<OpID, OrderSet<NodeID>> = OrderMap::new();
-		let mut op_shape_outputs: OrderMap<OpID, OrderSet<NodeID>> = OrderMap::new();
+		let mut op_inputs: IndexMap<OpID, IndexSet<NodeID>> = indexmap![];
+		let mut op_outputs: IndexMap<OpID, IndexSet<NodeID>> = indexmap![];
+		let mut op_shape_outputs: IndexMap<OpID, IndexSet<NodeID>> = indexmap![];
 
 		for op_id in graph.get_ops() {
 			let (inputs, outputs) = op_id.instance().dependencies();
@@ -613,15 +613,15 @@ impl Dependencies {
 		self.op_inputs.get(op_id).is_some()
 	}
 
-	pub fn data_inputs(&self, data_id: &DataID) -> &OrderSet<PassID> {
+	pub fn data_inputs(&self, data_id: &DataID) -> &IndexSet<PassID> {
 		self.data_inputs.get(data_id).unwrap()
 	}
 
-	pub fn data_outputs(&self, data_id: &DataID) -> &OrderSet<PassID> {
+	pub fn data_outputs(&self, data_id: &DataID) -> &IndexSet<PassID> {
 		self.data_outputs.get(data_id).unwrap()
 	}
 
-	pub fn pass_inputs(&self, pass_id: &PassID) -> &OrderSet<DataID> {
+	pub fn pass_inputs(&self, pass_id: &PassID) -> &IndexSet<DataID> {
 		self.pass_inputs.get(pass_id).unwrap()
 	}
 	
@@ -629,34 +629,34 @@ impl Dependencies {
 		*self.pass_is_forward.get(pass_id).unwrap()
 	}
 
-	pub fn pass_outputs(&self, pass_id: &PassID) -> &OrderSet<DataID> {
+	pub fn pass_outputs(&self, pass_id: &PassID) -> &IndexSet<DataID> {
 		self.pass_outputs.get(pass_id).unwrap()
 	}
 
-	pub fn node_inputs(&self, node_id: &NodeID) -> &OrderSet<OpID> {
+	pub fn node_inputs(&self, node_id: &NodeID) -> &IndexSet<OpID> {
 		&self.node_inputs.get(node_id).unwrap()
 	}
 
-	pub fn node_shape_inputs(&self, node_id: &NodeID) -> &OrderSet<OpID> {
+	pub fn node_shape_inputs(&self, node_id: &NodeID) -> &IndexSet<OpID> {
 		&self.node_shape_inputs.get(node_id).unwrap()
 	}
 
-	pub fn node_outputs(&self, node_id: &NodeID) -> &OrderSet<OpID> {
+	pub fn node_outputs(&self, node_id: &NodeID) -> &IndexSet<OpID> {
 		&self.node_outputs.get(node_id).unwrap()
 	}
 
 	/// Inputs of the Op
-	pub fn op_inputs(&self, op_id: &OpID) -> &OrderSet<NodeID> {
+	pub fn op_inputs(&self, op_id: &OpID) -> &IndexSet<NodeID> {
 		&self.op_inputs.get(op_id).unwrap()
 	}
 	
 	/// Outputs of the Op, excluding inner nodes
-	pub fn op_outputs(&self, op_id: &OpID) -> &OrderSet<NodeID> {
+	pub fn op_outputs(&self, op_id: &OpID) -> &IndexSet<NodeID> {
 		&self.op_outputs.get(op_id).unwrap()
 	}
 
 	/// Outputs of the Op, including inner nodes
-	pub fn op_shape_outputs(&self, op_id: &OpID) -> &OrderSet<NodeID> {
+	pub fn op_shape_outputs(&self, op_id: &OpID) -> &IndexSet<NodeID> {
 		&self.op_shape_outputs.get(op_id).unwrap()
 	}
 }
@@ -686,19 +686,19 @@ pub struct Subgraph {
 	subgraph_outputs: Vec<DataID>,
 
 	// Only keep static inputs that dont conflict with a subgraph input
-	filtered_static_inputs: OrderMap<DataID, ArrayD<f32>>,
+	filtered_static_inputs: IndexMap<DataID, ArrayD<f32>>,
 
 	// Ops and nodes included in the subgraph, used to perform shape inference
-	included_nodes: OrderMap<NodeID, NodeStatus>,
-	included_ops: OrderSet<OpID>,
+	included_nodes: IndexMap<NodeID, NodeStatus>,
+	included_ops: IndexSet<OpID>,
 	op_order: Vec<OpID>,
-	shapes: OrderMap<NodeID, IxDyn>,
+	shapes: IndexMap<NodeID, IxDyn>,
 
 	// passes and data inclded in the subgraph, used to perform graph execution
-	included_data: OrderMap<DataID, DataStatus>,
-	included_passes: OrderSet<PassID>,
+	included_data: IndexMap<DataID, DataStatus>,
+	included_passes: IndexSet<PassID>,
 	pass_order: Vec<PassID>,
-	passes_before_dealloc: OrderMap<DataID, usize>,
+	passes_before_dealloc: IndexMap<DataID, usize>,
 
 	// To what degree should ops drag in upstream ops
 	strict_op_inclusion: bool,
@@ -710,8 +710,8 @@ impl Subgraph {
 	/// todo
 	fn new(graph: &GraphDef, inputs: &[DataID], outputs: &[DataID]) -> Result<Subgraph> {
 
-		let input_set: OrderSet<_> = inputs.iter().cloned().collect();
-		let output_set: OrderSet<_> = outputs.iter().cloned().collect();
+		let input_set: IndexSet<_> = inputs.iter().cloned().collect();
+		let output_set: IndexSet<_> = outputs.iter().cloned().collect();
 		assert_eq!(inputs.len(), input_set.len(), "Inputs contains duplicates");
 		assert_eq!(outputs.len(), output_set.len(), "Outputs contains duplicates");
 
@@ -733,7 +733,7 @@ impl Subgraph {
 			.map(|(k, v)| (k.clone(), v.clone())).collect();
 
 		// for each data_id count the number of passes deemed required which depend on it, then add 1 if it is a requested output
-		let mut passes_before_dealloc: OrderMap<DataID, usize> = dependencies.data_outputs.iter().map(|(id, passes)| (id.clone(), passes.iter().filter(|&pass| included_passes.contains(pass)).count())).collect();
+		let mut passes_before_dealloc: IndexMap<DataID, usize> = dependencies.data_outputs.iter().map(|(id, passes)| (id.clone(), passes.iter().filter(|&pass| included_passes.contains(pass)).count())).collect();
 		for data_id in outputs {
 			*passes_before_dealloc.get_mut(data_id).unwrap() += 1;
 		}
@@ -746,7 +746,7 @@ impl Subgraph {
 			included_nodes: included_nodes,
 			included_ops: included_ops,
 			op_order: op_order,
-			shapes: OrderMap::new(),
+			shapes: indexmap![],
 
 			included_data: included_data,
 			included_passes: included_passes,
@@ -768,7 +768,7 @@ impl Subgraph {
 	pub fn execute(&mut self, inputs: Vec<ArrayD<f32>>) -> Result<Storage>{
 		ensure!(inputs.len() == self.subgraph_inputs.len(), "The number of inputs provided ({}) did not match the number of expected inputs ({})", inputs.len(), self.subgraph_inputs.len());
 
-		let input_data: OrderMap<DataID, ArrayD<f32>> = self.subgraph_inputs.iter().cloned().zip(inputs).collect();
+		let input_data: IndexMap<DataID, ArrayD<f32>> = self.subgraph_inputs.iter().cloned().zip(inputs).collect();
 
 		// if shapes is empty, or doesnt match the new inputs, recalculate all shapes.
 		if self.shapes.len() != self.included_nodes.len()
@@ -827,10 +827,10 @@ impl Subgraph {
 
 
 /// Work backwards from the requested output data marking data, passes, nodes, and ops as required.
-fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &OrderMap<DataID, ArrayD<f32>>, outputs: &[DataID], dependencies: &Dependencies, strict_op_inclusion: bool) -> (OrderMap<DataID, DataStatus>, OrderSet<PassID>, OrderMap<NodeID, NodeStatus>, OrderSet<OpID>){
+fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &IndexMap<DataID, ArrayD<f32>>, outputs: &[DataID], dependencies: &Dependencies, strict_op_inclusion: bool) -> (IndexMap<DataID, DataStatus>, IndexSet<PassID>, IndexMap<NodeID, NodeStatus>, IndexSet<OpID>){
 		
-	let mut included_data: OrderMap<DataID, DataStatus> = OrderMap::new();
-	let mut included_passes = OrderSet::new();
+	let mut included_data: IndexMap<DataID, DataStatus> = indexmap![];
+	let mut included_passes = indexset![];
 
 	for data_id in inputs.iter().chain(static_inputs.keys()) {
 		included_data.insert(data_id.clone(), DataStatus::Input);
@@ -870,8 +870,8 @@ fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &OrderMap<D
 
 
 
-	let mut included_nodes = OrderMap::new();
-	let mut included_ops = OrderSet::new();
+	let mut included_nodes = indexmap![];
+	let mut included_ops = indexset![];
 
 	for data_id in static_inputs.keys() {
 		included_nodes.insert(data_id.node_id(), NodeStatus::StaticInput);
@@ -936,13 +936,13 @@ fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &OrderMap<D
 		included_data.get(&data_id).map(|status| (data_id, status.clone()))
 	}).collect();
 
-	let included_passes: OrderSet<PassID> = graph.get_passes().iter().filter(|&pass_id| included_passes.contains(pass_id)).cloned().collect();
+	let included_passes: IndexSet<PassID> = graph.get_passes().iter().filter(|&pass_id| included_passes.contains(pass_id)).cloned().collect();
 
 	let included_nodes = graph.get_nodes().iter().filter_map(|node_id|{
 		included_nodes.get(node_id).map(|status| (node_id.clone(), status.clone()))
 	}).collect();
 
-	let included_ops: OrderSet<OpID> = graph.get_ops().iter().filter(|&op_id| included_ops.contains(op_id)).cloned().collect();
+	let included_ops: IndexSet<OpID> = graph.get_ops().iter().filter(|&op_id| included_ops.contains(op_id)).cloned().collect();
 
 	(included_data, included_passes, included_nodes, included_ops)
 }
@@ -950,7 +950,7 @@ fn find_included(graph: &GraphDef, inputs: &[DataID], static_inputs: &OrderMap<D
 /// Returns the order in which passes should be called such that dependencies are respected.
 /// By default this will order passes in the order that they were added to the graph, and only perform the minimal rearrangement required to ensure dependencies are met.
 /// out of order dependeancies can cause quadratic slow down (this can probably be removed using priority queues)
-fn find_pass_order(included_data: &OrderMap<DataID, DataStatus>, included_passes: &OrderSet<PassID>, dependencies: &Dependencies) -> Result<Vec<PassID>>{
+fn find_pass_order(included_data: &IndexMap<DataID, DataStatus>, included_passes: &IndexSet<PassID>, dependencies: &Dependencies) -> Result<Vec<PassID>>{
 
 	#[derive(Clone, Debug)]
 	enum DataState {
@@ -968,7 +968,7 @@ fn find_pass_order(included_data: &OrderMap<DataID, DataStatus>, included_passes
 
 	/// Attempts to retire a pass as Ready or Unavailable, return true if sucessful false otherwise
 	/// If it returns true this method should never be called again for that pass_id.
-	fn try_retire_pass(pass_id: &PassID, pass_order: &mut Vec<PassID>, data_states: &mut OrderMap<DataID, DataState>, pass_states: &mut OrderMap<PassID, PassState>, dependencies: &Dependencies) -> bool{
+	fn try_retire_pass(pass_id: &PassID, pass_order: &mut Vec<PassID>, data_states: &mut IndexMap<DataID, DataState>, pass_states: &mut IndexMap<PassID, PassState>, dependencies: &Dependencies) -> bool{
 
 		if matches!(pass_states.get(pass_id).unwrap(), &PassState::Ready) {
 			panic!("pass has already been retired, try_retire_pass() should not be called")
@@ -1003,7 +1003,7 @@ fn find_pass_order(included_data: &OrderMap<DataID, DataStatus>, included_passes
 
 	/// Marks data as ready, and decreases pending count of dependent passes
 	/// Only legal to call this if is_input[]==true or as the last input pass is retired
-	fn mark_data_input(data_id: &DataID, data_states: &mut OrderMap<DataID, DataState>, pass_states: &mut OrderMap<PassID, PassState>, dependencies: &Dependencies){
+	fn mark_data_input(data_id: &DataID, data_states: &mut IndexMap<DataID, DataState>, pass_states: &mut IndexMap<PassID, PassState>, dependencies: &Dependencies){
 		data_states.insert(data_id.clone(), DataState::Input);
 		for pass_id in dependencies.data_outputs(data_id) {
 			if let Some(pass_state) = pass_states.get_mut(pass_id) {
@@ -1017,7 +1017,7 @@ fn find_pass_order(included_data: &OrderMap<DataID, DataStatus>, included_passes
 
 	/// Marks data as ready, and decreases pending count of dependent passes
 	/// Only legal to call this if is_input[]==true or as the last input pass is retired
-	fn mark_data_ready(data_id: &DataID, data_states: &mut OrderMap<DataID, DataState>, pass_states: &mut OrderMap<PassID, PassState>, dependencies: &Dependencies){
+	fn mark_data_ready(data_id: &DataID, data_states: &mut IndexMap<DataID, DataState>, pass_states: &mut IndexMap<PassID, PassState>, dependencies: &Dependencies){
 		data_states.insert(data_id.clone(), DataState::Ready);
 		for pass_id in dependencies.data_outputs(data_id) {
 			if let Some(pass_state) = pass_states.get_mut(pass_id) {
@@ -1096,7 +1096,7 @@ fn find_pass_order(included_data: &OrderMap<DataID, DataStatus>, included_passes
 /// Returns the order in which op should be called such that dependencies are respected.
 /// By default this will order ops in the order that they were added to the graph, and only perform the minimal rearrangement required to ensure dependencies are met.
 /// out of order dependeancies can cause quadratic slow down (this can probably be removed using priority queues)
-fn find_op_order(included_nodes: &OrderMap<NodeID, NodeStatus>, included_ops: &OrderSet<OpID>, dependencies: &Dependencies) -> Result<Vec<OpID>>{
+fn find_op_order(included_nodes: &IndexMap<NodeID, NodeStatus>, included_ops: &IndexSet<OpID>, dependencies: &Dependencies) -> Result<Vec<OpID>>{
 
 	#[derive(Clone, Debug)]
 	enum NodeState {
@@ -1114,7 +1114,7 @@ fn find_op_order(included_nodes: &OrderMap<NodeID, NodeStatus>, included_ops: &O
 
 	/// Attempts to retire a op as Ready or Unavailable, return true if sucessful false otherwise
 	/// If it returns true this method should never be called again for that op_id.
-	fn try_retire_op(op_id: &OpID, op_order: &mut Vec<OpID>, node_states: &mut OrderMap<NodeID, NodeState>, op_states: &mut OrderMap<OpID, OpState>, dependencies: &Dependencies) -> bool{
+	fn try_retire_op(op_id: &OpID, op_order: &mut Vec<OpID>, node_states: &mut IndexMap<NodeID, NodeState>, op_states: &mut IndexMap<OpID, OpState>, dependencies: &Dependencies) -> bool{
 
 		if matches!(op_states.get(op_id).unwrap(), &OpState::Ready) {
 			panic!("op has already been retired, try_retire_op() should not be called")
@@ -1144,7 +1144,7 @@ fn find_op_order(included_nodes: &OrderMap<NodeID, NodeStatus>, included_ops: &O
 
 	/// Marks node as ready, and decreases pending count of dependent ops
 	/// Only legal to call this if is_input[]==true or as the last input op is retired
-	fn mark_node_input(node_id: &NodeID, node_states: &mut OrderMap<NodeID, NodeState>, op_states: &mut OrderMap<OpID, OpState>, dependencies: &Dependencies){
+	fn mark_node_input(node_id: &NodeID, node_states: &mut IndexMap<NodeID, NodeState>, op_states: &mut IndexMap<OpID, OpState>, dependencies: &Dependencies){
 		node_states.insert(node_id.clone(), NodeState::Input);
 		for op_id in dependencies.node_outputs(node_id) {
 			if let Some(op_state) = op_states.get_mut(op_id){
@@ -1158,7 +1158,7 @@ fn find_op_order(included_nodes: &OrderMap<NodeID, NodeStatus>, included_ops: &O
 
 	/// Marks node as ready, and decreases pending count of dependent ops
 	/// Only legal to call this if is_input[]==true or as the last input op is retired
-	fn mark_node_ready(node_id: &NodeID, node_states: &mut OrderMap<NodeID, NodeState>, op_states: &mut OrderMap<OpID, OpState>, dependencies: &Dependencies){
+	fn mark_node_ready(node_id: &NodeID, node_states: &mut IndexMap<NodeID, NodeState>, op_states: &mut IndexMap<OpID, OpState>, dependencies: &Dependencies){
 		node_states.insert(node_id.clone(), NodeState::Ready);
 		for op_id in dependencies.node_outputs(node_id) {
 			if let Some(op_state) = op_states.get_mut(op_id){
@@ -1233,7 +1233,7 @@ fn find_op_order(included_nodes: &OrderMap<NodeID, NodeStatus>, included_ops: &O
 }
 
 
-fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &OrderMap<DataID, ArrayD<f32>>, static_inputs: &OrderMap<DataID, ArrayD<f32>>) -> Result<OrderMap<NodeID, IxDyn>> {
+fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &IndexMap<DataID, ArrayD<f32>>, static_inputs: &IndexMap<DataID, ArrayD<f32>>) -> Result<IndexMap<NodeID, IxDyn>> {
 	// if inputs are present along with static_inputs the inputs should add
 
 	let mut shapes = GraphShapes::new(subgraph);
@@ -1276,7 +1276,7 @@ fn find_shapes(subgraph: &Subgraph, op_order: &[OpID], inputs: &OrderMap<DataID,
 /// Each Op can read the shape of its inputs, and new constraints can be applied/merged with the shapes of its outputs.
 #[derive(Debug)]
 pub struct GraphShapes<'a> {
-	shapes: OrderMap<NodeID, NodeShape>,
+	shapes: IndexMap<NodeID, NodeShape>,
 	subgraph: &'a Subgraph,
 	current_op_instance: Option<OpID>,
 }

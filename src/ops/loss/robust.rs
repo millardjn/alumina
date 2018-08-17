@@ -866,16 +866,15 @@ fn test_robust_zero_backprop(){
 fn _robust_zero_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 0.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -888,7 +887,7 @@ fn _robust_zero_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -902,16 +901,15 @@ fn test_robust_one_backprop(){
 fn _robust_one_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 1.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -924,7 +922,7 @@ fn _robust_one_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -938,16 +936,15 @@ fn test_robust_two_backprop(){
 fn _robust_two_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 2.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -960,7 +957,7 @@ fn _robust_two_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -974,16 +971,15 @@ fn test_robust_neg_inf_backprop(){
 fn _robust_neg_inf_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = f32::NEG_INFINITY;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -996,7 +992,7 @@ fn _robust_neg_inf_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -1010,18 +1006,17 @@ fn test_robust_rand_backprop(){
 fn _robust_rand_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 	let power_range = Range::new(-2.0, 2.0);
 
 	for _ in 0..10 {
-		let power = power_range.ind_sample(&mut rng);
-		let scale = 1.0 + range.ind_sample(&mut rng);
-		let mult = range.ind_sample(&mut rng);
+		let power = power_range.sample(&mut rng);
+		let scale = 1.0 + range.sample(&mut rng);
+		let mult = range.sample(&mut rng);
 		let mut g = GraphDef::new();
 
 		let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1034,7 +1029,7 @@ fn _robust_rand_backprop() -> Result<()>{
 		let tolerance = 0.002;
 		let step_size = 1E-2;
 		let default_variance = 1.0;
-		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 	}
 
 	Ok(())
@@ -1051,17 +1046,16 @@ fn test_robust_zero_output_backprop(){
 fn _robust_zero_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 0.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1076,7 +1070,7 @@ fn _robust_zero_output_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -1090,17 +1084,16 @@ fn test_robust_one_output_backprop(){
 fn _robust_one_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 1.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1115,7 +1108,7 @@ fn _robust_one_output_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -1129,17 +1122,16 @@ fn test_robust_two_output_backprop(){
 fn _robust_two_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = 2.0;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1154,7 +1146,7 @@ fn _robust_two_output_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -1168,17 +1160,16 @@ fn test_robust_neg_inf_output_backprop(){
 fn _robust_neg_inf_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 
 	let power = f32::NEG_INFINITY;
-	let scale = 1.0 + range.ind_sample(&mut rng);
-	let mult = range.ind_sample(&mut rng);
+	let scale = 1.0 + range.sample(&mut rng);
+	let mult = range.sample(&mut rng);
 	let mut g = GraphDef::new();
 
 	let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1193,7 +1184,7 @@ fn _robust_neg_inf_output_backprop() -> Result<()>{
 	let tolerance = 0.001;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -1207,19 +1198,18 @@ fn test_robust_rand_output_backprop(){
 fn _robust_rand_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 	use rand;
-	use rand::distributions::*;
+	use rand::distributions::{Range, Distribution};
 
 	let mut rng = rand::thread_rng();
 	let range = Range::new(0.1, 1.0);
 	let power_range = Range::new(-2.0, 2.0);
 
 	for _ in 0..10 {
-		let power = power_range.ind_sample(&mut rng);
-		let scale = 1.0 + range.ind_sample(&mut rng);
-		let mult = range.ind_sample(&mut rng);
+		let power = power_range.sample(&mut rng);
+		let scale = 1.0 + range.sample(&mut rng);
+		let mult = range.sample(&mut rng);
 		let mut g = GraphDef::new();
 
 		let node1 = g.new_node(shape![7, 5, 16], "input1", tag![])?;
@@ -1234,7 +1224,7 @@ fn _robust_rand_output_backprop() -> Result<()>{
 		let tolerance = 0.002;
 		let step_size = 1E-2;
 		let default_variance = 1.0;
-		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+		numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 	}
 
 	Ok(())

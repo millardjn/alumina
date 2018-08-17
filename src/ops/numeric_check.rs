@@ -2,12 +2,12 @@ use graph::{GraphDef, Result, Dependencies};
 use id::{NodeID, DataID, NodeTag};
 use ndarray::ArrayD;
 use rand::thread_rng;
-use rand::distributions::{Normal, Sample};
-use ordermap::OrderMap;
+use rand::distributions::{Normal, Distribution};
+use indexmap::IndexMap;
 
 pub fn normal_fill(v: &mut [f32], mean: f32, std_dev: f32){
 	let rng = &mut thread_rng();
-	let mut norm = Normal::new(mean as f64, std_dev as f64);
+	let norm = Normal::new(mean as f64, std_dev as f64);
 	
 
 	for x in v {
@@ -22,7 +22,7 @@ pub fn func_fill(v: &mut [f32], func: &mut FnMut()->f64){
 	}
 }
 
-pub fn generate_input_data(node_ids:&[NodeID], default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<Vec<ArrayD<f32>>> {
+pub fn generate_input_data(node_ids:&[NodeID], default_variance: f32, override_distributions: &mut IndexMap<NodeID, Box<FnMut()->f64>>) -> Result<Vec<ArrayD<f32>>> {
 	let mut input_data: Vec<ArrayD<f32>> = vec!{};
 	for node_id in node_ids {
 		let shape = node_id.shape().to_data_shape()?;
@@ -41,7 +41,7 @@ pub fn generate_input_data(node_ids:&[NodeID], default_variance: f32, override_d
 }
 
 /// Take a step of size step_size in each direction of the gradient
-pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: &OrderMap<DataID, ArrayD<f32>>) -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>, f32) {	
+pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: &IndexMap<DataID, ArrayD<f32>>) -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>, f32) {	
 		let grad_dot: f32 = node_ids.iter().map(|node_id|{
 				results.get(&node_id.gradient_id()).unwrap().iter().fold(0.0, |acc, d| acc + d*d)
 			}).sum();
@@ -63,7 +63,7 @@ pub fn step(step_size: f32, node_ids: &[NodeID], data: &[ArrayD<f32>], results: 
 		(input_1, input_2, grad_dot.sqrt())
 }
 
-pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<()> {
+pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut IndexMap<NodeID, Box<FnMut()->f64>>) -> Result<()> {
 	let mut param_count = 0;
 	let mut input_count = 0;
 
@@ -88,7 +88,7 @@ pub fn numeric_test(iters: usize, failures: usize, tolerance: f32, graph: &Graph
 /// Returns the relative error of the derivatives with respect to parameters and inputs
 ///
 /// (param_err, input_err)
-pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut OrderMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
+pub fn numeric_error(graph: &GraphDef, step_size: f32, default_variance: f32, override_distributions: &mut IndexMap<NodeID, Box<FnMut()->f64>>) -> Result<(f32, f32)> {
 	let dependencies = Dependencies::new(&graph);
 
 	let input_ids: Vec<NodeID> = graph.get_nodes().iter().filter(|node_id| dependencies.data_inputs(&node_id.value_id()).len() == 0 && !node_id.tags().contains(&NodeTag::Parameter)).cloned().collect();

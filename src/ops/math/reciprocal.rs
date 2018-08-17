@@ -63,9 +63,8 @@ fn _reciprocal_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 	use rand::thread_rng;
-	use rand::distributions::{Sample, Range};
+	use rand::distributions::{Distribution, Range};
 
 	let mut g = GraphDef::new();
 
@@ -85,10 +84,10 @@ fn _reciprocal_backprop() -> Result<()>{
 
 	let sample: Box<::std::ops::FnMut() -> f64 + 'static> = Box::new(|| {
 		let rng = &mut thread_rng();
-		let mut range = Range::new(0.5, 10.0);
+		let range = Range::new(0.5, 10.0);
 		range.sample(rng)
 	});
-	let mut override_dist = OrderMap::new();
+	let mut override_dist = indexmap![];
 	override_dist.insert(node1.clone(), sample);
 
 	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut override_dist)?;

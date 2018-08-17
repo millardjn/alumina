@@ -1,5 +1,5 @@
 use shape::NodeShape;
-use ordermap::OrderSet;
+use indexmap::IndexSet;
 use ops::*;
 use std::borrow::Borrow;
 use std::sync::Arc;
@@ -11,21 +11,21 @@ use std::fmt;
 struct NodeDesc {
 	name: String,
 	shape: NodeShape,
-	tags: OrderSet<NodeTag>,
+	tags: IndexSet<NodeTag>,
 }
 
 
 trait OpDescTrait: fmt::Debug + Send + Sync{
 	fn instance(&self) -> &OpInstance;
 
-	fn tags(&self) -> &OrderSet<OpTag>;
+	fn tags(&self) -> &IndexSet<OpTag>;
 }
 impl<O: OpInstance> OpDescTrait for OpDesc<O> {
 	fn instance(&self) -> &OpInstance {
 		&self.instance
 	}
 
-	fn tags(&self) -> &OrderSet<OpTag> {
+	fn tags(&self) -> &IndexSet<OpTag> {
 		&self.tags
 	}
 }
@@ -33,7 +33,7 @@ impl<O: OpInstance> OpDescTrait for OpDesc<O> {
 #[derive(Clone, Debug)]
 struct OpDesc<O: OpInstance> {
 	instance: O,
-	tags: OrderSet<OpTag>,
+	tags: IndexSet<OpTag>,
 }
 
 /// A unique identifier for a node in the computational graph
@@ -45,7 +45,7 @@ pub struct NodeID {
 }
 
 impl NodeID {
-	pub fn new(id: usize, name: String, shape: NodeShape, tags: OrderSet<NodeTag>) -> Self {
+	pub fn new(id: usize, name: String, shape: NodeShape, tags: IndexSet<NodeTag>) -> Self {
 		NodeID {
 			id,
 			desc: Arc::new(NodeDesc{
@@ -74,7 +74,7 @@ impl NodeID {
 	}
 
 	/// Returns the tags of the associated node
-	pub fn tags(&self) -> &OrderSet<NodeTag> {
+	pub fn tags(&self) -> &IndexSet<NodeTag> {
 		&self.desc.tags
 	}
 }
@@ -132,7 +132,7 @@ impl DataID {
 	}
 
 	/// Returns the tags of the associated node
-	pub fn tags(&self) -> &OrderSet<NodeTag> {
+	pub fn tags(&self) -> &IndexSet<NodeTag> {
 		&self.desc.tags
 	}
 }
@@ -166,7 +166,7 @@ pub struct OpID {
 }
 
 impl OpID {
-	pub fn new<O: OpInstance>(id: usize, op: O, tags: OrderSet<OpTag>) -> Self {
+	pub fn new<O: OpInstance>(id: usize, op: O, tags: IndexSet<OpTag>) -> Self {
 		OpID{
 			id: id,
 			desc: Arc::new(OpDesc{
@@ -180,7 +180,7 @@ impl OpID {
 		self.desc.instance().name()
 	}
 
-	pub fn tags(&self) -> &OrderSet<OpTag> {
+	pub fn tags(&self) -> &IndexSet<OpTag> {
 		self.desc.tags()
 	}
 

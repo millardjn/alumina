@@ -1,10 +1,11 @@
-use ordermap::OrderMap;
+use indexmap::IndexMap;
 use rand::{thread_rng, Rng};
-use ndarray::{ArrayD, IxDyn, Si};
+use ndarray::{ArrayD, IxDyn, SliceOrIndex, SliceInfo, Slice};
 use smallvec::SmallVec;
 use data::DataSet;
 
 use std::mem;
+use std::convert::AsRef;
 
 #[derive(Copy, Clone)]
 pub enum Cropping {
@@ -18,18 +19,18 @@ pub enum Cropping {
 /// Renaming the component is optional.
 pub struct Crop<S: DataSet> {
 	set: S,
-	fill: OrderMap<usize, f32>,
-	crops: OrderMap<usize, (Vec<usize>, Cropping)>,
+	fill: IndexMap<usize, f32>,
+	crops: IndexMap<usize, (Vec<usize>, Cropping)>,
 }
 
 impl<S: DataSet> Crop<S> {
 	/// Crop the given component to the given shape. `shape` must have the same dimensionality as the component.
 	pub fn new(set: S, component: usize, shape: &[usize], cropping: Cropping) -> Self {
-		let mut crops = OrderMap::new();
+		let mut crops = indexmap![];
 		crops.insert(component, (shape.to_vec(), cropping));
 		Crop {
 			set,
-			fill: OrderMap::new(),
+			fill: indexmap![],
 			crops,
 		}
 	}
@@ -93,17 +94,22 @@ fn crop(arr: ArrayD<f32>, crop_shape: &[usize], cropping: &Cropping, fill: f32) 
 
 	let mut out_arr = ArrayD::from_elem(IxDyn(crop_shape), fill);
 
-	let mut input_slice_arg: SmallVec<[Si; 6]> = SmallVec::new();
-	let mut output_slice_arg: SmallVec<[Si; 6]> = SmallVec::new();
+	let mut input_slice_arg: SmallVec<[SliceOrIndex; 6]> = SmallVec::new();
+	let mut output_slice_arg: SmallVec<[SliceOrIndex; 6]> = SmallVec::new();
 	for (&input_width, &output_width) in arr.shape().iter().zip(crop_shape) {
 		let (in_si, out_si) = range(cropping, input_width as isize, output_width as isize);
-		input_slice_arg.push(in_si);
-		output_slice_arg.push(out_si);
+		input_slice_arg.push(in_si.into());
+		output_slice_arg.push(out_si.into());
 	}
 
-	{
-		let in_slice = arr.slice(input_slice_arg.as_slice());
-		let mut out_slice = out_arr.slice_mut(output_slice_arg.as_slice());
+	{	
+		let in_si = SliceInfo::new(input_slice_arg).unwrap();
+		let out_si = SliceInfo::new(output_slice_arg).unwrap();
+		let in_si: &SliceInfo<[SliceOrIndex], IxDyn> = in_si.as_ref();
+		let out_si: &SliceInfo<[SliceOrIndex], IxDyn> = out_si.as_ref();
+
+		let in_slice = arr.slice(in_si);
+		let mut out_slice = out_arr.slice_mut(out_si);
 		out_slice.assign(&in_slice);
 	}
 
@@ -112,19 +118,19 @@ fn crop(arr: ArrayD<f32>, crop_shape: &[usize], cropping: &Cropping, fill: f32) 
 
 
 // returns Si for input and output
-fn range(cropping: &Cropping, input_width: isize, output_width: isize) -> (Si, Si) {
+fn range(cropping: &Cropping, input_width: isize, output_width: isize) -> (Slice, Slice) {
 	match cropping {
 		&Cropping::Centre{..} => {
 			if input_width < output_width {
 				let width = input_width;
 				let output_start = (input_width - output_width)/2;
-				(Si(0, Some(width), 1),
-				Si(output_start, Some(output_start + width), 1))
+				(Slice::new(0, Some(width), 1),
+				Slice::new(output_start, Some(output_start + width), 1))
 			} else {
 				let width = output_width;
 				let input_start = (output_width - input_width)/2;
-				(Si(input_start, Some(input_start + width), 1),
-				Si(0, Some(width), 1))
+				(Slice::new(input_start, Some(input_start + width), 1),
+				Slice::new(0, Some(width), 1))
 			}
 		},
 
@@ -132,13 +138,13 @@ fn range(cropping: &Cropping, input_width: isize, output_width: isize) -> (Si, S
 			if input_width < output_width {
 				let width = input_width;
 				let output_start = thread_rng().gen_range(0, output_width - input_width + 1);
-				(Si(0, Some(width), 1),
-				Si(output_start, Some(output_start + width), 1))
+				(Slice::new(0, Some(width), 1),
+				Slice::new(output_start, Some(output_start + width), 1))
 			} else {
 				let width = output_width;
 				let input_start = thread_rng().gen_range(0, input_width - output_width + 1);
-				(Si(input_start, Some(input_start + width), 1),
-				Si(0, Some(width), 1))
+				(Slice::new(input_start, Some(input_start + width), 1),
+				Slice::new(0, Some(width), 1))
 			}
 		},
 	}

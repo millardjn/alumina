@@ -5,7 +5,7 @@ use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::NodeDim;
 use smallvec::SmallVec;
 use std::any::Any;
-use odds;
+use unchecked_index as ui;
 /// An `Op` which fills the output with the coordinates of the selected dimensions
 ///
 /// The op writes coordinates of selected higher dimensions to the channel dimensions (last axis).
@@ -190,7 +190,7 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 		//println!("{}   {}", slice.len(), channels.len());
 		for i in 0..slice.len()/channels.len() {
 			for j in 0..channels.len() {
-				*odds::get_unchecked_mut(slice, i*channels.len() + j) += *odds::get_unchecked(channels, j);
+				*ui::get_unchecked_mut(slice, i*channels.len() + j) += *channels.get_unchecked_mut(j);
 			}
 		}
 		return;
@@ -205,7 +205,7 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 			channels[channel_ind + 1] = 1.0 - val;
 
 			let stride = slice.len()/shape[axis];
-			let new_slice = odds::slice_unchecked_mut(slice, i*stride, (i+1)*stride);
+			let new_slice = ui::get_unchecked_mut(slice, i*stride.. (i+1)*stride);
 			fill_coord(axis + 1, mask, shape, channel_ind + 2, channels, new_slice);
 			val += inc;
 		}
@@ -213,7 +213,7 @@ unsafe fn fill_coord(axis: usize, mask: &[bool], shape: &[usize], channel_ind: u
 		for i in 0..shape[axis]{
 			//println!("false a{} i{}", axis, i);
 			let stride = slice.len()/shape[axis];
-			let new_slice = odds::slice_unchecked_mut(slice, i*stride, (i+1)*stride);
+			let new_slice = ui::get_unchecked_mut(slice, i*stride.. (i+1)*stride);
 			fill_coord(axis + 1, mask, shape, channel_ind, channels, new_slice);
 		}
 	}

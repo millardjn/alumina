@@ -395,7 +395,6 @@ fn test_l1_backprop(){
 fn _l1_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -408,7 +407,7 @@ fn _l1_backprop() -> Result<()>{
 	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -421,7 +420,6 @@ fn test_l1_output_backprop(){
 fn _l1_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::loss::proportional::Proportional;
 
 	let mut g = GraphDef::new();
@@ -437,7 +435,7 @@ fn _l1_output_backprop() -> Result<()>{
 	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }

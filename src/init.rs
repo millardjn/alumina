@@ -4,8 +4,8 @@ use std::ops::DerefMut;
 use ops::{OpInstance};
 use id::OpID;
 use ndarray::ArrayViewMutD;
-use rand::{thread_rng, Isaac64Rng, Rng};
-use rand::distributions::{Sample, Normal, Range};
+use rand::{thread_rng, Isaac64Rng, SeedableRng};
+use rand::distributions::{Distribution, Normal, Range};
 
 /// Wrapper for initialiser closures that implements `Clone` and `Debug`
 #[derive(Clone)]
@@ -37,8 +37,8 @@ impl Initialiser {
 	/// This initialises with gaussian values drawn from N(mean, std_dev^2).
 	pub fn gaussian(mean: f32, std_dev: f32) -> Initialiser {
 		Initialiser::new("Gaussian Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
-			let mut rng = thread_rng().gen::<Isaac64Rng>();
-			let mut norm = Normal::new(mean as f64, std_dev as f64);
+			let mut rng = Isaac64Rng::from_rng(thread_rng()).unwrap();
+			let norm = Normal::new(mean as f64, std_dev as f64);
 			for e in arr.iter_mut() {
 				*e = norm.sample(&mut rng) as f32;
 			}
@@ -50,8 +50,8 @@ impl Initialiser {
 	/// This initialises uniform values drawn from [low, high).
 	pub fn uniform(low: f32, high: f32) -> Initialiser {
 		Initialiser::new("Uniform Initialiser".to_string(), move |mut arr: ArrayViewMutD<f32>, _instance: Option<&OpInstance>|{
-			let mut rng = thread_rng().gen::<Isaac64Rng>();
-			let mut rang = Range::new(low, high);
+			let mut rng = Isaac64Rng::from_rng(thread_rng()).unwrap();
+			let rang = Range::new(low, high);
 			for e in arr.iter_mut() {
 				*e = rang.sample(&mut rng) as f32;
 			}

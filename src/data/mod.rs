@@ -5,7 +5,7 @@ pub mod crop;
 
 pub use data::crop::{Crop, Cropping};
 
-use rand::{thread_rng, Isaac64Rng, Rng};
+use rand::{thread_rng, Isaac64Rng, Rng, RngCore, SeedableRng};
 use ndarray::{ArrayD, IxDyn, Axis};
 use smallvec::SmallVec;
 
@@ -508,18 +508,18 @@ impl<S: DataSet> DataStream for Sequential<S> {
 
 pub struct Random<S: DataSet> {
 	set: S,
-	rng: Box<Rng + Send>,
+	rng: Box<RngCore + Send>,
 }
 
 impl<S: DataSet> Random<S> {
 	pub fn new(set: S) -> Self {
 		Random{
 			set: set,
-			rng: Box::new(thread_rng().gen::<Isaac64Rng>()),
+			rng: Box::new(Isaac64Rng::from_rng(thread_rng()).unwrap()),
 		}
 	}
 
-	pub fn rng<R: Rng + 'static + Send>(mut self, rng: R) -> Self {
+	pub fn rng<R: RngCore + 'static + Send>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}
@@ -545,7 +545,7 @@ impl<S: DataSet> DataStream for Random<S> {
 
 pub struct ShuffleRandom<S: DataSet> {
 	set: S,
-	rng: Box<Rng + Send>,
+	rng: Box<RngCore + Send>,
 	order: Vec<usize>,
 	next_i: usize,
 }
@@ -555,13 +555,13 @@ impl<S: DataSet> ShuffleRandom<S> {
 		let set_len = set.length();
 		ShuffleRandom{
 			set: set,
-			rng: Box::new(thread_rng().gen::<Isaac64Rng>()),
+			rng: Box::new(Isaac64Rng::from_rng(thread_rng()).unwrap()),
 			order: (0..set_len).collect(),
 			next_i: set_len,
 		}
 	}
 
-	pub fn rng<R: Rng + 'static + Send>(mut self, rng: R) -> Self {
+	pub fn rng<R: RngCore + 'static + Send>(mut self, rng: R) -> Self {
 		self.rng = Box::new(rng);
 		self
 	}

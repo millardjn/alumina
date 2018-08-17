@@ -393,7 +393,6 @@ fn test_cross_entropy_backprop(){
 fn _cross_entropy_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::activ::logistic::Logistic;
 
 	let mut g = GraphDef::new();
@@ -410,7 +409,7 @@ fn _cross_entropy_backprop() -> Result<()>{
 	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -423,7 +422,6 @@ fn test_cross_entropy_output_backprop(){
 fn _cross_entropy_output_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
-	use ordermap::OrderMap;
 	use ops::activ::logistic::Logistic;
 	use ops::loss::proportional::Proportional;
 
@@ -444,7 +442,7 @@ fn _cross_entropy_output_backprop() -> Result<()>{
 	let tolerance = 0.005;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }

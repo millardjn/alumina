@@ -254,7 +254,6 @@ fn _srgb_to_linear_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -271,7 +270,7 @@ fn _srgb_to_linear_backprop() -> Result<()>{
 	let tolerance = 0.002;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -285,7 +284,6 @@ fn _linear_to_srgb_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -302,7 +300,7 @@ fn _linear_to_srgb_backprop() -> Result<()>{
 	let tolerance = 0.005; // why is the accuracy so much worse? cancellation at the high end?
 	let step_size = 1E-2;
 	let default_variance = 0.5;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -316,7 +314,6 @@ fn _srgb_to_linear_slow_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -333,7 +330,7 @@ fn _srgb_to_linear_slow_backprop() -> Result<()>{
 	let tolerance = 0.002;
 	let step_size = 1E-2;
 	let default_variance = 1.0;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }
@@ -347,7 +344,6 @@ fn _linear_to_srgb_slow_backprop() -> Result<()>{
 	use graph::GraphDef;
 	use ops::numeric_check::numeric_test;
 	use ops::loss::mse::Mse;
-	use ordermap::OrderMap;
 
 	let mut g = GraphDef::new();
 
@@ -364,7 +360,7 @@ fn _linear_to_srgb_slow_backprop() -> Result<()>{
 	let tolerance = 0.005; // why is the accuracy so much worse? cancellation at the high end?
 	let step_size = 1E-2;
 	let default_variance = 0.5;
-	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut OrderMap::new())?;
+	numeric_test(iters, failures, tolerance, &g, step_size, default_variance, &mut indexmap![])?;
 
 	Ok(())
 }

@@ -2,7 +2,7 @@ use ndarray::ArrayD;
 use ndarray::prelude::*;
 use std::cell::Cell;
 use std::mem;
-use ordermap::OrderMap;
+use indexmap::IndexMap;
 use std::any::Any;
 
 use id::*;
@@ -21,22 +21,22 @@ enum DataState<T>{
 /// similar to a RefCell for a Collection of Arrays, but with some limitations.
 /// Each element can only be borrowed either once mutably or many times immutably, however, borrows are not reset until the end of the Pass
 pub struct Storage<'a> {
-	shapes: &'a OrderMap<NodeID, IxDyn>,
-	static_inputs: &'a OrderMap<DataID, ArrayD<f32>>,
+	shapes: &'a IndexMap<NodeID, IxDyn>,
+	static_inputs: &'a IndexMap<DataID, ArrayD<f32>>,
 	dependencies: &'a Dependencies,
 
 	loss: Cell<f32>,
-	data: OrderMap<DataID, DataState<ArrayD<f32>>>,
-	borrow_flags: OrderMap<DataID, Cell<usize>>,
+	data: IndexMap<DataID, DataState<ArrayD<f32>>>,
+	borrow_flags: IndexMap<DataID, Cell<usize>>,
 	current_pass: Option<PassID>,
-	pass_data: OrderMap<PassID, Box<Any>>,
+	pass_data: IndexMap<PassID, Box<Any>>,
 }
 
 const UNUSED: usize = 0;
 const WRITING: usize = !0;
 impl<'a> Storage<'a> {
 
-	pub (crate) fn new(included_data: &OrderMap<DataID, DataStatus>, dependencies: &'a Dependencies, static_inputs: &'a OrderMap<DataID, ArrayD<f32>>, input_data: OrderMap<DataID, ArrayD<f32>>, shapes: &'a OrderMap<NodeID, IxDyn>) -> Storage<'a> { //, graph: &'a GraphDef
+	pub (crate) fn new(included_data: &IndexMap<DataID, DataStatus>, dependencies: &'a Dependencies, static_inputs: &'a IndexMap<DataID, ArrayD<f32>>, input_data: IndexMap<DataID, ArrayD<f32>>, shapes: &'a IndexMap<NodeID, IxDyn>) -> Storage<'a> { //, graph: &'a GraphDef
 
 		// let num_nodes = dependencies.node_inputs().len();
 		// let num_data = dependencies.data_inputs().len();
@@ -45,7 +45,7 @@ impl<'a> Storage<'a> {
 		//debug_assert_eq!(num_nodes, shapes.len());
 		//debug_assert_eq!(num_data, included_data.len());
 
-		let mut data: OrderMap<DataID, DataState<ArrayD<f32>>> = included_data.iter().map(|(id, _state)| (id.clone(), DataState::Unallocated)).collect();
+		let mut data: IndexMap<DataID, DataState<ArrayD<f32>>> = included_data.iter().map(|(id, _state)| (id.clone(), DataState::Unallocated)).collect();
 		let borrow_flags = included_data.iter().map(|(id, _state)| (id.clone(), Cell::new(UNUSED))).collect();
 
 		for (data_id, input_data) in input_data.into_iter() {
@@ -67,7 +67,7 @@ impl<'a> Storage<'a> {
 			data: data,
 			borrow_flags: borrow_flags,
 			current_pass: None,
-			pass_data: OrderMap::new(),
+			pass_data: indexmap![],
 		}
 	}
 
@@ -213,10 +213,10 @@ impl<'a> Storage<'a> {
 		self.data.contains_key(data_id)
 	}
 
-	/// Consume the Storage and converts it into a OrderMap.
+	/// Consume the Storage and converts it into a IndexMap.
 	///
 	/// Intended for use after storage is returned from `execute()`.
-	pub fn into_map(self) -> OrderMap<DataID, ArrayD<f32>> {
+	pub fn into_map(self) -> IndexMap<DataID, ArrayD<f32>> {
 		self.data.into_iter().filter_map(|(id, entry)|{
 			match entry {
 				DataState::Allocated(arr) => Some((id, arr)),

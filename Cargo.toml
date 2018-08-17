@@ -1,6 +1,6 @@
 [package]
 name = "alumina"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["J. Millard <millard.jn@gmail.com>"]
 description = "An Experimental Deep Learning Library"
 repository = "https://github.com/millardjn/alumina"
@@ -15,28 +15,29 @@ license = "MIT"
 
 
 [dependencies]
-clippy = {version = "*", optional = true}
-ndarray = "0.10"
-walkdir = "1"
-error-chain = "0.11"
-odds = "0.2.25"
+clippy = {version = "0.0.212", optional = true}
+ndarray = "0.11.2"
+walkdir = "2.2"
+error-chain = "0.12"
+odds = "0.3"
 smallvec = "0.6"
-rand = "0.3"
+rand = "0.5.5"
 #byteorder = {version = "1.1", optional = true}
-byteorder = "1.1"
+byteorder = "1.2.4"
 #image = {version = "0.17", optional = true}
-image = "0.17"
-num_cpus = "1.6"
-threadpool = "1.3"
-lazy_static = "0.2"
-typenum = "1.9"
+image = "0.19"
+num_cpus = "1.8"
+threadpool = "1.7"
+lazy_static = "1.1"
+typenum = "1.10"
 typenum_loops = "0.3"
-generic-array = "0.8"
-scoped_threadpool = "0.1.7"
-ordermap = "0.3"
-matches = "0.1"
+generic-array = "0.11"
+scoped_threadpool = "0.1.9"
+indexmap = "1.0"
+matches = "0.1.7"
 arrayvec = "0.4"
-rayon = "0.9"
+rayon = "1.0"
+unchecked-index = "0.2.2"
 
 matrixmultiply_mt = "0.1.6"
 

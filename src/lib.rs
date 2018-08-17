@@ -19,11 +19,12 @@ extern crate typenum;
 extern crate typenum_loops;
 extern crate generic_array;
 extern crate scoped_threadpool;
-extern crate ordermap;
 #[macro_use] extern crate matches;
+#[macro_use] extern crate indexmap;
 extern crate arrayvec;
 extern crate image;
 extern crate rayon;
+extern crate unchecked_index;
 
 //#![deny(missing_docs)]
 
