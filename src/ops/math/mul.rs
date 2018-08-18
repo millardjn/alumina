@@ -88,14 +88,14 @@ impl OpInstance for MulInstance {
 	fn inner_nodes(&self) -> Vec<NodeID>{vec![]}
 
 	fn propagate_shape_constraints(&self, shapes: &mut GraphShapes) -> Result<()>{
-		let output_shape: NodeShape = shapes.get_shape(&self.input2_id).dimensions().iter().map(|dim|{
+		let mut output_shape: NodeShape = shapes.get_shape(&self.input2_id).dimensions().iter().map(|dim|{
 			match dim {
 				&NodeDim::Known(1) => NodeDim::Unknown,
 				&NodeDim::Known(x) => NodeDim::Known(x),
 				_ => unreachable!(),
 			}
 		}).into();
-		output_shape.merge(shapes.get_shape(&self.input1_id))?;
+		output_shape = output_shape.merge(shapes.get_shape(&self.input1_id))?;
 		shapes.merge_with(&self.output_id, &output_shape)
 	}
 
