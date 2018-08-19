@@ -4,6 +4,7 @@ use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD, Zip};
+use ndarray_parallel::prelude::*;
 use std::any::Any;
 
 /// Div Op
@@ -121,10 +122,7 @@ impl OpInstance for DivInstance {
 			output_shape = output_shape.merge(shapes.get_shape(&self.numerator_id))?;
 			shapes.merge_with(&self.output_id, &output_shape)
 		}
-
-
 	}
-
 }
 
 
@@ -172,16 +170,13 @@ impl Pass for DivForward {
 				numerator.broadcast(output.shape()).is_some(), 
 				ErrorKind::PassError(self.name(), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output.shape()))
 			);
-			let iter = denominator.exact_chunks(numerator.shape()).into_iter()
-				.zip(output.exact_chunks_mut(numerator.shape()));
-			for (denominator_chunk, mut out_chunk) in iter {
-				Zip::from(&mut out_chunk)
-					.and(&numerator)
-					.and(&denominator_chunk)
-					.apply(|output, numerator, denominator| {
-						*output += numerator / denominator;
-					});
-			}
+
+			Zip::from(&mut output)
+				.and_broadcast(&numerator)
+				.and(&denominator)
+				.par_apply(|output, numerator, denominator| {
+					*output += numerator / denominator;
+				});
 		} else {
 			ensure!(
 				numerator.shape() == output.shape(),
@@ -191,19 +186,13 @@ impl Pass for DivForward {
 				denominator.broadcast(output.shape()).is_some(), 
 				ErrorKind::PassError(self.name(), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output.shape()))
 			);
-			let iter = numerator.exact_chunks(denominator.shape()).into_iter()
-				.zip(output.exact_chunks_mut(denominator.shape()));
-			for (numerator_chunk, mut out_chunk) in iter {
-				Zip::from(&mut out_chunk)
-					.and(&numerator_chunk)
-					.and(&denominator)
-					.apply(|output, numerator, denominator| {
-						*output += numerator / denominator;
-					});
-			}
+			Zip::from(&mut output)
+				.and(&numerator)
+				.and_broadcast(&denominator)
+				.par_apply(|output, numerator, denominator| {
+					*output += numerator / denominator;
+				});
 		}
-
-
 
 		Ok(Box::new(()))
 	}
@@ -245,147 +234,76 @@ impl Pass for DivBackward {
 		let output_grad = data.get(&self.output_id.gradient_id())?;
 		
 		if self.broadcast_numerator {
-				ensure!(
-					denominator.shape() == output_grad.shape(),
-					ErrorKind::PassError(self.name(), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output_grad.shape()))
-				);
-				ensure!(
-					numerator.broadcast(output_grad.shape()).is_some(), 
-					ErrorKind::PassError(self.name(), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output_grad.shape()))
-				);
-			if data.is_required(&self.numerator_id.gradient_id()) && data.is_required(&self.denominator_id.gradient_id()) {
-				let mut numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
-				let mut denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
+			ensure!(
+				denominator.shape() == output_grad.shape(),
+				ErrorKind::PassError(self.name(), format!("denominator shape: {:?} did not match output shape: {:?}", denominator.shape(), output_grad.shape()))
+			);
+			ensure!(
+				numerator.broadcast(output_grad.shape()).is_some(), 
+				ErrorKind::PassError(self.name(), format!("Could not broadcast numerator shape: {:?} to output shape: {:?}", numerator.shape(), output_grad.shape()))
+			);
 
-				let iter = denominator.exact_chunks(numerator.shape()).into_iter()
-					.zip(denominator_grad.exact_chunks_mut(numerator.shape()))
-					.zip(output_grad.exact_chunks(numerator.shape()));
+			if data.is_required(&self.numerator_id.gradient_id()) {
+				unsafe{
+					let numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
 
-				for ((denominator_chunk, mut denominator_grad_chunk) , out_grad_chunk) in iter {
-
-					Zip::from(&mut numerator_grad)
-						.and(&denominator_chunk)
-						.and(&out_grad_chunk)
-						.apply(|numerator_grad, denominator, out_grad| {
+					// do not split/parallelise this Zip!
+					Zip::from(&denominator)
+						.and_broadcast(&numerator_grad)
+						.and(&output_grad)
+						.apply(|denominator, numerator_grad, out_grad| {
+							let numerator_grad = numerator_grad as *const f32 as *mut f32;
 							*numerator_grad += out_grad/denominator;
-						});
-
-					Zip::from(&mut denominator_grad_chunk)
-						.and(&numerator)
-						.and(&denominator_chunk)
-						.and(&out_grad_chunk)
-						.apply(|denominator_grad, numerator, denominator, out_grad| {
-							*denominator_grad += -numerator * out_grad / (denominator * denominator);
-						});
-
-				}
-
-			} else if data.is_required(&self.numerator_id.gradient_id()) {
-				let mut numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
-
-				let iter = denominator.exact_chunks(numerator.shape()).into_iter()
-					.zip(output_grad.exact_chunks(numerator.shape()));
-
-				for (mut denominator_chunk, out_grad_chunk) in iter {
-
-					Zip::from(&mut numerator_grad)
-						.and(&denominator_chunk)
-						.and(&out_grad_chunk)
-						.apply(|numerator_grad, denominator, out_grad| {
-							*numerator_grad += out_grad/denominator;
-						});
-				}
-			} else if data.is_required(&self.denominator_id.gradient_id()) {
-				let mut denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
-
-				let iter = denominator.exact_chunks(numerator.shape()).into_iter()
-					.zip(denominator_grad.exact_chunks_mut(numerator.shape()))
-					.zip(output_grad.exact_chunks(numerator.shape()));
-
-				for ((denominator_chunk, mut denominator_grad_chunk) , out_grad_chunk) in iter {
-
-					Zip::from(&mut denominator_grad_chunk)
-						.and(&numerator)
-						.and(&denominator_chunk)
-						.and(&out_grad_chunk)
-						.apply(|denominator_grad, numerator, denominator, out_grad| {
-							*denominator_grad += -numerator * out_grad / (denominator * denominator);
 						});
 				}
 			}
+			if data.is_required(&self.denominator_id.gradient_id()) {
+				let mut denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
+				Zip::from(&mut denominator_grad)
+					.and_broadcast(&numerator)
+					.and(&denominator)
+					.and(&output_grad)
+					.par_apply(|denominator_grad, numerator, denominator, out_grad| {
+						*denominator_grad += -numerator * out_grad / (denominator * denominator);
+					});
+			}
 		} else {
-				ensure!(
-					numerator.shape() == output_grad.shape(),
-					ErrorKind::PassError(self.name(), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output_grad.shape()))
-				);
-						ensure!(
-					denominator.broadcast(output_grad.shape()).is_some(), 
-					ErrorKind::PassError(self.name(), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output_grad.shape()))
-				);
+			ensure!(
+				numerator.shape() == output_grad.shape(),
+				ErrorKind::PassError(self.name(), format!("numerator shape: {:?} did not match output shape: {:?}", numerator.shape(), output_grad.shape()))
+			);
+					ensure!(
+				denominator.broadcast(output_grad.shape()).is_some(), 
+				ErrorKind::PassError(self.name(), format!("Could not broadcast denominator shape: {:?} to output shape: {:?}", denominator.shape(), output_grad.shape()))
+			);
 
-				if data.is_required(&self.numerator_id.gradient_id()) && data.is_required(&self.denominator_id.gradient_id()) {
-				let mut numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
-				let mut denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
-
-				let iter = numerator.exact_chunks(denominator.shape()).into_iter()
-					.zip(numerator_grad.exact_chunks_mut(denominator.shape()))
-					.zip(output_grad.exact_chunks(denominator.shape()));
-
-				for ((numerator_chunk, mut numerator_grad_chunk) , out_grad_chunk) in iter {
-
-					Zip::from(&mut numerator_grad_chunk)
-						.and(&denominator)
-						.and(&out_grad_chunk)
-						.apply(|numerator_grad, denominator, out_grad| {
-							*numerator_grad += out_grad/denominator;
-						});
-
-					Zip::from(&mut denominator_grad)
-						.and(&numerator_chunk)
-						.and(&denominator)
-						.and(&out_grad_chunk)
-						.apply(|denominator_grad, numerator, denominator, out_grad| {
-							*denominator_grad += -numerator * out_grad / (denominator * denominator);
-						});
-
-				}
-
-			} else if data.is_required(&self.numerator_id.gradient_id()) {
+			if data.is_required(&self.numerator_id.gradient_id()) {
 				let mut numerator_grad = data.get_mut(&self.numerator_id.gradient_id())?;
 
-				let iter = numerator_grad.exact_chunks_mut(denominator.shape()).into_iter()
-					.zip(output_grad.exact_chunks(denominator.shape()));
+				Zip::from(&mut numerator_grad)
+					.and_broadcast(&denominator)
+					.and(&output_grad)
+					.par_apply(|numerator_grad, denominator, out_grad| {
+						*numerator_grad += out_grad/denominator;
+					});
+			}
+			
+			if data.is_required(&self.denominator_id.gradient_id()) {
+				unsafe {
+					let denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
 
-				for (mut numerator_grad_chunk, out_grad_chunk) in iter {
-
-					Zip::from(&mut numerator_grad_chunk)
-						.and(&denominator)
-						.and(&out_grad_chunk)
-						.apply(|numerator_grad, denominator, out_grad| {
-							*numerator_grad += out_grad/denominator;
-						});
-				}
-			} else if data.is_required(&self.denominator_id.gradient_id()) {
-				let mut denominator_grad = data.get_mut(&self.denominator_id.gradient_id())?;
-
-				let iter = numerator.exact_chunks(denominator.shape()).into_iter()
-					.zip(output_grad.exact_chunks(denominator.shape()));
-
-				for (numerator_chunk, out_grad_chunk) in iter {
-
-					Zip::from(&mut denominator_grad)
-						.and(&numerator_chunk)
-						.and(&denominator)
-						.and(&out_grad_chunk)
-						.apply(|denominator_grad, numerator, denominator, out_grad| {
+					// do not split/parallelise this Zip!
+					Zip::from(&numerator)
+						.and_broadcast(&denominator_grad)
+						.and_broadcast(&denominator)
+						.and(&output_grad)
+						.apply(|numerator, denominator_grad, denominator, out_grad| {
+							let denominator_grad = denominator_grad as *const f32 as *mut f32;
 							*denominator_grad += -numerator * out_grad / (denominator * denominator);
 						});
 				}
 			}
 		}
-
-
-
 
 		Ok(Box::new(()))
 	}

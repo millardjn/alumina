@@ -5,6 +5,7 @@
 #[macro_use] 
 extern crate error_chain;
 extern crate ndarray;
+extern crate ndarray_parallel;
 extern crate odds;
 extern crate walkdir;
 extern crate smallvec;

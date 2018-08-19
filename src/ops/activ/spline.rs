@@ -8,7 +8,7 @@ use std::any::Any;
 use smallvec::SmallVec;
 use init::Initialiser;
 use arrayvec::ArrayVec;
-use rayon::prelude::*;
+use ndarray_parallel::prelude::*;
 
 /// `Spline` A smooth continuous function consisting of linear components jointed by a central cubic region.
 ///
@@ -246,7 +246,7 @@ impl Pass for SplineForward {
 	fn run(&self, data: &Storage) -> Result<Box<Any>> {
 		let input = data.get(&self.input_id.value_id())?;
 		let weights = data.get(&self.weights_id.value_id())?;
-		let mut output = data.get_mut(&self.output_id.value_id())?;
+		let output = data.get_mut(&self.output_id.value_id())?;
 
 		let input_shape = input.shape();
 		let output_shape = output.shape().to_vec();
@@ -267,35 +267,35 @@ impl Pass for SplineForward {
 		// let iter = output.exact_chunks_mut(weights_shape).into_iter()
 		// 	.zip(input.exact_chunks(weights_shape));
 		
-		let mut outputs: Vec<_> = output.exact_chunks_mut(weights_shape).into_iter().collect();
-		let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
+		// let mut outputs: Vec<_> = output.exact_chunks_mut(weights_shape).into_iter().collect();
+		// let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
 
-		//for (mut output, input) in iter {
-		inputs.par_iter().zip(outputs.par_iter_mut()).for_each(|(input, output)|{
-			Zip::from(output)
-				.and(input)
-				.and(&weights[0])
-				.and(&weights[1])
-				.and(&weights[2])
-				.apply(|output, &input, &left, &centre, &right| {
-					let x = input;
-					if x <= -1.0 {
-						*output += (-2.0/3.0)*(centre - 1.5*left*x - 0.875*left - 0.125*right); // linear segment to the left of x=-1
-					} else if x >= 1.0 {
-						*output += (2.0/3.0)*(centre + 1.5*right*x - 0.125*left - 0.875*right); // linear segment to the right of x=1
-					} else {
-						let x2 = x*x;
-						let x3 = x*x*x;
-						*output += (-1.0/3.0)*(
-								centre*x3
-								-3.0*centre*x
-								-0.5*(left+right)*x3
-								+0.75*(left-right)*x2
-							); // cubic spline passing through 0,0 connecting left and right
-					}
-				});
+		// //for (mut output, input) in iter {
+		// inputs.par_iter().zip(outputs.par_iter_mut()).for_each(|(input, output)|{
+		Zip::from(output)
+			.and(&input)
+			.and_broadcast(&weights[0])
+			.and_broadcast(&weights[1])
+			.and_broadcast(&weights[2])
+			.par_apply(|output, &input, &left, &centre, &right| {
+				let x = input;
+				if x <= -1.0 {
+					*output += (-2.0/3.0)*(centre - 1.5*left*x - 0.875*left - 0.125*right); // linear segment to the left of x=-1
+				} else if x >= 1.0 {
+					*output += (2.0/3.0)*(centre + 1.5*right*x - 0.125*left - 0.875*right); // linear segment to the right of x=1
+				} else {
+					let x2 = x*x;
+					let x3 = x*x*x;
+					*output += (-1.0/3.0)*(
+							centre*x3
+							-3.0*centre*x
+							-0.5*(left+right)*x3
+							+0.75*(left-right)*x2
+						); // cubic spline passing through 0,0 connecting left and right
+				}
+			});
 		//}
-		});
+		// });
 
 		Ok(Box::new(()))
 	}
@@ -355,20 +355,20 @@ impl Pass for SplineBackward {
 
 		
 		if data.is_required(&self.input_id.gradient_id()) {
-			let mut input_grad = data.get_mut(&self.input_id.gradient_id())?;
+			let input_grad = data.get_mut(&self.input_id.gradient_id())?;
 
-			let output_grads: Vec<_> = output_grad.exact_chunks(weights_shape).into_iter().collect();
-			let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
-			let mut input_grads: Vec<_> = input_grad.exact_chunks_mut(weights_shape).into_iter().collect();
+			// let output_grads: Vec<_> = output_grad.exact_chunks(weights_shape).into_iter().collect();
+			// let inputs: Vec<_> = input.exact_chunks(weights_shape).into_iter().collect();
+			// let mut input_grads: Vec<_> = input_grad.exact_chunks_mut(weights_shape).into_iter().collect();
 
-			output_grads.par_iter().zip(inputs.par_iter()).zip(input_grads.par_iter_mut()).for_each(|((output_grad, input), input_grad)|{
-				Zip::from(output_grad)
-					.and(input)
-					.and(&weights[0])
-					.and(&weights[1])
-					.and(&weights[2])
+			// output_grads.par_iter().zip(inputs.par_iter()).zip(input_grads.par_iter_mut()).for_each(|((output_grad, input), input_grad)|{
+				Zip::from(&output_grad)
+					.and(&input)
+					.and_broadcast(&weights[0])
+					.and_broadcast(&weights[1])
+					.and_broadcast(&weights[2])
 					.and(input_grad)
-					.apply(|&output_grad, &input, &left, &centre, &right, input_grad| {
+					.par_apply(|&output_grad, &input, &left, &centre, &right, input_grad| {
 						let x = input;
 						if x <= -1.0 {
 							*input_grad += output_grad * left;
@@ -380,27 +380,32 @@ impl Pass for SplineBackward {
 							*input_grad += output_grad * (centre*(1.0-x2) + x*(left*(0.5*x-0.5) + right*(0.5*x+0.5)));
 						}
 					});
-			});
+			//});
 
 		}
 
 		if data.is_required(&self.weights_id.gradient_id()) {
 			let mut weights_grad = data.get_mut(&self.weights_id.gradient_id())?;
 			let mut weights_grad_iter = weights_grad.outer_iter_mut();
-			let mut weights_grad0 = weights_grad_iter.next().unwrap();
-			let mut weights_grad1 = weights_grad_iter.next().unwrap();
-			let mut weights_grad2 = weights_grad_iter.next().unwrap();
+			let weights_grad0 = weights_grad_iter.next().unwrap();
+			let weights_grad1 = weights_grad_iter.next().unwrap();
+			let weights_grad2 = weights_grad_iter.next().unwrap();
 
-			let iter = output_grad.exact_chunks(weights_shape).into_iter()
-				.zip(input.exact_chunks(weights_shape));
+			// let iter = output_grad.exact_chunks(weights_shape).into_iter()
+			// 	.zip(input.exact_chunks(weights_shape));
 
-			for (output_grad, input) in iter {
+			//for (output_grad, input) in iter {
+			unsafe{
 				Zip::from(&output_grad)
 					.and(&input)
-					.and(&mut weights_grad0)
-					.and(&mut weights_grad1)
-					.and(&mut weights_grad2)
+					.and_broadcast(&weights_grad0)
+					.and_broadcast(&weights_grad1)
+					.and_broadcast(&weights_grad2)
 					.apply(|&output_grad, &input, left_grad, centre_grad, right_grad| {
+						let left_grad = left_grad as *const f32 as *mut f32;
+						let centre_grad = centre_grad as *const f32 as *mut f32;
+						let right_grad = right_grad as *const f32 as *mut f32;
+
 						let x = input;
 						if x <= -1.0 {
 							*left_grad   += output_grad * (x + 7.0/12.0);
@@ -419,6 +424,7 @@ impl Pass for SplineBackward {
 						}
 					});
 			}
+			//}
 		}
 
 

@@ -4,6 +4,7 @@ use storage::Storage;
 use ops::{standard_op_name, Op, OpInstance, Pass};
 use shape::{NodeShape, NodeDim};
 use ndarray::{ArrayViewMutD, ArrayViewD, Zip};
+use ndarray_parallel::prelude::*;
 use std::any::Any;
 
 /// Mul Op
@@ -147,16 +148,15 @@ impl Pass for MulForward {
 			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output.shape()))
 		);
 
-		let iter = input1.exact_chunks(input2.shape()).into_iter()
-			.zip(output.exact_chunks_mut(input2.shape()));
-		for (in1_chunk, mut out_chunk) in iter {
-			Zip::from(&mut out_chunk)
-				.and(&in1_chunk)
-				.and(&input2)
-				.apply(|output, input1, input2| {
-					*output += input1 * input2;
-				});
-		}
+
+		//output += &(&input1 * &input2);
+
+		Zip::from(&mut output)
+			.and(&input1)
+			.and_broadcast(&input2)
+			.par_apply(|output, input1, input2| {
+				*output += input1 * input2;
+			});
 
 		Ok(Box::new(()))
 	}
@@ -208,59 +208,28 @@ impl Pass for MulBackward {
 			ErrorKind::PassError(self.name(), format!("Could not broadcast input2 shape: {:?} to output shape: {:?}", input2.shape(), output_grad.shape()))
 		);
 
-
-		if data.is_required(&self.input1_id.gradient_id()) && data.is_required(&self.input2_id.gradient_id()) {
-			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
-			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
-
-			let iter = input1.exact_chunks(input2.shape()).into_iter()
-				.zip(input1_grad.exact_chunks_mut(input2.shape()))
-				.zip(output_grad.exact_chunks(input2.shape()));
-
-			for ((input1_chunk, mut input1_grad_chunk) , out_grad_chunk) in iter {
-				//input1_grad_chunk += &(&input2 * &out_grad_chunk);
-				Zip::from(&mut input1_grad_chunk)
-					.and(&input2)
-					.and(&out_grad_chunk)
-					.apply(|input1_grad, input2, out_grad| {
-						*input1_grad += input2 * out_grad;
-					});
-				//input2_grad += &(&input1_chunk * &out_grad_chunk);
-				Zip::from(&mut input2_grad)
-					.and(&input1_chunk)
-					.and(&out_grad_chunk)
-					.apply(|input2_grad, input1, out_grad| {
-						*input2_grad += input1 * out_grad;
-					});
-			}
-
-		} else if data.is_required(&self.input1_id.gradient_id()) {
+		if data.is_required(&self.input1_id.gradient_id()) {
 			let mut input1_grad = data.get_mut(&self.input1_id.gradient_id())?;
 
-			let iter = input1_grad.exact_chunks_mut(input2.shape()).into_iter()
-				.zip(output_grad.exact_chunks(input2.shape()));
+			Zip::from(&mut input1_grad)
+				.and(&output_grad)
+				.and_broadcast(&input2)
+				.par_apply(|input1_grad, out_grad, input2,| {
+					*input1_grad += input2 * out_grad;
+				});
+		}
 
-			for (mut input1_grad_chunk, out_grad_chunk) in iter {
-				//input1_grad_chunk += &(&input2 * &out_grad_chunk);
-				Zip::from(&mut input1_grad_chunk)
-					.and(&input2)
-					.and(&out_grad_chunk)
-					.apply(|input1_grad, input2, out_grad| {
-						*input1_grad += input2 * out_grad;
-					});
-			}
-		} else if data.is_required(&self.input2_id.gradient_id()) {
-			let mut input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
+		if data.is_required(&self.input2_id.gradient_id()) {
+			
+			unsafe{
+				let input2_grad = data.get_mut(&self.input2_id.gradient_id())?;
 
-			let iter = input1.exact_chunks(input2.shape()).into_iter()
-				.zip(output_grad.exact_chunks(input2.shape()));
-
-			for (input1_chunk, out_grad_chunk) in iter {
-				//input2_grad += &(&input1_chunk * &out_grad_chunk);
-				Zip::from(&mut input2_grad)
-					.and(&input1_chunk)
-					.and(&out_grad_chunk)
-					.apply(|input2_grad, input1, out_grad| {
+				// do not split/parallelise this Zip!
+				Zip::from(&input1)
+					.and(&output_grad)
+					.and_broadcast(&input2_grad)
+					.apply(|input1, out_grad, input2_grad| {
+						let input2_grad = input2_grad as *const f32 as *mut f32;
 						*input2_grad += input1 * out_grad;
 					});
 			}

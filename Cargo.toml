@@ -17,6 +17,7 @@ license = "MIT"
 [dependencies]
 clippy = {version = "0.0.212", optional = true}
 ndarray = "0.11.2"
+ndarray-parallel = "0.8"
 walkdir = "2.2"
 error-chain = "0.12"
 odds = "0.3"
