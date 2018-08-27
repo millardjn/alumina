@@ -37,7 +37,11 @@ fn learn_mnist() -> Result<()> {
 
 	let batch_size = 16;
 
-	let data = Mnist::training("D:/ML/Mnist");
+	// let dataset_dir = "D:/ML/Mnist";
+	let dataset_dir = mnist::download().unwrap();
+
+	let data = Mnist::training(&dataset_dir);
+
 	let epoch = data.length();
 	let mut data_stream = data
 		.shuffle_random()
@@ -51,7 +55,7 @@ fn learn_mnist() -> Result<()> {
 
 	let mut params = g.initialise_nodes(solver.parameters())?;
 	
-	let mut validation = validation(&g)?;
+	let mut validation = validation(&g, &dataset_dir)?;
 	solver.add_boxed_callback(every_n_steps(epoch/batch_size, Box::new(move |data| {
 		validation(data.params);
 		CallbackSignal::Continue
@@ -78,8 +82,9 @@ fn learn_mnist() -> Result<()> {
 	Ok(())
 }
 
-fn validation(g: &GraphDef) -> Result<Box<FnMut(&[ArrayD<f32>])>>{
-	let data = Mnist::testing(Path::new("D:/ML/Mnist")); // I mean, who doesnt validate on the test set!
+fn validation<P: AsRef<Path>>(g: &GraphDef, dataset_dir: P) -> Result<Box<FnMut(&[ArrayD<f32>])>> {
+	let dataset_dir = dataset_dir.as_ref();
+	let data = Mnist::testing(dataset_dir); // I mean, who doesnt validate on the test set!
 	let epoch = data.length();
 	let batch_size = 100;
 	let mut data_stream = data
