@@ -1,0 +1,64 @@
+[package]
+name = "alumina"
+version = "0.3.0"
+authors = ["zza <millard.jn@gmail.com>"]
+edition = "2018"
+
+[workspace]
+
+members = [
+	
+	"alumina_core",
+	"alumina_ops",
+	#"alumina_exec",
+	"alumina_data",
+	"alumina_opt",
+	
+	"alumina_test",
+	
+	#"alumina_image_data",
+]
+
+[dependencies]
+alumina_core = { path = "./alumina_core" }
+alumina_ops = { path = "./alumina_ops" }
+#alumina_exec = { path = "./alumina_exec" }
+alumina_data = { path = "./alumina_data" }
+alumina_opt = { path = "./alumina_opt" }
+alumina_test = { path = "./alumina_test" }
+	
+
+
+failure = "0.1"
+indexmap = "1"
+ndarray = {version = "0.13", features = ["rayon"]}
+
+rand = "0.7"
+rand_distr = "0.2"
+smallvec = "1.3"
+itertools = "0.9"
+lru = "0.4"
+rayon = "1"
+num-traits = "0.2"
+byteorder = "1.3"
+typenum = "1.12"
+matrixmultiply_mt = "0.1.7"
+lazy_static = "1.4"
+unchecked-index ="0.2"
+num_cpus = "1.13"
+scoped_threadpool = "0.1"
+rand_pcg = "0.2"
+libm = "0.2"
+systemstat = "0.1"
+
+[profile.release]
+lto = "thin"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "elementwise"
+harness = false
+
+

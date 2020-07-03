@@ -1,0 +1,21 @@
+[package]
+name = "alumina_opt"
+version = "0.3.0"
+authors = ["zza <millard.jn@gmail.com>"]
+edition = "2018"
+
+
+[dependencies]
+alumina_core = { path = "../alumina_core" }
+alumina_ops = { path = "../alumina_ops" }
+#alumina_exec = { path = "../alumina_exec" }
+alumina_data = { path = "../alumina_data" }
+
+ndarray = "*"
+indexmap = "*"
+rayon = "*"
+unchecked-index = "*"
+
+rand = "0.7"
+rand_distr = "0.2"
+rand_pcg = "0.2"

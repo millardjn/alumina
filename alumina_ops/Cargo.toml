@@ -1,0 +1,29 @@
+[package]
+name = "alumina_ops"
+version = "0.3.0"
+authors = ["zza <millard.jn@gmail.com>"]
+edition = "2018"
+
+
+[dependencies]
+alumina_core = { path = "../alumina_core" }
+
+
+indexmap = "1"
+itertools = "0.9"
+ndarray = {version = "0.13", features = ["rayon"]}
+matrixmultiply_mt = "*"
+smallvec = "*"
+rayon = "*"
+unchecked-index = "*"
+typenum = "*"
+
+#conv threadpool related
+scoped_threadpool = "*"
+lazy_static = "*"
+num_cpus = "*"
+
+[dev-dependencies]
+alumina_test = { path = "../alumina_test" }
+rand = "*"
+rand_distr = "*"
