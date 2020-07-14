@@ -60,7 +60,7 @@ impl BinaryFunc for ReluBackFunc {
 	#[inline]
 	fn calc(&self, input1: f32, input2: f32) -> f32 {
 		let sign = input1.signum();
-		input2 * (sign + sign.abs()) * 0.5 // x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
+		input2 * (1.0 + sign) * 0.5 // x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
 	}
 
 	fn type_name(&self) -> &'static str {
