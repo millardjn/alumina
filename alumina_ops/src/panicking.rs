@@ -3,7 +3,7 @@ use crate::{
 	build_or_pretty_panic,
 	elementwise::{
 		abs, ceil, cos, div, elu, exp, floor, identity, ln, logistic, max, min, mul, negative, reciprocal, relu,
-		robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh,
+		robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh, leaky_relu,
 	},
 	grad::stop_grad,
 	manip::{expand_dims, permute_axes, remove_dims},
@@ -180,6 +180,19 @@ where
 	T: IntoIterator<Item = I>,
 {
 	build_or_pretty_panic(identity::add_n(inputs), "Identity")
+}
+
+/// Returns the leaky rectified linear unit activation (leaky relu) of the input.
+///
+/// The output node has the same shape as the input.
+///
+/// # Panics
+/// Panics if building the underlying Op panics.
+pub fn leaky_relu<I>(input: I, alpha: f32) -> Node
+where
+	I: Into<Node>,
+{
+	build_or_pretty_panic(leaky_relu::leaky_relu(input, alpha), "LeakyRelu")
 }
 
 /// Returns the natural logarithm (ln) of the input.

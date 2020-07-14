@@ -8,6 +8,7 @@ pub mod elu;
 pub mod exp;
 pub mod floor;
 pub mod identity;
+pub mod leaky_relu;
 pub mod ln;
 pub mod logistic;
 pub mod max;
