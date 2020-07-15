@@ -14,7 +14,7 @@ use crate::{
 	},
 	pool::avg_pool,
 	reduce::{reduce_prod, reduce_sum},
-	regularisation::{l1, l2},
+	regularisation::{l1, l2, hoyer_squared},
 	shape::{linterp, shape_of},
 };
 use alumina_core::{
@@ -852,6 +852,13 @@ where
 	I: Into<Node>,
 {
 	build_or_pretty_panic(l2::l2(inputs), "L2")
+}
+
+pub fn hoyer_squared<I, T: IntoIterator<Item = I>>(inputs: T) -> Node
+where
+	I: Into<Node>,
+{
+	build_or_pretty_panic(hoyer_squared::hoyer_squared(inputs), "hoyer_squared")
 }
 
 pub fn linterp<I>(input: I, factors: &[usize]) -> Node
