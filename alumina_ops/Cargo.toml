@@ -19,7 +19,8 @@ unchecked-index = "*"
 typenum = "*"
 
 #conv threadpool related
-scoped_threadpool = "*"
+threadpool = "*"
+threadpool_scope = "*"
 lazy_static = "*"
 num_cpus = "*"
 

@@ -72,33 +72,16 @@ pub fn gaussian(mean: f32, std_dev: f32) -> Initialiser {
 
 /// MSRA initialisation
 ///
-/// This initialises with gaussian values drawn from N(0, multiplier/shape[0]). as axis -1 is the output channel axis
-/// and axis 0 is the number of inputs.
+/// This initialises with gaussian values drawn from N(0, multiplier*shape[-1]/shape_product).
+///
+/// For use with conv and linear Ops.
 pub fn msra(multiplier: f32) -> Initialiser {
 	Initialiser::new(
 		format!("MSRA Initialiser{{multiplier: {}}}", multiplier),
 		move |mut arr: ArrayViewMutD<f32>| {
 			let mut rng = thread_rng();
-			let inputs_per_output = *arr.shape().get(0).unwrap_or(&1); // output channels is the last axis
-			let norm = Normal::new(0.0, f64::from((multiplier / inputs_per_output as f32).sqrt()))
-				.expect("Could not create normal distribution");
-			for e in arr.iter_mut() {
-				*e = norm.sample(&mut rng) as f32;
-			}
-		},
-	)
-}
-
-/// MSRA initialisation
-///
-/// This initialises with gaussian values drawn from N(0, multiplier/(shape.prod()/shape[0]) as axis 0 is the output
-/// channel
-pub fn conv_msra(multiplier: f32) -> Initialiser {
-	Initialiser::new(
-		format!("MSRA Conv Initialiser{{multiplier: {}}}", multiplier),
-		move |mut arr: ArrayViewMutD<f32>| {
-			let mut rng = thread_rng();
-			let inputs_per_output = arr.len() / arr.shape().get(0).unwrap_or(&1); // output channels is the first axis
+			//let inputs_per_output = *arr.shape().get(0).unwrap_or(&1); // output channels is the last axis
+			let inputs_per_output = arr.shape()[0..arr.ndim() -1].iter().product::<usize>();
 			let norm = Normal::new(0.0, f64::from((multiplier / inputs_per_output as f32).sqrt()))
 				.expect("Could not create normal distribution");
 			for e in arr.iter_mut() {

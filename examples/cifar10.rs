@@ -1,17 +1,17 @@
 use alumina::{
 	core::exec::{exec, ExecConfig},
 	core::graph::{Node, NodeTag},
-	core::init::{conv_msra, msra},
+	core::init::msra,
 	data::{cifar::Cifar10, DataSet, DataStream},
 	ops::{
 		nn::conv::Padding,
 		panicking::{
 			add, add_n, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
-			softmax_cross_entropy, spline,
+			softmax_cross_entropy, spline, leaky_relu, hoyer_squared,
 		},
 	},
 	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, soop3::Soop, GradientOptimiser,
+		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, soop::Soop, GradientOptimiser,
 		GradientStepper,
 	},
 };
@@ -40,6 +40,19 @@ fn main() -> Result<(), Error> {
 	let layer9 = elu(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1])).set_name("layer9");
 	let layer10 = elu(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1])).set_name("layer10");
 
+	// let layer1 = leaky_relu(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer1");
+	// let layer2 = leaky_relu(ibias(conv(layer1, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer2");
+	// let layer3 = leaky_relu(ibias(conv(layer2, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer3");
+	// let layer4 = leaky_relu(ibias(conv(layer3, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer4");
+	// let pool1 = avg_pool(&layer4, &[1, 2, 2, 1]).set_name("pool1");
+	// let layer5 = leaky_relu(ibias(conv(pool1, 64, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer5");
+	// let layer6 = leaky_relu(ibias(conv(layer5, 64, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer6");
+	// let layer7 = leaky_relu(ibias(conv(layer6, 128, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer7");
+	// let pool2 = avg_pool(&layer7, &[1, 2, 2, 1]).set_name("pool2");
+	// let layer8 = leaky_relu(ibias(conv(pool2, 128, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer8");
+	// let layer9 = leaky_relu(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer9");
+	// let layer10 = leaky_relu(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer10");
+
 	// let init = alumina::ops::nn::spline::custom(0.01, 1.0, 1.0);
 
 	// let layer1 = spline(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[-1]), &[1, 2], init.clone()).set_name("layer1");
@@ -64,13 +77,15 @@ fn main() -> Result<(), Error> {
 	)
 	.set_name("logits");
 
-	let training_loss = add(
+	let training_loss = add_n(&[
 		reduce_sum(softmax_cross_entropy(&logits, &labels, -1), &[], false).set_name("loss"),
 		scale(l2(logits.graph().nodes_tagged(NodeTag::Parameter)).set_name("l2"), 1e-4).set_name("l2_regularisation"),
-	)
+		//scale(hoyer_squared(logits.graph().nodes_tagged(NodeTag::Parameter)).set_name("hs"), 1e-6).set_name("hs_regularisation"),	
+	])
 	.set_name("training_loss");
 
 	let accuracy = equal(argmax(&logits, -1), argmax(&labels, -1)).set_name("accuracy");
+
 
 	// 2. Print shapes
 	println!("\n Values:");
@@ -100,28 +115,28 @@ fn main() -> Result<(), Error> {
 	let mut opt = GradientOptimiser::new(
 		&training_loss,
 		&[&input, &labels],
-		Soop::new()
-			.min_lambda(0.9)
-			.init_lambda(1.0 - 2.0 * batch_size as f32 / epoch as f32)
-			.max_lambda(1.0 - 2.0 * batch_size as f32 / epoch as f32)
-			.variance_addition(move |p2, g2, lp| {
-			EPSILON*EPSILON // permanent noise at small fixed scale
-				//+ (1.0-lp)*1e-6
-				//+ (1.0-lp)*1e-6*g2
-				//+ (1.0-lp)*1e-6*p2 // permanent noise at 0.01% of parameter scale
-				+ (1.0-lp)*(1.0-lp)*1e-3*g2/(batch_size*batch_size) as f32 // temporary noise at 0.1% of gradient scale
-			}).clone(),
-		// Soop::new(1.0 - 2.0*batch_size as f32/epoch as f32)
-		// .variance_addition(move |p2, g2, lp| {
+		// Soop::new()
+		// 	.min_lambda(0.9)
+		// 	.init_lambda(1.0 - 2.0 * batch_size as f32 / epoch as f32)
+		// 	.max_lambda(1.0 - 2.0 * batch_size as f32 / epoch as f32)
+		// 	.variance_addition(move |p2, g2, lp| {
 		// 	EPSILON*EPSILON // permanent noise at small fixed scale
-		// 	//+ (1.0-lp)*1e-6
-		// 	//+ (1.0-lp)*1e-6*g2
-		// 	//+ (1.0-lp)*1e-6*p2 // permanent noise at 0.01% of parameter scale
-		// 	+ (1.0-lp)*(1.0-lp)*1e-2*g2/(batch_size*batch_size) as f32 // temporary noise at 0.1% of gradient scale
-		// }).clone(),
+		// 		//+ (1.0-lp)*1e-6
+		// 		//+ (1.0-lp)*1e-6*g2
+		// 		//+ (1.0-lp)*1e-6*p2 // permanent noise at 0.01% of parameter scale
+		// 		+ (1.0-lp)*(1.0-lp)*1e-3*g2/(batch_size*batch_size) as f32 // temporary noise at 0.1% of gradient scale
+		// 	}).clone(),
+		Soop::new(1.0 - 2.0*batch_size as f32/epoch as f32)
+		.variance_addition(move |p2, g2, lp| {
+			EPSILON*EPSILON // permanent noise at small fixed scale
+			//+ (1.0-lp)*1e-6
+			//+ (1.0-lp)*1e-6*g2
+			//+ (1.0-lp)*1e-6*p2 // permanent noise at 0.01% of parameter scale
+			+ (1.0-lp)*(1.0-lp)*1e-2*g2/(batch_size*batch_size) as f32 // temporary noise at 0.1% of gradient scale
+		}).clone(),
 		//Adam::new(1e-2,0.9, 0.998)
 	);
-	opt.callback(max_steps(5 * epoch / batch_size));
+	opt.callback(max_steps(25 * epoch / batch_size));
 	opt.callback(every_n_steps(25, print_step_data(batch_size as f32)));
 	let mut time = Instant::now();
 	opt.callback(every_n_steps(250, move |s: &mut Soop, data| {

@@ -4,32 +4,30 @@ use alumina_core::{
 	exec::ExecutionContext,
 	grad::GradientContext,
 	graph::{merge_graphs, HeavyNode, Node, NodeInner, NodeTag, Op},
-	init::conv_msra,
+	init::msra,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
 
-use ndarray::{ArrayD, Axis, Dimension, IxDyn};
-
+use ndarray::{ArrayD, Dimension, IxDyn};
+use threadpool::ThreadPool;
+use threadpool_scope::scope_with;
 use smallvec::SmallVec;
 
 use lazy_static::lazy_static;
 use matrixmultiply_mt;
 use num_cpus;
-use scoped_threadpool::Pool;
 
 use std::{
 	cmp::{max, min},
-	iter,
+	iter::once,
 	mem::size_of,
 	ops::Sub,
 	sync::{
 		atomic::{AtomicUsize, Ordering},
 		Mutex,
 	},
-	thread,
-	time::Instant,
 };
 use typenum::{bit::*, marker_traits::Unsigned, operator_aliases::Sub1, UInt, UTerm, U1, U2, U3};
 use unchecked_index as ui;
@@ -37,8 +35,14 @@ use unchecked_index as ui;
 // Threadpool for offloading lowering/packing operations
 lazy_static! {
 	static ref NUM_CPUS: usize = num_cpus::get();
-	static ref THREAD_POOL: Mutex<Pool> = Mutex::new(Pool::new(*NUM_CPUS as u32));
+	static ref THREAD_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::new(*NUM_CPUS));
 }
+
+struct Ptr<T>{
+	p: *mut T,
+}
+unsafe impl<T> Sync for Ptr<T>{}
+unsafe impl<T> Send for Ptr<T>{}
 
 #[derive(Debug, Clone)]
 pub enum Padding {
@@ -54,11 +58,11 @@ pub enum Padding {
 impl Padding {
 	fn output_node_shape(&self, input_shape: &NodeShape, filter_shape: &[usize]) -> NodeShape {
 		let batch_size = &input_shape.slice()[0];
-		let out_channels = &filter_shape[0];
+		let out_channels = &filter_shape[filter_shape.len() - 1];
 		let input_spatial = &input_shape.slice()[1..input_shape.len() - 1];
-		let filter_spatial = &filter_shape[1..filter_shape.len() - 1];
+		let filter_spatial = &filter_shape[0..filter_shape.len() - 2];
 
-		iter::once(batch_size.into())
+		once(batch_size.into())
 			.chain(
 				input_spatial
 					.iter()
@@ -73,36 +77,36 @@ impl Padding {
 						(_, _) => NodeAxis::unknown(),
 					}),
 			)
-			.chain(iter::once(out_channels.into()))
+			.chain(once(out_channels.into()))
 			.into()
 	}
 
 	fn output_shape(&self, input_shape: &[usize], filter_shape: &[usize]) -> NodeShape {
 		let batch_size = input_shape[0];
-		let out_channels = filter_shape[0];
+		let out_channels = filter_shape[filter_shape.len() - 1];
 		let input_spatial = input_shape[1..input_shape.len() - 1].iter();
-		let filter_spatial = filter_shape[1..filter_shape.len() - 1].iter();
+		let filter_spatial = filter_shape[0..filter_shape.len() - 2].iter();
 
 		match self {
-			Padding::Full => iter::once(batch_size)
+			Padding::Full => once(batch_size)
 				.chain(input_spatial.zip(filter_spatial).map(|(dim, k_dim)| dim + k_dim - 1))
-				.chain(iter::once(out_channels))
+				.chain(once(out_channels))
 				.into(),
-			Padding::Same => iter::once(batch_size)
+			Padding::Same => once(batch_size)
 				.chain(input_spatial.cloned())
-				.chain(iter::once(out_channels))
+				.chain(once(out_channels))
 				.into(),
-			Padding::Valid => iter::once(batch_size)
+			Padding::Valid => once(batch_size)
 				.chain(input_spatial.zip(filter_spatial).map(|(dim, k_dim)| dim - k_dim + 1))
-				.chain(iter::once(out_channels))
+				.chain(once(out_channels))
 				.into(),
-			Padding::Padded(ref size) => iter::once(batch_size)
+			Padding::Padded(ref size) => once(batch_size)
 				.chain(input_spatial.map(|dim| dim + size))
-				.chain(iter::once(out_channels))
+				.chain(once(out_channels))
 				.into(),
-			Padding::PaddedDiff(ref vec) => iter::once(batch_size)
+			Padding::PaddedDiff(ref vec) => once(batch_size)
 				.chain(input_spatial.zip(vec).map(|(dim, vec_dim)| dim + vec_dim))
-				.chain(iter::once(out_channels))
+				.chain(once(out_channels))
 				.into(),
 		}
 	}
@@ -136,9 +140,9 @@ where
 		)
 		.into());
 	};
-	let filter_shape: Vec<usize> = iter::once(&output_channels)
-		.chain(filter_shape)
-		.chain(iter::once(&input_channels))
+	let filter_shape: Vec<usize> = filter_shape.iter()
+		.chain(once(&input_channels))
+		.chain(once(&output_channels))
 		.cloned()
 		.collect();
 	let output_shape = padding.output_node_shape(input.shape(), &filter_shape);
@@ -146,7 +150,7 @@ where
 	let filter = input
 		.graph()
 		.new_node(filter_shape.into())
-		.set_init(conv_msra(1.0))
+		.set_init(msra(1.0))
 		.add_tag(NodeTag::Parameter)
 		.set_name_unique(&format!("conv({})_weights", input));
 
@@ -217,16 +221,16 @@ where
 		.into());
 	};
 
-	let filter_shape: Vec<usize> = iter::once(&output_channels)
-		.chain(filter_shape)
-		.chain(iter::once(&input_channels))
+	let filter_shape: Vec<usize> = filter_shape.iter()
+		.chain(once(&input_channels))
+		.chain(once(&output_channels))
 		.cloned()
 		.collect();
 
 	let filter = input
 		.graph()
 		.new_node(filter_shape.into())
-		.set_init(conv_msra(1.0))
+		.set_init(msra(1.0))
 		.add_tag(NodeTag::Parameter)
 		.set_name_unique(&format!("conv({})_weights", input));
 
@@ -263,7 +267,7 @@ where
 ///
 /// and the filters are a rank (N+2) Tensor of shape
 ///
-/// `[num_output_channels, spatial_filter_shape[0], ..., spatial_filter_shape[N-1], num_input_channels]`
+/// `[spatial_filter_shape[0], ..., spatial_filter_shape[N-1], num_input_channels, num_output_channels]`
 #[must_use = "Op builder not used, call .build()"]
 #[derive(Clone, Debug)]
 pub struct Conv {
@@ -408,17 +412,17 @@ impl OpInstance for ConvInstance {
 
 		let in_channels = input_shape[input_shape.len() - 1];
 
-		if in_channels != filter_shape[filter_shape.len() - 1] {
+		if in_channels != filter_shape[filter_shape.len() - 2] {
 			return Err(format!(
 				"input channels dimension {} does not match final filter dimension {}",
 				in_channels,
-				filter_shape[filter_shape.len() - 1]
+				filter_shape[filter_shape.len() - 2]
 			)
 			.into());
 		}
 
 		let input_spatial = input_shape[1..input_shape.len() - 1].iter();
-		let filter_spatial = filter_shape[1..filter_shape.len() - 1].iter();
+		let filter_spatial = filter_shape[0..filter_shape.len() - 2].iter();
 		if input_spatial.len() != filter_spatial.len() {
 			return Err(
 				format!("input shape and filter shape do not have the same number of spatial dimensions. input spatial: {:?}, filter spatial: {:?}", input_spatial, filter_spatial).into(),
@@ -440,25 +444,25 @@ impl OpInstance for ConvInstance {
 		let n = input.shape()[0]; // TODO use ensure to guard against zero length shapes
 		let in_size: usize = input.shape()[1..].iter().product();
 		let _out_size: usize = output.shape()[1..].iter().product();
-		let patch_size = filter.shape()[1..].iter().product();
+		let patch_size = filter.shape()[0..filter.ndim()-1].iter().product();
 
-		let input_channels = input.shape()[input.shape().len() - 1];
-		let output_channels = output.shape()[output.shape().len() - 1];
+		let input_channels = input.shape()[input.ndim() - 1];
+		let output_channels = output.shape()[output.ndim() - 1];
 
-		let input_spatial = &input.shape()[1..input.shape().len() - 1];
-		let filter_spatial = &filter.shape()[1..filter.shape().len() - 1];
-		let output_spatial = output.shape()[1..output.shape().len() - 1].to_vec();
+		let input_spatial = &input.shape()[1..input.ndim() - 1];
+		let filter_spatial = &filter.shape()[0..filter.ndim() - 2];
+		let output_spatial = output.shape()[1..output.ndim() - 1].to_vec();
 
 		let _in_spaxels: usize = input_spatial.iter().product();
 		let out_spaxels: usize = output_spatial.iter().product();
 
 		// Checks
 		assert!(
-			input.shape().len() == output.shape().len(),
+			input.ndim() == output.ndim(),
 			"Input len does not match output len"
 		);
 		assert!(
-			input.shape().len() == filter.shape().len(),
+			input.ndim() == filter.ndim(),
 			"Filter len does not match input len"
 		);
 
@@ -467,11 +471,11 @@ impl OpInstance for ConvInstance {
 			"Batch size of input does not match batch size of output"
 		);
 		assert!(
-			input_channels == filter.shape()[filter.shape().len() - 1],
+			input_channels == filter.shape()[filter.ndim() - 2],
 			"input channels dimension does not match final filter dimension"
 		);
 		assert!(
-			output_channels == filter.shape()[0],
+			output_channels == filter.shape()[filter.ndim() -1],
 			"output channels dimension does not match first filter dimension"
 		);
 		
@@ -484,22 +488,19 @@ impl OpInstance for ConvInstance {
 		let input_strides = stride_vec(input_channels, &input_spatial);
 		let output_strides = stride_vec(output_channels, &output_spatial);
 
-		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
-		let n_threads = pool.thread_count() as usize;
-
+		
+		let n_threads = *NUM_CPUS;
+		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
+		let thread_division = (out_spaxels*n+n_threads-1)/n_threads;
+		let spaxels_per_batch = min(
+			max(4, min(cache_limit, thread_division)),
+			out_spaxels * n,
+		); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let n_batches = (out_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
 		let batch_atomic = AtomicUsize::new(0);
-		let is_conv9 = ctx.current_op().name() == "Conv(layer9,conv(layer9)_weights=>conv(layer9))";
-		pool.scoped(|scope| {
-			let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
-			let thread_division = (out_spaxels*n+n_threads-1)/n_threads;
-			let spaxels_per_batch = min(
-				max(4, min(cache_limit, thread_division)),
-				out_spaxels * n,
-			); // number of spaxels to combine in one sgemm (the last batch can have fewer)
 
-
-			let n_batches = (out_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
-
+		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		scope_with(&pool, |scope|{
 			for _ in 0..n_threads {
 				let filter_strides = &filter_strides;
 				let input_strides = &input_strides;
@@ -518,9 +519,7 @@ impl OpInstance for ConvInstance {
 						if batch >= n_batches {
 							break;
 						}
-						// if is_conv9 {
-						// 	println!("batch:{} on thread:{:?}", batch, thread::current().id());
-						// }
+
 						let spaxel_ind = batch * spaxels_per_batch;
 						let batch_spaxels = min(out_spaxels * n - spaxel_ind, spaxels_per_batch);
 
@@ -602,8 +601,10 @@ impl OpInstance for ConvInstance {
 								n,
 								1.0,
 								filter.as_ptr(),
-								k as isize,
-								1, // A is params, row major
+								// k as isize,
+								// 1, // A is params, row major
+								1,
+								m as isize, // A is params, col major
 								patches.as_ptr(),
 								1,
 								k as isize, // B, input patches column major
@@ -783,13 +784,11 @@ impl OpInstance for ConvBackInstance {
 	}
 
 	fn propagate_shapes(&self, _ctx: &mut ShapePropContext) -> Result<(), ShapePropError> {
-		// TODO
+		// TODO checks?
 		Ok(())
 	}
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
-		let is_conv9 = ctx.current_op().name() == "ConvBackward(layer9,conv(layer9)_weights,d(training_loss)/d(conv(layer9))=>d(training_loss)/d(layer9),d(training_loss)/d(conv(layer9)_weights))";
-		let start = Instant::now();
 
 		let input = ctx.get_input_standard(&self.input);
 		let filter = ctx.get_input_standard(&self.filter);
@@ -798,25 +797,25 @@ impl OpInstance for ConvBackInstance {
 		let n = input.shape()[0]; // TODO use ensure to guard against zero length shapes
 		let _in_size: usize = input.shape()[1..].iter().product();
 		let out_size: usize = output_grad.shape()[1..].iter().product();
-		let patch_size = filter.shape()[..filter.ndim() - 1].iter().product();
+		
+		let input_spatial = &input.shape()[1..input.ndim() - 1];
+		let filter_spatial = &filter.shape()[0..filter.ndim() - 2];
+		let output_spatial = output_grad.shape()[1..output_grad.ndim() - 1].to_vec();
 
-		let input_channels = input.shape()[input.shape().len() - 1];
-		let output_channels = output_grad.shape()[output_grad.shape().len() - 1];
-
-		let input_spatial = &input.shape()[1..input.shape().len() - 1];
-		let filter_spatial = &filter.shape()[1..filter.shape().len() - 1];
-		let output_spatial = output_grad.shape()[1..output_grad.shape().len() - 1].to_vec();
+		let input_channels = input.shape()[input.ndim() - 1];
+		let output_channels = output_grad.shape()[output_grad.ndim() - 1];
+		let patch_size = filter_spatial.iter().product::<usize>() * output_channels;
 
 		let in_spaxels: usize = input_spatial.iter().product();
 		let _out_spaxels: usize = output_spatial.iter().product();
 
 		// Checks for things that should have already been caught
 		assert!(
-			input.shape().len() == output_grad.shape().len(),
+			input.ndim() == output_grad.ndim(),
 			"Input len does not match output len"
 		);
 		assert!(
-			input.shape().len() == filter.shape().len(),
+			input.ndim() == filter.ndim(),
 			"Filter len does not match input len"
 		);
 
@@ -825,11 +824,11 @@ impl OpInstance for ConvBackInstance {
 			"Batch size of input does not match batch size of output"
 		);
 		assert!(
-			input_channels == filter.shape()[filter.shape().len() - 1],
+			input_channels == filter.shape()[filter.ndim() - 2],
 			"input channels dimension does not match final filter dimension"
 		);
 		assert!(
-			output_channels == filter.shape()[0],
+			output_channels == filter.shape()[filter.ndim() - 1],
 			"output channels dimension does not match first filter dimension"
 		);
 
@@ -842,6 +841,11 @@ impl OpInstance for ConvBackInstance {
 		} else {
 			None
 		};
+		let filter_grad = if ctx.is_required_output(&self.filter_grad) {
+			Some(ctx.get_output_standard(&self.filter_grad))
+		} else {
+			None
+		};
 
 		let input_grad_slice = input_grad.as_ref().map(|ig| ig.as_slice().unwrap());
 
@@ -849,49 +853,33 @@ impl OpInstance for ConvBackInstance {
 		let input_strides = stride_vec(input_channels, &input_spatial);
 		let output_strides = stride_vec(output_channels, &output_spatial);
 
-		// Rot180, or filter inversion
-		// Convert filter from [C_out, H, W, C_in] to [C_in, -H, -W, C_out]
-		// where negative dimensions indicate the dimension has been inverted
-		let mut inverted_filter_view = filter.view();
-		inverted_filter_view.swap_axes(0, filter.ndim() - 1);
-		for axis in (1..filter.ndim() - 1).map(Axis) {
-			inverted_filter_view.invert_axis(axis);
+		let mut inverted_filter;
+		unsafe {
+			inverted_filter = ArrayD::uninitialized(filter_spatial.iter().cloned().chain(once(output_channels).chain(once(input_channels))).collect::<Vec<_>>());
+			rot180_assign(filter.as_slice().unwrap(), inverted_filter.as_slice_mut().unwrap(), input_channels, output_channels);
 		}
-
-		let inverted_filter = inverted_filter_view.as_standard_layout();//unsafe { ArrayD::uninitialized(inverted_filter_view.shape()) };
-		//inverted_filter.assign(&inverted_filter_view);
-
-		debug_assert!(inverted_filter.is_standard_layout());
 		let inverted_filter_slice = inverted_filter.as_slice().unwrap();
 
-		let mut pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
-		let n_threads = pool.thread_count() as usize;
+	
+		let n_threads = *NUM_CPUS;
+		let mut inverted_filter_grads = vec![None; n_threads];
+		let ifg_ptr = Ptr{p: inverted_filter_grads.as_mut_ptr()};
+
+		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
+		let thread_division = (in_spaxels*n+n_threads-1)/n_threads;
+		let spaxels_per_batch = min(
+			max(4, min(cache_limit, thread_division)),
+			in_spaxels * n,
+		); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let n_batches = (in_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
 		let batch_atomic = AtomicUsize::new(0);
 
+		let n_blocks = filter_spatial.iter().product::<usize>();
+		let block_atomic = AtomicUsize::new(0);
 
-		let mut inverted_filter_grads = vec![None; n_threads];
-		//  if require_filter_gradients {
-		// 	// uninit memory will be overwritten by each thread
-		// 	unsafe{(0..n_threads).map(|_| Some(ArrayD::uninitialized(inverted_filter.shape()))).collect()}
-		// } else {
-		// 	vec![None; n_threads]
-		// };
-
-
-
-		pool.scoped(|scope| {
-			let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
-			let thread_division = (in_spaxels*n+n_threads-1)/n_threads;
-			let spaxels_per_batch = min(
-				max(4, min(cache_limit, thread_division)), //if require_filter_gradients {128} else {4}
-				in_spaxels * n,
-			); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
+		scope_with(&pool, |scope|{
 			
-			
-			let n_batches = (in_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
-			// if is_conv9 {
-			// 	println!("workers started at {:?}",  start.elapsed().as_micros());
-			// }
 			for inverted_filter_grad in inverted_filter_grads.iter_mut() {
 				let inverted_filter_shape = inverted_filter.shape();
 				let filter_strides = &filter_strides;
@@ -900,8 +888,6 @@ impl OpInstance for ConvBackInstance {
 				let output_spatial = &output_spatial;
 				let batch_atomic = &batch_atomic;
 
-				//let tx = tx.clone();
-				
 				scope.execute(move || {
 					let mut patches_alloc = Vec::with_capacity(patch_size * spaxels_per_batch);
 					unsafe {
@@ -916,7 +902,7 @@ impl OpInstance for ConvBackInstance {
 					let inverted_filter_grad_slice = inverted_filter_grad_temp.as_slice_mut().unwrap();
 
 					loop {
-						let batch = batch_atomic.fetch_add(1, Ordering::SeqCst);
+						let batch = batch_atomic.fetch_add(1, Ordering::Relaxed);
 						if batch >= n_batches {
 							break;
 						}
@@ -1012,8 +998,10 @@ impl OpInstance for ConvBackInstance {
 									n1,
 									1.0,
 									inverted_filter_slice.as_ptr(),
-									k1 as isize,
-									1, // A is params, row major
+									// k1 as isize,
+									// 1, // A is params, row major
+									1,
+									m1 as isize, // A is params, col major
 									patches.as_ptr(),
 									1,
 									k1 as isize, // B, input values, column major
@@ -1049,8 +1037,10 @@ impl OpInstance for ConvBackInstance {
 									1, // B, derivative patches, row major
 									1.0,
 									inverted_filter_grad_slice.as_mut_ptr(),
-									n2 as isize,
-									1, // C shuffled parameter derivatives, row major
+									// n2 as isize,
+									// 1, // C shuffled parameter derivatives, row major
+									1,
+									m2 as isize, // C shuffled parameter derivatives, col major
 								);
 							}
 						}
@@ -1058,44 +1048,92 @@ impl OpInstance for ConvBackInstance {
 					if require_filter_gradients {
 						*inverted_filter_grad = Some(inverted_filter_grad_temp);
 					}
-					// if let Some(inverted_filter_grad) = inverted_filter_grad {
-					// 	inverted_filter_grad.assign(&inverted_filter_grad_temp);
-					// }
-					// if is_conv9 {
-					// 	println!("worker {:?} finished at {}", thread::current().id(), start.elapsed().as_micros());
-					// }
+
+
+					
 				});
+			}
+
+			if let Some(mut filter_grad) = filter_grad {
+				scope.join_all();
+				// write and invert first block to output block
+				
+				let ch2 = input_channels;
+				let ch1 = output_channels;
+				let block_size = ch1 * ch2;
+				debug_assert!(filter_grad.is_standard_layout());
+				debug_assert!(filter_grad.len() %(block_size) == 0);
+				
+				for _ in 0..min(n_blocks, n_threads) {
+					let block_atomic = &block_atomic;
+					let ifg_ptr = &ifg_ptr;
+					let output = Ptr{p: filter_grad.as_mut_ptr()};// first inverted grad;
+					scope.execute(move ||{
+						let ifg_ptr = ifg_ptr.p;
+						
+						loop {
+							let block_num = block_atomic.fetch_add(1, Ordering::Relaxed);
+							if block_num >= n_blocks {
+								break;
+							}
+							let input_offset = (n_blocks - block_num - 1)*block_size;
+							let output_offset = block_num*block_size;
+							
+							unsafe {
+								let output = output.p.offset(output_offset as isize);
+
+								// add all blocks into first
+								debug_assert!((&*ifg_ptr).as_ref().unwrap().is_standard_layout());
+								debug_assert!((&*ifg_ptr).as_ref().unwrap().len() %(block_size) == 0);
+								let inverted_grad_sum = (&mut *ifg_ptr).as_mut().unwrap().as_mut_ptr().offset(input_offset as isize);
+								for i in 1..n_threads {
+									let inverted_grad_i = (&mut *ifg_ptr.offset(i as isize)).as_mut().unwrap().as_mut_ptr().offset(input_offset as isize);
+									debug_assert!((*ifg_ptr.offset(i as isize)).as_ref().unwrap().is_standard_layout());
+									for j in 0..block_size {
+										*inverted_grad_sum.offset(j as isize) += *inverted_grad_i.offset(j as isize);
+									}
+								}
+
+								for c2 in 0..ch2 {
+									for c1 in 0..ch1 {
+										*output.offset((c1 + c2*ch1) as isize) = *inverted_grad_sum.offset((c2 + c1*ch2) as isize);
+									}	
+								}
+							}
+						}
+					})
+				}
 			}
 		});
 
-		// Write accumulated gradients back to the original (non-ROT180) format
-		if require_filter_gradients {
-			let mut filter_grad = ctx.get_output_standard(&self.filter_grad);
-
-			let mut inverted_filter_grad_actual = filter_grad.view_mut();
-			inverted_filter_grad_actual.swap_axes(0, filter.ndim() - 1);
-			for axis in (1..filter.ndim() - 1).map(Axis) {
-				inverted_filter_grad_actual.invert_axis(axis);
-			}
-			
-			let mut sum: ArrayD<f32> = inverted_filter_grads[0].take().unwrap();
-			for x in inverted_filter_grads.into_iter().filter_map(|x| x) {{
-				sum += &x;
-			}}
-
-			inverted_filter_grad_actual += &sum;
-			// for inverted_filter_grad in inverted_filter_grads {
-			// 	if let Some(inverted_filter_grad) = inverted_filter_grad {
-			// 		inverted_filter_grad_actual += &inverted_filter_grad;
-			// 	}
-			// }
-		}
-		// if is_conv9 {
-		// 	println!("op finished at {}", start.elapsed().as_micros());
-		// }
 		Ok(())
 	}
 }
+
+
+/// Converts from [H, W, C1, C2] to [-H, -W, C2, C1] where negatives represent an axis reversal
+///
+/// Overwrites values of output (they can be uninitialized).
+///
+/// Unsafe as checks are only performed during debug builds.
+unsafe fn rot180_assign (input: &[f32], output: &mut [f32], ch1: usize, ch2: usize) {
+	let block_size = ch1 * ch2;
+	let num_blocks = input.len()/(block_size);
+	debug_assert_eq!(input.len(), output.len());
+	debug_assert!(input.len() %(block_size) == 0);
+
+	for b in 0..num_blocks {
+		let input_offset = (num_blocks - b - 1)*block_size;
+		let output_offset = b*block_size;
+		for c2 in 0..ch2 {
+			for c1 in 0..ch1 {
+				//output[c1 + c2*ch1] = input[c2 + c1*ch2];
+				*ui::get_unchecked_mut(output, output_offset + c1 + c2*ch1) = *ui::get_unchecked(input, input_offset + c2 + c1*ch2);
+			}	
+		}
+	}
+}
+
 
 /// A recursive N-dimensional im2col like function.
 /// Packs data from a rectangular region of 'input' into 'patch'.
@@ -1180,12 +1218,12 @@ fn pack_patch_recurse(
 
 // /// returns a vector with the array stride of each dimension. output[0] == channel.
 // fn stride_vec(channels: usize, shape: &[usize]) -> Vec<usize>{
-// 	iter::once(&channels).chain(shape.iter()).scan(1, |state, &i| {*state *= i; Some(*state)}).collect::<Vec<usize>>()
+// 	once(&channels).chain(shape.iter()).scan(1, |state, &i| {*state *= i; Some(*state)}).collect::<Vec<usize>>()
 // }
 
 /// returns a vector with the array stride of each dimension. output[n] == channel.
 fn stride_vec(channels: usize, shape: &[usize]) -> SmallVec<[usize; 6]> {
-	let mut strides = iter::once(&channels)
+	let mut strides = once(&channels)
 		.chain(shape.iter().rev())
 		.scan(1, |state, &i| {
 			let res = Some(*state);
@@ -1533,7 +1571,7 @@ fn kernel_range(center: isize, width: usize, kernel_width: usize) -> (usize, usi
 mod tests {
 	use super::{conv, conv_with, kernel_range, stride_vec, unsafe_pack, unsafe_pack_specialised, Padding};
 
-	use alumina_core::{graph::Node, init::conv_msra};
+	use alumina_core::{graph::Node, init::msra};
 	use alumina_test::{grad_numeric_test::GradNumericTest, relatively_close::RelClose};
 
 	use indexmap::indexset;
@@ -1641,7 +1679,7 @@ mod tests {
 			],
 		]));
 
-		let filter = Node::new(&[1, 3, 5, 3]).set_name("filter").set_value(arr3(&[
+		let filter = Node::new(&[3, 5, 3, 1]).set_name("filter").set_value(arr3(&[
 			[
 				[3.0, 2.0, 3.0],
 				[4.0, 4.0, 9.0],
@@ -1663,7 +1701,7 @@ mod tests {
 				[1.0, 1.0, 5.0],
 				[9.0, 0.0, 10.0],
 			],
-		]));
+		]).into_shape([3, 5, 3, 1]).unwrap());
 
 		let expected_full: ArrayD<f32> = arr2(&[
 			[
@@ -1785,7 +1823,7 @@ mod tests {
 	#[test]
 	fn grad_numeric_same_test() {
 		let input = Node::new(&[2, 5, 7, 13]).set_name("input");
-		let filter = Node::new(&[11, 3, 5, 13]).set_name("filter").set_init(conv_msra(1.0));
+		let filter = Node::new(&[3, 5, 13, 11]).set_name("filter").set_init(msra(1.0));
 
 		let output = conv_with(&input, &filter, Padding::Same).unwrap().set_name("output");
 
@@ -1795,7 +1833,7 @@ mod tests {
 	#[test]
 	fn grad_numeric_valid_test() {
 		let input = Node::new(&[2, 5, 7, 13]).set_name("input");
-		let filter = Node::new(&[11, 3, 5, 13]).set_name("filter").set_init(conv_msra(1.0));
+		let filter = Node::new(&[3, 5, 13, 11]).set_name("filter").set_init(msra(1.0));
 
 		let output = conv_with(&input, &filter, Padding::Valid).unwrap().set_name("output");
 
@@ -1805,7 +1843,7 @@ mod tests {
 	#[test]
 	fn grad_numeric_full_test() {
 		let input = Node::new(&[2, 5, 7, 13]).set_name("input");
-		let filter = Node::new(&[11, 3, 5, 13]).set_name("filter").set_init(conv_msra(1.0));
+		let filter = Node::new(&[3, 5, 13, 11]).set_name("filter").set_init(msra(1.0));
 
 		let output = conv_with(&input, &filter, Padding::Full).unwrap().set_name("output");
 

@@ -1,7 +1,7 @@
 use alumina::{
 	core::exec::{exec, ExecConfig},
 	core::graph::{Node, NodeTag},
-	core::init::{conv_msra, msra},
+	core::init::msra,
 	data::{cifar::Cifar100, DataSet, DataStream},
 	ops::{
 		nn::conv::Padding,
