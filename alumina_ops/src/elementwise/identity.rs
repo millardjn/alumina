@@ -63,7 +63,7 @@ where
 		let mut output_name = "add_n(".to_string();
 		for (i, input) in inputs.iter().enumerate() {
 			if i > 0 {
-				output_name.push_str(", ");
+				output_name.push_str(",");
 			}
 			output_name.push_str(&input.name());
 		}

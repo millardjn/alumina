@@ -65,7 +65,8 @@ impl<S: DataSet> DataSet for Crop<S> {
 		for (&component, &(ref shape, ref cropping)) in self.crops.iter() {
 			let arr = mem::replace(&mut data[component], ArcArray::zeros(IxDyn(&[])));
 			let fill = self.fill.get(&component).cloned().unwrap_or(0.0);
-			mem::replace(&mut data[component], crop(arr, shape, *cropping, fill));
+			data[component] = crop(arr, shape, *cropping, fill);
+			//mem::replace(&mut data[component], crop(arr, shape, *cropping, fill));
 		}
 
 		data

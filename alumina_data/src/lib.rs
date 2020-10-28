@@ -484,7 +484,7 @@ impl<S: DataSet, F: FnMut(usize, ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>> 
 	fn get(&mut self, i: usize) -> Vec<ArcArray<f32, IxDyn>> {
 		let mut data = self.set.get(i);
 		let arr = mem::replace(&mut data[self.component], ArcArray::zeros(IxDyn(&[])));
-		mem::replace(&mut data[self.component], (self.func)(i, arr));
+		data[self.component] = (self.func)(i, arr);
 		data
 	}
 
@@ -499,7 +499,7 @@ impl<S: DataSet, F: FnMut(usize, ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>> 
 	fn components(&self) -> Vec<String> {
 		let mut names = self.set.components();
 		if let Some(ref name) = self.component_name {
-			mem::replace(&mut names[self.component], name.clone());
+			names[self.component] = name.clone();
 		}
 		names
 	}
@@ -1035,7 +1035,7 @@ impl<S: DataStream, F: FnMut(ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>> Data
 	fn next(&mut self) -> Vec<ArcArray<f32, IxDyn>> {
 		let mut data = self.stream.next();
 		let arr = mem::replace(&mut data[self.component], ArcArray::zeros(IxDyn(&[])));
-		mem::replace(&mut data[self.component], (self.func)(arr));
+		data[self.component] = (self.func)(arr);
 		data
 	}
 }
