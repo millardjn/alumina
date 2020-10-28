@@ -211,6 +211,48 @@ impl<'a> From<(&'a usize, &'a usize)> for NodeAxis {
 }
 
 impl NodeAxis {
+	pub fn add(&self, other: &NodeAxis) -> NodeAxis {
+		let temp = match (self, other) {
+			(NodeAxis::Known { val: x }, NodeAxis::Known { val: y }) => NodeAxis::Known {
+				val: y.checked_add(*x).expect("NodeAxis add overflowed"),
+			},
+			(NodeAxis::Known { val: x }, NodeAxis::Interval { upper, lower })
+			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val: x }) => NodeAxis::Interval {
+				upper: upper.saturating_add(*x),
+				lower: lower.checked_add(*x).expect("NodeAxis add overflowed"),
+			},
+			(
+				NodeAxis::Interval {
+					upper: upper1,
+					lower: lower1,
+				},
+				NodeAxis::Interval {
+					upper: upper2,
+					lower: lower2,
+				},
+			) => NodeAxis::Interval {
+				upper: upper1.saturating_add(*upper2),
+				lower: lower1.checked_add(*lower2).expect("NodeAxis add overflowed"),
+			},
+		};
+
+		match temp {
+			NodeAxis::Interval { upper, lower } => {
+				if lower == upper {
+					NodeAxis::known(lower)
+				} else if lower < upper {
+					NodeAxis::Interval { upper, lower }
+				} else {
+					panic!(
+						"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
+						lower, upper
+					);
+				}
+			}
+			temp => temp,
+		}
+	}
+
 	pub fn multiply(&self, other: &NodeAxis) -> NodeAxis {
 		let temp = match (self, other) {
 			(NodeAxis::Known { val: x }, NodeAxis::Known { val: y }) => NodeAxis::Known {
