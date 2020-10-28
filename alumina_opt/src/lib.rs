@@ -14,8 +14,6 @@ use ndarray::{ArcArray, IxDyn};
 
 pub mod adam;
 pub mod sgd;
-pub mod soop;
-pub mod soop3;
 
 /// Calculates the L2 norm of the difference between two arrays
 pub fn calc_change_sqr(arr1: ArrayViewD<f32>, arr2: ArrayViewD<f32>) -> f32 {
