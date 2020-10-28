@@ -7,18 +7,17 @@ use alumina::{
 		nn::conv::Padding,
 		nn::spline::swan,
 		panicking::{
-			add, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, muldiv, reduce_mean, reduce_sum, scale,
+			add, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
 			softmax_cross_entropy, spline,
 		},
 	},
 	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, soop::Soop, GradientOptimiser,
+		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser,
 		GradientStepper,
 	},
 };
 use ndarray::{IxDyn, ArcArray};
 use failure::Error;
-use std::f32::EPSILON;
 use std::time::Instant;
 use std::iter::empty;
 use indexmap::IndexMap;
@@ -88,15 +87,15 @@ fn main() -> Result<(), Error> {
 	let mut opt = GradientOptimiser::new(
 		&training_loss,
 		&[&input, &fine_labels],
-		Soop::new(1.0 - 2.0 * batch_size as f32 / epoch as f32)
-			.variance_addition(move |p, g, lp| {
-				EPSILON*EPSILON // permanent noise at small fixed scale
-			+ (1.0-lp)*1e-6*p*p // permanent noise at 0.01% of parameter scale
-			+ (1.0-lp)*1e-4*g*g/batch_size as f32 // temporary noise at 0.1% of gradient scale
-			})
-			.clone(),
+		// Soop::new(1.0 - 2.0 * batch_size as f32 / epoch as f32)
+		// 	.variance_addition(move |p, g, lp| {
+		// 		EPSILON*EPSILON // permanent noise at small fixed scale
+		// 	+ (1.0-lp)*1e-6*p*p // permanent noise at 0.01% of parameter scale
+		// 	+ (1.0-lp)*1e-4*g*g/batch_size as f32 // temporary noise at 0.1% of gradient scale
+		// 	})
+		// 	.clone(),
 		//Soop::new(),
-		//Adam::new(3e-3, 0.9, 0.995),
+		Adam::new(3e-3, 0.9, 0.995),
 	);
 	//let p_g = opt.parameters_and_grads().clone();
 	opt.callback(max_steps(25 * epoch / batch_size));
@@ -107,7 +106,7 @@ fn main() -> Result<(), Error> {
 	// 		s.finalise(&p_g);
 	// 	}
 	// });
-	opt.callback(every_n_steps(250, move |s: &mut Soop, data| {
+	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		val(&mut empty());
 		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 	}));

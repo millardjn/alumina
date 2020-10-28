@@ -6,11 +6,11 @@ use alumina::{
 	ops::{
 		nn::conv::Padding,
 		panicking::{
-			add, add_n, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
+			add, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_sum, scale,
 			softmax_cross_entropy,
 		},
 	},
-	opt::{adam::Adam, every_n_steps, max_steps, print_step_data, soop3::Soop, GradientOptimiser, GradientStepper},
+	opt::{adam::Adam, every_n_steps, max_steps, print_step_data, GradientOptimiser, GradientStepper},
 };
 use ndarray::{ArcArray, IxDyn};
 use failure::Error;
@@ -51,37 +51,6 @@ fn main() -> Result<(), Error> {
 
 	let logits = linear(&pool5, 10, msra(1.0)).set_name("logits");
 
-	//let pool3 = avg_pool(layer10, &[1, 2, 2, 1]).set_name("pool3");
-
-	//let layer11 = elu(affine(pool3, 512, msra(1.0))).set_name("layer7");
-	//let logits = linear(&layer11, 10, msra(1.0)).set_name("logits");
-
-	// let logits = ibias(add(
-	// 	linear(reduce_mean(layer7, &[1, 2], false), 10, msra(1.0)),
-	// 	linear(reduce_mean(layer10, &[1, 2], false), 10, msra(1.0))
-	// ), &[]).set_name("logits");
-
-	//let logits = reduce_mean(layer10, &[1, 2], false).set_name("logits");
-
-	// // 1. Build a neural net graph - 76 @ 5 epochs     76 @ 10 epochs
-	// let input = Node::new(&[-1, 32, 32, 3]).set_name("input");
-	// let labels = Node::new(&[-1, 10]).set_name("labels");
-
-	// let layer1 = elu(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[1, 2])).set_name("layer1");
-	// let layer2 = elu(ibias(conv(layer1, 64, &[3, 3], Padding::Valid), &[1, 2])).set_name("layer2");
-	// let pool1 = avg_pool(layer2, &[1, 2, 2, 1]).set_name("pool1");
-
-	// let layer3 = elu(ibias(conv(pool1, 64, &[3, 3], Padding::Same), &[1, 2])).set_name("layer3");
-	// let layer4 = elu(ibias(conv(layer3, 128, &[3, 3], Padding::Same), &[1, 2])).set_name("layer4");
-	// let pool2 = avg_pool(layer4, &[1, 2, 2, 1]).set_name("pool2");
-
-	// let layer5 = elu(ibias(conv(pool2, 128, &[3, 3], Padding::Same), &[1, 2])).set_name("layer5");
-	// let layer6 = elu(ibias(conv(layer5, 256, &[3, 3], Padding::Same), &[1, 2])).set_name("layer6");
-	// let pool3 = avg_pool(layer6, &[1, 2, 2, 1]).set_name("pool3");
-
-	// let layer7 = elu(affine(pool3, 512, msra(1.0))).set_name("layer7");
-	// let logits = linear(&layer7, 10, msra(1.0)).set_name("logits");
-
 	let training_loss = add(
 		reduce_sum(softmax_cross_entropy(&logits, &labels, -1), &[], false).set_name("loss"),
 		scale(l2(logits.graph().nodes_tagged(NodeTag::Parameter)).set_name("l2"), 1e-3).set_name("l2_regularisation"),
@@ -116,13 +85,11 @@ fn main() -> Result<(), Error> {
 	let mut opt = GradientOptimiser::new(
 		&training_loss,
 		&[&input, &labels],
-		//Soop::new(0.997).early_steps(EarlySteps::Sgd { rate: 1e-3 }).clone()
-		Soop::new(),
-		//Adam::new(1e-2, 0.9, 0.995)
+		Adam::new(1e-2, 0.9, 0.995)
 	);
 	opt.callback(max_steps(10 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
-	opt.callback(every_n_steps(250, |s: &mut Soop, data| {
+	opt.callback(every_n_steps(250, |s: &mut Adam, data| {
 		val(&mut empty());
 		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 	}));

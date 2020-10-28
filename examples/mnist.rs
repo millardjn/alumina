@@ -5,12 +5,11 @@ use alumina::{
 	data::{mnist::Mnist, DataSet, DataStream},
 	ops::panicking::{add, affine, argmax, elu, equal, l2, linear, reduce_sum, scale, softmax_cross_entropy},
 	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, soop::Soop, GradientOptimiser, GradientStepper,
+		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser, GradientStepper,
 	},
 };
 use ndarray::{IxDyn, ArcArray};
 use failure::Error;
-use std::f32::EPSILON;
 use std::time::Instant;
 use std::iter::empty;
 use indexmap::IndexMap;
@@ -54,27 +53,18 @@ fn main() -> Result<(), Error> {
 	// 4. Set up validation procedure
 	let mut val = validation(&input, &labels, &accuracy, &training_loss);
 
-	// 5. Set up optimiser to run for 5 epochs and check validation every 300 steps
+	// 5. Set up optimiser to run for 25 epochs and check validation every 300 steps
 	let mut opt = GradientOptimiser::new(
 		&training_loss,
 		&[&input, &labels],
-		//Adam::new(1e-2, 0.95, 0.9975),
-		// Soop::new().max_lambda(0.995).variance_addition(|p, g, lp| {
-		// 	EPSILON*EPSILON // permanent noise at small fixed scale
-		// 	//+ (1.0-lp)*1e-6*p*p // permanent noise at 0.1% of parameter scale
-		// 	+ (1.0-lp)*1e-4*g*g // temporary noise at 0.1% of gradient scale
-		// }).clone(),
-		Soop::new(1.0 - 2.0*batch_size as f32/epoch as f32)
-			.variance_addition(move |p2, g2, lp| {
-				EPSILON*EPSILON // permanent noise at small fixed scale
-				//+ (1.0-lp)*1e-6*p2 // permanent noise at 0.1% of parameter scale
-				+ (1.0-lp)*(1.0-lp)*1e-2*g2/(batch_size*batch_size) as f32 // temporary noise at 1% of gradient scale
-			})
-			.clone(),
+		Adam::new(3.3e-3, 0.9, 0.995),
 	);
-	opt.callback(max_steps(25 * epoch / batch_size));
+	opt.callback(max_steps(15 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
-	opt.callback(every_n_steps(300, move |s: &mut Soop, data| {
+	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data|{
+		s.rate(3.3e-4);
+	}));
+	opt.callback(every_n_steps(300, move |s: &mut Adam, data| {
 		val(&mut empty());
 		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 	}));
