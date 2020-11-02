@@ -66,7 +66,6 @@ fn main() -> Result<(), Error> {
 	}));
 	opt.callback(every_n_steps(300, move |s: &mut Adam, data| {
 		val(&mut empty());
-		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 	}));
 
 	// 6. Train (optimise) the neural net until the max_steps callback returns Signal::Stop

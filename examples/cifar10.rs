@@ -125,7 +125,6 @@ fn main() -> Result<(), Error> {
 	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		println!("elapsed: {}", time.elapsed().as_millis());
 		val(&mut empty());
-		//val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 		time = Instant::now();
 	}));
 	

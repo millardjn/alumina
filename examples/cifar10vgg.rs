@@ -10,7 +10,7 @@ use alumina::{
 			softmax_cross_entropy,
 		},
 	},
-	opt::{adam::Adam, every_n_steps, max_steps, print_step_data, GradientOptimiser, GradientStepper},
+	opt::{adam::Adam, nth_step, every_n_steps, max_steps, print_step_data, GradientOptimiser, GradientStepper},
 };
 use ndarray::{ArcArray, IxDyn};
 use failure::Error;
@@ -87,11 +87,13 @@ fn main() -> Result<(), Error> {
 		&[&input, &labels],
 		Adam::new(1e-2, 0.9, 0.995)
 	);
-	opt.callback(max_steps(10 * epoch / batch_size));
+	opt.callback(max_steps(15 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
-	opt.callback(every_n_steps(250, |s: &mut Adam, data| {
+	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		val(&mut empty());
-		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
+	}));
+	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data|{
+		s.rate(3.3e-4);
 	}));
 
 	// 6. Train (optimise) the neural net until the max_steps callback returns Signal::Stop

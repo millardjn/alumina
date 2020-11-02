@@ -314,7 +314,6 @@ impl OpInstance for ConcatBackInstance {
 				let grad = grad_map.entry(input_grad).or_insert_with(|| ctx.get_output(input_grad));
 				let axis_size = grad.shape()[self.axis];
 				*grad += &output_grad.slice_axis(Axis(self.axis), Slice::new(start as isize, Some((start + axis_size) as isize), 1));
-				print!("{:?}", grad);
 				start += axis_size;
 			} else {
 				let axis_size = ctx.shape(input)[self.axis];

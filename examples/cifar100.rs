@@ -87,30 +87,18 @@ fn main() -> Result<(), Error> {
 	let mut opt = GradientOptimiser::new(
 		&training_loss,
 		&[&input, &fine_labels],
-		// Soop::new(1.0 - 2.0 * batch_size as f32 / epoch as f32)
-		// 	.variance_addition(move |p, g, lp| {
-		// 		EPSILON*EPSILON // permanent noise at small fixed scale
-		// 	+ (1.0-lp)*1e-6*p*p // permanent noise at 0.01% of parameter scale
-		// 	+ (1.0-lp)*1e-4*g*g/batch_size as f32 // temporary noise at 0.1% of gradient scale
-		// 	})
-		// 	.clone(),
-		//Soop::new(),
+
 		Adam::new(3e-3, 0.9, 0.995),
 	);
-	//let p_g = opt.parameters_and_grads().clone();
+
 	opt.callback(max_steps(25 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
-	// opt.callback(move |s, d|{
-	// 	if (d.step + 1) % 250 == 0 {
-	// 		print_step_data()(s, d);
-	// 		s.finalise(&p_g);
-	// 	}
-	// });
 	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		val(&mut empty());
-		val(&mut s.best_estimate(&mut data.opt_inner.parameters_and_grads.keys()).into_iter());
 	}));
-	//opt.callback(at_n_steps(10*epoch/batch_size, |s: &mut Soop, _| {s.lambda(0.998);}));
+	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data|{
+		s.rate(3.3e-4);
+	}));
 
 	// 6. Train (optimise) the neural net until the max_steps callback returns Signal::Stop
 	let start = Instant::now();
