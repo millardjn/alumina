@@ -16,7 +16,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
@@ -91,8 +91,8 @@ impl<F: NullaryDualFunc> OpBuilder for NullaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseDualInstance {
-			output1: self.output1.inner().clone(),
-			output2: self.output2.inner().clone(),
+			output1: self.output1.id().clone(),
+			output2: self.output2.id().clone(),
 			f: self.f,
 		})
 	}
@@ -101,8 +101,8 @@ impl<F: NullaryDualFunc> OpBuilder for NullaryElementwiseDual<F> {
 /// ElementwiseDual Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct NullaryElementwiseDualInstance<F: NullaryDualFunc> {
-	output1: NodeInner,
-	output2: NodeInner,
+	output1: NodeID,
+	output2: NodeID,
 	f: F,
 }
 
@@ -119,11 +119,11 @@ impl<F: NullaryDualFunc> OpInstance for NullaryElementwiseDualInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
@@ -163,9 +163,9 @@ pub trait UnaryDualFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input: &NodeInner,
-		output1: &NodeInner,
-		output2: &NodeInner,
+		input: &NodeID,
+		output1: &NodeID,
+		output2: &NodeID,
 	) -> Result<(), GradientError>;
 }
 
@@ -235,9 +235,9 @@ impl<F: UnaryDualFunc> OpBuilder for UnaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseDualInstance {
-			input: self.input.inner().clone(),
-			output1: self.output1.inner().clone(),
-			output2: self.output2.inner().clone(),
+			input: self.input.id().clone(),
+			output1: self.output1.id().clone(),
+			output2: self.output2.id().clone(),
 			f: self.f,
 		})
 	}
@@ -246,9 +246,9 @@ impl<F: UnaryDualFunc> OpBuilder for UnaryElementwiseDual<F> {
 /// ElementwiseDual Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct UnaryElementwiseDualInstance<F: UnaryDualFunc> {
-	input: NodeInner,
-	output1: NodeInner,
-	output2: NodeInner,
+	input: NodeID,
+	output1: NodeID,
+	output2: NodeID,
 	f: F,
 }
 
@@ -265,11 +265,11 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
@@ -365,10 +365,10 @@ pub trait BinaryDualFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		output1: &NodeInner,
-		output2: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		output1: &NodeID,
+		output2: &NodeID,
 	) -> Result<(), GradientError>;
 }
 
@@ -443,10 +443,10 @@ impl<F: BinaryDualFunc> OpBuilder for BinaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseDualInstance {
-			input1: self.input1.inner().clone(),
-			input2: self.input2.inner().clone(),
-			output1: self.output1.inner().clone(),
-			output2: self.output2.inner().clone(),
+			input1: self.input1.id().clone(),
+			input2: self.input2.id().clone(),
+			output1: self.output1.id().clone(),
+			output2: self.output2.id().clone(),
 			f: self.f,
 		})
 	}
@@ -455,10 +455,10 @@ impl<F: BinaryDualFunc> OpBuilder for BinaryElementwiseDual<F> {
 /// ElementwiseDual Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct BinaryElementwiseDualInstance<F: BinaryDualFunc> {
-	input1: NodeInner,
-	input2: NodeInner,
-	output1: NodeInner,
-	output2: NodeInner,
+	input1: NodeID,
+	input2: NodeID,
+	output1: NodeID,
+	output2: NodeID,
 	f: F,
 }
 
@@ -475,11 +475,11 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
@@ -694,9 +694,9 @@ pub trait NaryDualFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		inputs: &[NodeInner],
-		output1: &NodeInner,
-		output2: &NodeInner,
+		inputs: &[NodeID],
+		output1: &NodeID,
+		output2: &NodeID,
 	) -> Result<(), GradientError>;
 }
 
@@ -770,9 +770,9 @@ impl<F: NaryDualFunc> OpBuilder for NaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseDualInstance {
-			inputs: self.inputs.iter().map(|n| n.inner().clone()).collect(),
-			output1: self.output1.inner().clone(),
-			output2: self.output2.inner().clone(),
+			inputs: self.inputs.iter().map(|n| n.id().clone()).collect(),
+			output1: self.output1.id().clone(),
+			output2: self.output2.id().clone(),
 			f: self.f,
 		})
 	}
@@ -781,9 +781,9 @@ impl<F: NaryDualFunc> OpBuilder for NaryElementwiseDual<F> {
 /// ElementwiseDual Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct NaryElementwiseDualInstance<F: NaryDualFunc> {
-	inputs: Vec<NodeInner>,
-	output1: NodeInner,
-	output2: NodeInner,
+	inputs: Vec<NodeID>,
+	output1: NodeID,
+	output2: NodeID,
 	f: F,
 }
 
@@ -800,11 +800,11 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 

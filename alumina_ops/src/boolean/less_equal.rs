@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 };
 
 /// Returns the truth value (1.0 or 0.0) of (input1 <= input2) element-wise.
@@ -54,9 +54,9 @@ impl BinaryFunc for LessEqualFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Ok(())
 	}

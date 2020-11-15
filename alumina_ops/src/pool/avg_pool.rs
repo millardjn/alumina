@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -113,8 +113,8 @@ impl OpBuilder for AvgPool {
 
 		// TODO check for shape problems early
 		Ok(AvgPoolInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			factors: self.factors.clone(),
 		})
 	}
@@ -122,8 +122,8 @@ impl OpBuilder for AvgPool {
 
 #[derive(Debug, Clone)]
 pub struct AvgPoolInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	factors: Vec<usize>,
 }
 
@@ -132,11 +132,11 @@ impl OpInstance for AvgPoolInstance {
 		"AvgPool"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -283,8 +283,8 @@ impl OpBuilder for AvgPoolBack {
 
 		// TODO check for shape problems early
 		Ok(AvgPoolBackInstance {
-			output_grad: self.output_grad.inner().clone(),
-			input_grad: self.input_grad.inner().clone(),
+			output_grad: self.output_grad.id().clone(),
+			input_grad: self.input_grad.id().clone(),
 			factors: self.factors.clone(),
 		})
 	}
@@ -292,8 +292,8 @@ impl OpBuilder for AvgPoolBack {
 
 #[derive(Debug, Clone)]
 pub struct AvgPoolBackInstance {
-	output_grad: NodeInner,
-	input_grad: NodeInner,
+	output_grad: NodeID,
+	input_grad: NodeID,
 	factors: Vec<usize>,
 }
 
@@ -302,11 +302,11 @@ impl OpInstance for AvgPoolBackInstance {
 		"AvgPoolBack"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output_grad.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input_grad.clone()]
 	}
 

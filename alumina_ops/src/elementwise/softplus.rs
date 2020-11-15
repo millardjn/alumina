@@ -10,7 +10,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the softplus (y = (x.exp() + 1.0).ln()) of the input element-wise.
@@ -44,7 +44,7 @@ impl UnaryFunc for SoftplusFunc {
 		"Softplus"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let exp = exp(ctx.node(input))?;
 		let exp_p1 = offset(exp.clone(), 1.0)?;
 		let do_di = div(exp, exp_p1)?;

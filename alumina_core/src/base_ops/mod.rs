@@ -4,7 +4,7 @@ pub mod noop;
 pub mod shape_constraint;
 
 use crate::errors::{ExecutionError, GradientError, ShapePropError};
-use crate::graph::NodeInner;
+use crate::graph::NodeID;
 use crate::{
 	errors::OpBuildError,
 	exec::ExecutionContext,
@@ -16,6 +16,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use std::any::Any;
 use std::fmt;
+use std::sync::Arc;
 
 /// Generated default unique names for `Op`s
 ///
@@ -87,7 +88,7 @@ pub trait OpBuilder: Sized {
 
 		let instance = self.build_instance()?;
 
-		Ok(graph.new_op(Box::new(instance)).set_name(name))
+		Ok(graph.new_op(Arc::new(instance)).set_name(name))
 	}
 }
 
@@ -104,10 +105,10 @@ pub trait OpInstance: fmt::Debug + OpClone + Any + Send + Sync {
 	// CloneError>; TODO into builder
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
-	fn inputs(&self) -> IndexSet<NodeInner>;
+	fn inputs(&self) -> IndexSet<NodeID>;
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
-	fn outputs(&self) -> IndexSet<NodeInner>;
+	fn outputs(&self) -> IndexSet<NodeID>;
 
 	/// Test
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError>;

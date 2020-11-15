@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, HeavyNode, Node, NodeInner, NodeTag, Op},
+	graph::{merge_graphs, HeavyNode, Node, NodeID, NodeTag, Op},
 	init::msra,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
@@ -145,7 +145,7 @@ where
 		.chain(once(&output_channels))
 		.cloned()
 		.collect();
-	let output_shape = padding.output_node_shape(input.shape(), &filter_shape);
+	let output_shape = padding.output_node_shape(&input.shape(), &filter_shape);
 
 	let filter = input
 		.graph()
@@ -181,7 +181,7 @@ where
 		.to_data_shape()
 		.map_err(|_err| format!("Filter shape must be known.: {}", filter.shape()))?;
 
-	let output_shape = padding.output_node_shape(input.shape(), filter_shape.slice());
+	let output_shape = padding.output_node_shape(&input.shape(), filter_shape.slice());
 
 	let output = input
 		.graph()
@@ -358,9 +358,9 @@ impl OpBuilder for Conv {
 		Ok(ConvInstance {
 			padding: self.padding,
 
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
-			filter: self.filter.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
+			filter: self.filter.id().clone(),
 
 			lowering_memory: self.lowering_memory,
 		})
@@ -370,9 +370,9 @@ impl OpBuilder for Conv {
 #[derive(Debug, Clone)]
 pub struct ConvInstance {
 	padding: Padding,
-	input: NodeInner,
-	output: NodeInner,
-	filter: NodeInner,
+	input: NodeID,
+	output: NodeID,
+	filter: NodeID,
 	lowering_memory: usize,
 }
 
@@ -381,11 +381,11 @@ impl OpInstance for ConvInstance {
 		"Conv"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.filter.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -741,12 +741,12 @@ impl OpBuilder for ConvBack {
 		Ok(ConvBackInstance {
 			padding: self.padding,
 
-			input: self.input.inner().clone(),
-			filter: self.filter.inner().clone(),
-			output_grad: self.output_grad.inner().clone(),
+			input: self.input.id().clone(),
+			filter: self.filter.id().clone(),
+			output_grad: self.output_grad.id().clone(),
 
-			input_grad: self.input_grad.inner().clone(),
-			filter_grad: self.filter_grad.inner().clone(),
+			input_grad: self.input_grad.id().clone(),
+			filter_grad: self.filter_grad.id().clone(),
 
 			lowering_memory: self.lowering_memory,
 		})
@@ -756,12 +756,12 @@ impl OpBuilder for ConvBack {
 #[derive(Debug, Clone)]
 pub struct ConvBackInstance {
 	padding: Padding,
-	input: NodeInner,
-	filter: NodeInner,
-	output_grad: NodeInner,
+	input: NodeID,
+	filter: NodeID,
+	output_grad: NodeID,
 
-	input_grad: NodeInner,
-	filter_grad: NodeInner,
+	input_grad: NodeID,
+	filter_grad: NodeID,
 
 	lowering_memory: usize,
 }
@@ -771,11 +771,11 @@ impl OpInstance for ConvBackInstance {
 		"ConvBackward"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.filter.clone(), self.output_grad.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input_grad.clone(), self.filter_grad.clone()]
 	}
 
@@ -1785,9 +1785,9 @@ mod tests {
 			.unwrap()
 			.set_name("output_valid");
 
-		assert_eq!(output_full.shape(), &[3, 7, 11, 15].iter().into());
-		assert_eq!(output_same.shape(), &[3, 5, 7, 15].iter().into());
-		assert_eq!(output_valid.shape(), &[3, 3, 3, 15].iter().into());
+		assert_eq!(output_full.shape(), [3, 7, 11, 15].iter().into());
+		assert_eq!(output_same.shape(), [3, 5, 7, 15].iter().into());
+		assert_eq!(output_valid.shape(), [3, 3, 3, 15].iter().into());
 	}
 
 	#[test]
@@ -1804,9 +1804,9 @@ mod tests {
 			.unwrap()
 			.set_name("output_valid");
 
-		assert_eq!(output_full.shape(), &[3, -1, -1, 15].iter().into());
-		assert_eq!(output_same.shape(), &[3, -1, -1, 15].iter().into());
-		assert_eq!(output_valid.shape(), &[3, -1, -1, 15].iter().into());
+		assert_eq!(output_full.shape(), [3, -1, -1, 15].iter().into());
+		assert_eq!(output_same.shape(), [3, -1, -1, 15].iter().into());
+		assert_eq!(output_valid.shape(), [3, -1, -1, 15].iter().into());
 	}
 
 	#[test]
@@ -1817,7 +1817,7 @@ mod tests {
 			.unwrap()
 			.set_name("output_full");
 
-		assert_eq!(output_full.shape(), &[-1, -1, -1, 15].iter().into());
+		assert_eq!(output_full.shape(), [-1, -1, -1, 15].iter().into());
 	}
 
 	#[test]

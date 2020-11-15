@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
@@ -88,8 +88,8 @@ impl OpBuilder for Softmax {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxInstance {
-			logits: self.logits.inner().clone(),
-			output: self.output.inner().clone(),
+			logits: self.logits.id().clone(),
+			output: self.output.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -98,8 +98,8 @@ impl OpBuilder for Softmax {
 /// Softmax OpInstance
 #[derive(Clone, Debug)]
 pub struct SoftmaxInstance {
-	logits: NodeInner,
-	output: NodeInner,
+	logits: NodeID,
+	output: NodeID,
 	axis: usize,
 }
 
@@ -116,11 +116,11 @@ impl OpInstance for SoftmaxInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -222,9 +222,9 @@ impl OpBuilder for SoftmaxBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxBackInstance {
-			logits: self.logits.inner().clone(),
-			logits_grad: self.logits_grad.inner().clone(),
-			output_grad: self.output_grad.inner().clone(),
+			logits: self.logits.id().clone(),
+			logits_grad: self.logits_grad.id().clone(),
+			output_grad: self.output_grad.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -233,9 +233,9 @@ impl OpBuilder for SoftmaxBack {
 /// SoftmaxBack OpInstance
 #[derive(Clone, Debug)]
 pub struct SoftmaxBackInstance {
-	logits: NodeInner,
-	logits_grad: NodeInner,
-	output_grad: NodeInner,
+	logits: NodeID,
+	logits_grad: NodeID,
+	output_grad: NodeID,
 	axis: usize,
 }
 
@@ -252,11 +252,11 @@ impl OpInstance for SoftmaxBackInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.output_grad.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits_grad.clone()]
 	}
 

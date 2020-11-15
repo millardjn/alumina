@@ -2,7 +2,7 @@
 use crate::{
 	base_ops::{fill::fill_into, shape_constraint::same_shape},
 	errors::GradError,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	subgraph::{backward_subgraph_from, forward_subgraph_from, SubGraph},
 	util::display::{Iter2Display, IterDisplay},
 };
@@ -95,7 +95,7 @@ where
 
 	// make sure all xs have a grad node
 	for x in &xs {
-		let _ = context.grad_of(x.borrow().inner());
+		let _ = context.grad_of(&x.borrow().id());
 	}
 
 	// take the gradient of each op, and collect any errors
@@ -108,27 +108,27 @@ where
 
 	let GradientContext {
 		node_to_grad,
-		mut inner_to_node,
+		mut nodes,
 		y,
 		..
 	} = context;
 
 	// Set them to fill zero if there are no inputs to the grad
 	for (node_inner, grad) in &node_to_grad {
-		if y.inner() != node_inner && grad.parent_ops().is_empty() {
+		if y.id() != *node_inner && grad.parent_ops().is_empty() {
 			fill_into(0.0, grad).unwrap_or_else(|err| {
 				panic!(
 					"Alumina Bug: Error building fill op for gradient of ({}).\n{:#?}",
-					node_inner, err
+					nodes.get(node_inner).unwrap(), err
 				)
 			});
 			// grad.set_value(arr0(0.0));
 		}
 		if !grad.shape().is_known() {
-			same_shape(&inner_to_node[node_inner], grad).unwrap_or_else(|err| {
+			same_shape(nodes.get(node_inner).unwrap(), grad).unwrap_or_else(|err| {
 				panic!(
 					"Alumina Bug: Error building shape constraint for gradient of ({}).\n{:#?}",
-					node_inner, err
+					nodes.get(node_inner).unwrap(), err
 				)
 			});
 		}
@@ -136,7 +136,7 @@ where
 
 	let result_map = node_to_grad
 		.into_iter()
-		.map(|(inner, grad)| (inner_to_node.swap_remove(&inner).unwrap(), grad))
+		.map(|(inner, grad)| (nodes.swap_take(&inner).unwrap(), grad))
 		.collect();
 
 	if errors.is_empty() {
@@ -189,26 +189,23 @@ fn grad_subgraph(y: &Node, xs: IndexSet<Node>) -> SubGraph {
 /// required by an `Op`.
 pub struct GradientContext {
 	y: Node,
-	node_to_grad: IndexMap<NodeInner, Node>,
-	inner_to_node: IndexMap<NodeInner, Node>,
+	node_to_grad: IndexMap<NodeID, Node>,
+	nodes: IndexSet<Node>,
 }
 
 impl GradientContext {
 	fn new(y: Node, subgraph_nodes: IndexSet<Node>) -> Self {
 		let mut context = GradientContext {
 			y: y.clone(),
-			inner_to_node: subgraph_nodes
-				.into_iter()
-				.map(|node| (node.inner().clone(), node))
-				.collect(),
+			nodes: subgraph_nodes,
 			node_to_grad: IndexMap::new(),
 		};
 
 		// context.grad_of(y.inner()).set_value(arr0(1.0));
-		fill_into(1.0, context.grad_of(y.inner())).unwrap_or_else(|err| {
+		fill_into(1.0, context.grad_of(&y.id())).unwrap_or_else(|err| {
 			panic!(
 				"Alumina Bug: Error building fill op for gradient of output ({}).\n{:#?}",
-				y.inner(),
+				y,
 				err
 			)
 		});
@@ -224,19 +221,19 @@ impl GradientContext {
 	}
 
 	/// This lazily instantiates and returns gradient nodes corresponding to a non-gradient inner.
-	pub fn grad_of(&mut self, inner: &NodeInner) -> Node {
+	pub fn grad_of(&mut self, inner: &NodeID) -> Node {
 		let &mut GradientContext {
 			ref y,
 			ref mut node_to_grad,
-			ref inner_to_node,
+			ref nodes,
 		} = self;
 
-		let node = inner_to_node.get(inner).unwrap_or_else(|| {
+		let node = nodes.get(inner).unwrap_or_else(|| {
 			panic!(
-				"Op Bug: Node {} was accessed but is not part of {}",
-				inner.name(),
+				"Op Bug: Node (id:{}) was accessed but is not part of {}",
+				inner.id(),
 				IterDisplay {
-					inner: inner_to_node.values().cloned().collect::<Vec<Node>>()
+					inner: nodes.clone()
 				}
 			)
 		});
@@ -245,20 +242,20 @@ impl GradientContext {
 			.entry(inner.clone())
 			.or_insert_with(|| {
 				node.graph()
-					.new_node(inner.shape().clone())
-					.set_name(format!("d({})/d({})", y.name(), inner.name()))
+					.new_node(node.shape())
+					.set_name(format!("d({})/d({})", y.name(), node.name()))
 			})
 			.clone()
 	}
 
 	/// Returns the full node for an inner.
-	pub fn node(&self, inner: &NodeInner) -> Node {
-		self.inner_to_node.get(inner).cloned().unwrap_or_else(|| {
+	pub fn node(&self, inner: &NodeID) -> Node {
+		self.nodes.get(inner).cloned().unwrap_or_else(|| {
 			panic!(
-				"Op Bug: Node {} was accessed but is not part of {}",
-				inner.name(),
+				"Op Bug: Node (id:{}) was accessed but is not part of {}",
+				inner.id(),
 				IterDisplay {
-					inner: self.inner_to_node.values().cloned().collect::<Vec<Node>>()
+					inner: self.nodes.clone()
 				}
 			)
 		})

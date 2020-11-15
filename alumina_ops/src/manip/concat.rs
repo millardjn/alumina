@@ -4,7 +4,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeInner},
+	graph::{merge_node_graphs, Node, NodeID},
 	
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
@@ -111,8 +111,8 @@ impl OpBuilder for Concat {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ConcatInstance {
-			inputs: self.inputs.iter().map(Node::inner).cloned().collect(),
-			output: self.output.inner().clone(),
+			inputs: self.inputs.iter().map(Node::id).collect(),
+			output: self.output.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -121,8 +121,8 @@ impl OpBuilder for Concat {
 /// Concat OpInstance
 #[derive(Clone, Debug)]
 pub struct ConcatInstance {
-	inputs: Vec<NodeInner>,
-	output: NodeInner,
+	inputs: Vec<NodeID>,
+	output: NodeID,
 	axis: usize,
 }
 
@@ -139,11 +139,11 @@ impl OpInstance for ConcatInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -257,9 +257,9 @@ impl OpBuilder for ConcatBack {
 			input_and_grads: self
 				.input_and_grads
 				.iter()
-				.map(|(i, g)| (i.inner().clone(), g.inner().clone()))
+				.map(|(i, g)| (i.id().clone(), g.id().clone()))
 				.collect(),
-			output_grad: self.output_grad.inner().clone(),
+			output_grad: self.output_grad.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -268,8 +268,8 @@ impl OpBuilder for ConcatBack {
 /// ConcatBack OpInstance
 #[derive(Clone, Debug)]
 pub struct ConcatBackInstance {
-	input_and_grads: Vec<(NodeInner, NodeInner)>,
-	output_grad: NodeInner,
+	input_and_grads: Vec<(NodeID, NodeID)>,
+	output_grad: NodeID,
 	axis: usize,
 }
 
@@ -286,11 +286,11 @@ impl OpInstance for ConcatBackInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.input_and_grads.iter().map(|(i, _)|i.clone()).chain(once(self.output_grad.clone())).collect()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		self.input_and_grads.iter().map(|(_, g)|g.clone()).collect()
 	}
 

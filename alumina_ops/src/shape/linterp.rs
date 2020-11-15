@@ -22,7 +22,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -134,8 +134,8 @@ impl OpBuilder for Linterp {
 		}
 
 		Ok(LinterpInstance::new(
-			self.input.inner().clone(),
-			self.output.inner().clone(),
+			self.input.id().clone(),
+			self.output.id().clone(),
 			self.factors,
 		))
 	}
@@ -186,8 +186,8 @@ impl OpBuilder for Linterp {
 
 #[derive(Debug, Clone)]
 pub struct LinterpInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	factors: Vec<usize>,
 
 	///
@@ -199,7 +199,7 @@ pub struct LinterpInstance {
 }
 
 impl LinterpInstance {
-	pub fn new(input: NodeInner, output: NodeInner, factors: Vec<usize>) -> Self {
+	pub fn new(input: NodeID, output: NodeID, factors: Vec<usize>) -> Self {
 		let range_start = factors.iter().take_while(|&&i| i == 1).count();
 		let range_end = factors.len() - factors.iter().rev().take_while(|&&i| i == 1).count();
 		let central_range = range_start..range_end;
@@ -219,11 +219,11 @@ impl OpInstance for LinterpInstance {
 		"Linterp"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -443,8 +443,8 @@ impl OpBuilder for LinterpBack {
 			.into());
 		}
 		Ok(LinterpBackInstance::new(
-			self.input_grad.inner().clone(),
-			self.output_grad.inner().clone(),
+			self.input_grad.id().clone(),
+			self.output_grad.id().clone(),
 			self.factors,
 		))
 	}
@@ -452,8 +452,8 @@ impl OpBuilder for LinterpBack {
 
 #[derive(Debug, Clone)]
 pub struct LinterpBackInstance {
-	input_grad: NodeInner,
-	output_grad: NodeInner,
+	input_grad: NodeID,
+	output_grad: NodeID,
 	factors: Vec<usize>,
 	central_range: Range<usize>, /* This is the minimum range within the upscaling factors which contains all
 	                              * non-unit entries. */
@@ -461,7 +461,7 @@ pub struct LinterpBackInstance {
 }
 
 impl LinterpBackInstance {
-	pub fn new(input_grad: NodeInner, output_grad: NodeInner, factors: Vec<usize>) -> Self {
+	pub fn new(input_grad: NodeID, output_grad: NodeID, factors: Vec<usize>) -> Self {
 		let range_start = factors.iter().take_while(|&&i| i == 1).count();
 		let range_end = factors.len() - factors.iter().rev().take_while(|&&i| i == 1).count();
 		let central_range = range_start..range_end;
@@ -482,12 +482,12 @@ impl OpInstance for LinterpBackInstance {
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output_grad.clone()]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input_grad.clone()]
 	}
 

@@ -16,7 +16,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
@@ -85,7 +85,7 @@ impl<F: NullaryFunc> OpBuilder for NullaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseInstance {
-			output: self.output.inner().clone(),
+			output: self.output.id().clone(),
 			f: self.f,
 		})
 	}
@@ -94,7 +94,7 @@ impl<F: NullaryFunc> OpBuilder for NullaryElementwise<F> {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct NullaryElementwiseInstance<F: NullaryFunc> {
-	output: NodeInner,
+	output: NodeID,
 	f: F,
 }
 
@@ -111,11 +111,11 @@ impl<F: NullaryFunc> OpInstance for NullaryElementwiseInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -140,7 +140,7 @@ pub trait UnaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 
 	fn type_name(&self) -> &'static str;
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError>;
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError>;
 }
 
 #[must_use = "Op builder not used, call .build()"]
@@ -200,8 +200,8 @@ impl<F: UnaryFunc> OpBuilder for UnaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			f: self.f,
 		})
 	}
@@ -210,8 +210,8 @@ impl<F: UnaryFunc> OpBuilder for UnaryElementwise<F> {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct UnaryElementwiseInstance<F: UnaryFunc> {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	f: F,
 }
 
@@ -228,11 +228,11 @@ impl<F: UnaryFunc> OpInstance for UnaryElementwiseInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -283,9 +283,9 @@ pub trait BinaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		output: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		output: &NodeID,
 	) -> Result<(), GradientError>;
 }
 
@@ -355,9 +355,9 @@ impl<F: BinaryFunc> OpBuilder for BinaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseInstance {
-			input1: self.input1.inner().clone(),
-			input2: self.input2.inner().clone(),
-			output: self.output.inner().clone(),
+			input1: self.input1.id().clone(),
+			input2: self.input2.id().clone(),
+			output: self.output.id().clone(),
 			f: self.f,
 		})
 	}
@@ -366,9 +366,9 @@ impl<F: BinaryFunc> OpBuilder for BinaryElementwise<F> {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct BinaryElementwiseInstance<F: BinaryFunc> {
-	input1: NodeInner,
-	input2: NodeInner,
-	output: NodeInner,
+	input1: NodeID,
+	input2: NodeID,
+	output: NodeID,
 	f: F,
 }
 
@@ -385,11 +385,11 @@ impl<F: BinaryFunc> OpInstance for BinaryElementwiseInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -470,10 +470,10 @@ pub trait TernaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		input3: &NodeInner,
-		output: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		input3: &NodeID,
+		output: &NodeID,
 	) -> Result<(), GradientError>;
 }
 
@@ -549,10 +549,10 @@ impl<F: TernaryFunc> OpBuilder for TernaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(TernaryElementwiseInstance {
-			input1: self.input1.inner().clone(),
-			input2: self.input2.inner().clone(),
-			input3: self.input3.inner().clone(),
-			output: self.output.inner().clone(),
+			input1: self.input1.id().clone(),
+			input2: self.input2.id().clone(),
+			input3: self.input3.id().clone(),
+			output: self.output.id().clone(),
 			f: self.f,
 		})
 	}
@@ -561,10 +561,10 @@ impl<F: TernaryFunc> OpBuilder for TernaryElementwise<F> {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct TernaryElementwiseInstance<F: TernaryFunc> {
-	input1: NodeInner,
-	input2: NodeInner,
-	input3: NodeInner,
-	output: NodeInner,
+	input1: NodeID,
+	input2: NodeID,
+	input3: NodeID,
+	output: NodeID,
 	f: F,
 }
 
@@ -581,11 +581,11 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone(), self.input3.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -725,7 +725,7 @@ pub trait NaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 
 	fn type_name(&self) -> &'static str;
 
-	fn grad(&self, ctx: &mut GradientContext, inputs: &[NodeInner], output: &NodeInner) -> Result<(), GradientError>;
+	fn grad(&self, ctx: &mut GradientContext, inputs: &[NodeID], output: &NodeID) -> Result<(), GradientError>;
 }
 
 #[must_use = "Op builder not used, call .build()"]
@@ -789,8 +789,8 @@ impl<F: NaryFunc> OpBuilder for NaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseInstance {
-			inputs: self.inputs.iter().map(|n| n.inner().clone()).collect(),
-			output: self.output.inner().clone(),
+			inputs: self.inputs.iter().map(|n| n.id().clone()).collect(),
+			output: self.output.id().clone(),
 			f: self.f,
 		})
 	}
@@ -799,8 +799,8 @@ impl<F: NaryFunc> OpBuilder for NaryElementwise<F> {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct NaryElementwiseInstance<F: NaryFunc> {
-	inputs: Vec<NodeInner>,
-	output: NodeInner,
+	inputs: Vec<NodeID>,
+	output: NodeID,
 	f: F,
 }
 
@@ -817,11 +817,11 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

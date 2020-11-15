@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 };
 
 /// Calculates the elementwise maximum (max) of input1 and input2.
@@ -45,9 +45,9 @@ impl BinaryFunc for MaxFunc {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		output: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		output: &NodeID,
 	) -> Result<(), GradientError> {
 		let _op = MaxBack::new_default(
 			ctx.node(input1),
@@ -92,10 +92,10 @@ impl TernaryFunc for MaxBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_input3: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_input3: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}

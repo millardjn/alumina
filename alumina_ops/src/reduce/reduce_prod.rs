@@ -8,7 +8,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -25,7 +25,7 @@ where
 	let input = input.into();
 	let usize_axes = regularise_axes(axes, input.shape().len());
 
-	let output_shape: NodeShape = calc_output_shape(input.shape(), &usize_axes, keep_dims);
+	let output_shape: NodeShape = calc_output_shape(&input.shape(), &usize_axes, keep_dims);
 
 	let output = input
 		.graph()
@@ -117,8 +117,8 @@ impl OpBuilder for ReduceProd {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ReduceProdInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			axes: self.axes.clone(),
 			keep_dims: self.keep_dims,
 		})
@@ -128,8 +128,8 @@ impl OpBuilder for ReduceProd {
 /// ReduceProd OpInstance,
 #[derive(Clone, Debug)]
 pub struct ReduceProdInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	axes: Vec<usize>,
 	keep_dims: bool,
 }
@@ -147,16 +147,16 @@ impl OpInstance for ReduceProdInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
-		let expand_grad = if self.input.shape().len() == self.output.shape().len() {
+		let expand_grad = if ctx.node(&self.input).shape().len() == ctx.node(&self.output).shape().len() {
 			ctx.grad_of(&self.output)
 		} else {
 			expand_dims(ctx.grad_of(&self.output), &self.axes)?

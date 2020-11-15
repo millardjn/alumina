@@ -32,7 +32,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
@@ -178,8 +178,8 @@ impl OpBuilder for ExpandDims {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ExpandDimsInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			extra_axes: SmallVec::from_vec(self.extra_axes),
 		})
 	}
@@ -208,8 +208,8 @@ fn expanded_shape(input_shape: &[usize], extra_axes: &[usize]) -> SmallVec<[usiz
 /// ExpandDims OpInstance
 #[derive(Clone, Debug)]
 pub struct ExpandDimsInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	extra_axes: SmallVec<[usize; 8]>,
 }
 
@@ -226,11 +226,11 @@ impl OpInstance for ExpandDimsInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
@@ -24,7 +24,7 @@ where
 	let input = input.into();
 	let axis = wrap_dim(axis, input.shape().len());
 
-	let output_shape: NodeShape = calc_output_shape(input.shape(), axis, false);
+	let output_shape: NodeShape = calc_output_shape(&input.shape(), axis, false);
 
 	let output = input
 		.graph()
@@ -86,8 +86,8 @@ impl OpBuilder for ArgMax {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ArgMaxInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -96,8 +96,8 @@ impl OpBuilder for ArgMax {
 /// ArgMax OpInstance,
 #[derive(Clone, Debug)]
 pub struct ArgMaxInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	axis: usize,
 }
 
@@ -114,11 +114,11 @@ impl OpInstance for ArgMaxInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

@@ -8,7 +8,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
 	init::duplicate,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
@@ -209,8 +209,8 @@ impl OpBuilder for Broadcast {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BroadcastInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 		})
 	}
 }
@@ -218,8 +218,8 @@ impl OpBuilder for Broadcast {
 /// Broadcast Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct BroadcastInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 }
 
 impl OpInstance for BroadcastInstance {
@@ -235,20 +235,20 @@ impl OpInstance for BroadcastInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
-		let leading_ones = self.output.shape().len() - self.input.shape().len();
+		let leading_ones = ctx.node(&self.output).shape().len() - ctx.node(&self.input).shape().len();
 
 		if leading_ones == 0 {
-			let broadcast_axes: SmallVec<[isize; 8]> = self
-				.input
+			let broadcast_axes: SmallVec<[isize; 8]> = ctx.node(&self
+				.input)
 				.shape()
 				.into_iter()
 				.enumerate()
@@ -267,8 +267,8 @@ impl OpInstance for BroadcastInstance {
 					.build()?;
 			}
 		} else {
-			let broadcast_axes: SmallVec<[isize; 8]> = self
-				.input
+			let broadcast_axes: SmallVec<[isize; 8]> = ctx.node(&self
+				.input)
 				.shape()
 				.into_iter()
 				.enumerate()

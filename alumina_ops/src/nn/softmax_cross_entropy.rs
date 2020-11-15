@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
@@ -109,9 +109,9 @@ impl OpBuilder for SoftmaxCrossEntropy {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyInstance {
-			logits: self.logits.inner().clone(),
-			labels: self.labels.inner().clone(),
-			output: self.output.inner().clone(),
+			logits: self.logits.id().clone(),
+			labels: self.labels.id().clone(),
+			output: self.output.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -120,9 +120,9 @@ impl OpBuilder for SoftmaxCrossEntropy {
 /// SoftmaxCrossEntropy OpInstance
 #[derive(Clone, Debug)]
 pub struct SoftmaxCrossEntropyInstance {
-	logits: NodeInner,
-	labels: NodeInner,
-	output: NodeInner,
+	logits: NodeID,
+	labels: NodeID,
+	output: NodeID,
 	axis: usize,
 }
 
@@ -139,11 +139,11 @@ impl OpInstance for SoftmaxCrossEntropyInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.labels.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -293,11 +293,11 @@ impl OpBuilder for SoftmaxCrossEntropyBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyBackInstance {
-			logits: self.logits.inner().clone(),
-			logits_grad: self.logits_grad.inner().clone(),
-			labels: self.labels.inner().clone(),
-			labels_grad: self.labels_grad.inner().clone(),
-			output_grad: self.output_grad.inner().clone(),
+			logits: self.logits.id().clone(),
+			logits_grad: self.logits_grad.id().clone(),
+			labels: self.labels.id().clone(),
+			labels_grad: self.labels_grad.id().clone(),
+			output_grad: self.output_grad.id().clone(),
 			axis: self.axis,
 		})
 	}
@@ -306,11 +306,11 @@ impl OpBuilder for SoftmaxCrossEntropyBack {
 /// SoftmaxCrossEntropyBack OpInstance
 #[derive(Clone, Debug)]
 pub struct SoftmaxCrossEntropyBackInstance {
-	logits: NodeInner,
-	logits_grad: NodeInner,
-	labels: NodeInner,
-	labels_grad: NodeInner,
-	output_grad: NodeInner,
+	logits: NodeID,
+	logits_grad: NodeID,
+	labels: NodeID,
+	labels_grad: NodeID,
+	output_grad: NodeID,
 	axis: usize,
 }
 
@@ -327,11 +327,11 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.labels.clone(), self.output_grad.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits_grad.clone(), self.labels_grad.clone()]
 	}
 

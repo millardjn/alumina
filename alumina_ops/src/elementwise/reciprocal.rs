@@ -7,7 +7,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the reciprocal of the input.
@@ -41,7 +41,7 @@ impl UnaryFunc for ReciprocalFunc {
 		"Reciprocal"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let _op = Div::new_default(
 			ctx.grad_of(output),
 			negative(sqr(ctx.node(input))?)?,

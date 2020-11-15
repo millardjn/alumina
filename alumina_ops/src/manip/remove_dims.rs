@@ -32,7 +32,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
@@ -183,8 +183,8 @@ impl OpBuilder for RemoveDims {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(RemoveDimsInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			axes: self.axes,
 		})
 	}
@@ -193,8 +193,8 @@ impl OpBuilder for RemoveDims {
 /// RemoveDims OpInstance
 #[derive(Clone, Debug)]
 pub struct RemoveDimsInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	axes: Vec<usize>, // must be sorted
 }
 
@@ -211,11 +211,11 @@ impl OpInstance for RemoveDimsInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

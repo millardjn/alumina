@@ -1,8 +1,9 @@
 //! Types and tools for executing a graph.
 use crate::{
 	errors::ExecError,
-	graph::{Node, NodeInner, Op, OpInner, WeakNodeInner, WeakOpInner},
-	shape_prop::cached_shapes_inner,
+	graph::{Node, NodeID, Op, OpID},
+	//shape_prop::cached_shapes_inner,
+	shape_prop::shapes_inner,
 	subgraph::{execution_subgraph, SubGraph},
 };
 use indexmap::{IndexMap, IndexSet};
@@ -15,7 +16,6 @@ use std::{
 };
 use std::time::{Instant};
 use sysinfo::{ProcessorExt, SystemExt, RefreshKind};
-
 
 
 enum DataState<T> {
@@ -95,21 +95,21 @@ impl<T> DataState<T> {
 /// Primary responsibility is to provide a safe interface to `OpInstance` implementations which prevents multiple
 /// mutable borrows.
 pub struct ExecutionContext {
-	value_map: UnsafeCell<IndexMap<NodeInner, DataState<f32>>>,
-	shape_map: IndexMap<NodeInner, IxDyn>,
+	value_map: UnsafeCell<IndexMap<Node, DataState<f32>>>,
+	shape_map: IndexMap<Node, IxDyn>,
 
 	/// None = not borrowed
 	/// false = shared borrow
 	/// true = mutable borrow
-	borrows: UnsafeCell<IndexMap<NodeInner, bool>>,
+	borrows: UnsafeCell<IndexMap<NodeID, bool>>,
 
-	current_op: Option<OpInner>,
-	current_inputs: IndexSet<NodeInner>,
-	current_outputs: IndexSet<NodeInner>,
+	current_op: Option<Op>,
+	current_inputs: IndexSet<Node>,
+	current_outputs: IndexSet<Node>,
 }
 
 impl ExecutionContext {
-	fn new(value_map: IndexMap<NodeInner, DataState<f32>>, shape_map: IndexMap<NodeInner, IxDyn>) -> ExecutionContext {
+	fn new(value_map: IndexMap<Node, DataState<f32>>, shape_map: IndexMap<Node, IxDyn>) -> ExecutionContext {
 		ExecutionContext {
 			value_map: UnsafeCell::new(value_map),
 			shape_map,
@@ -126,7 +126,7 @@ impl ExecutionContext {
 	}
 
 	/// Returns the `OpInner` to an `OpInstance` inside its `execute()` method
-	pub fn current_op(&self) -> &OpInner {
+	pub fn current_op(&self) -> &Op {
 		self.current_op
 			.as_ref()
 			.expect("Alumina Bug: current_op() called without op set")
@@ -152,9 +152,9 @@ impl ExecutionContext {
 		let borrows = unsafe { &mut *self.borrows.get() };
 
 		borrows.clear();
-		self.current_op = Some(op.inner().clone());
-		self.current_inputs = op.instance().inputs(); // TODO consider getting all op inputs and outputs in one pass to avoid relocking graph repeatedly
-		self.current_outputs = op.instance().outputs();
+		self.current_op = Some(op.clone());
+		self.current_inputs = op.parent_nodes(); // TODO consider getting all op inputs and outputs in one pass to avoid relocking graph repeatedly
+		self.current_outputs = op.child_nodes();
 
 		let mut output_required = false;
 		for node in &self.current_outputs {
@@ -274,7 +274,7 @@ impl ExecutionContext {
 		}
 	}
 
-	unsafe fn convert_to_standard(&self, node: &NodeInner) {
+	unsafe fn convert_to_standard(&self, node: &NodeID) {
 		let value_map = &mut *self.value_map.get();
 
 		match &mut value_map[node] {
@@ -294,25 +294,25 @@ impl ExecutionContext {
 	///
 	/// # Panics
 	///  * Panics if the node requested is not an input of the `Op`.
-	pub fn get_input<'b>(&'b self, node: &NodeInner) -> ArrayViewD<'b, f32> {
-		if !self.current_inputs.contains(node) {
+	pub fn get_input<'b>(&'b self, node: &NodeID) -> ArrayViewD<'b, f32> {
+		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(||{
 			panic!(
-				"Op Bug: Op ({}) requested node ({}) as an input during execution, but does not list it as an input.",
+				"Op Bug: Op ({}) requested node (id:{}) as an input during execution, but does not list it as an input.",
 				self.current_op(),
-				node
+				node.id(),
 			);
-		}
+		});
 
 		unsafe {
 			// This reference must not escape the current method.
 			let borrows = &mut *self.borrows.get();
 
-			if let Some(&mutable) = borrows.get(node) {
+			if let Some(&mutable) = borrows.get(&node.id()) {
 				if mutable {
 					panic!("Op Bug: Op ({}) requested an input (immutable) borrow of node ({}) which it had already borrowed mutably.", self.current_op(), node);
 				}
 			} else {
-				borrows.insert(node.clone(), false);
+				borrows.insert(node.id(), false);
 			}
 
 			self.allocate_readable_or_input(node)
@@ -323,25 +323,25 @@ impl ExecutionContext {
 	///
 	/// # Panics
 	///  * Panics if the node requested is not an input of the `Op`.
-	pub fn get_input_standard<'b>(&'b self, node: &NodeInner) -> ArrayViewD<'b, f32> {
-		if !self.current_inputs.contains(node) {
+	pub fn get_input_standard<'b>(&'b self, node: &NodeID) -> ArrayViewD<'b, f32> {
+		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(||{
 			panic!(
-				"Op Bug: Op ({}) requested node ({}) as an input during execution, but does not list it as an input.",
+				"Op Bug: Op ({}) requested node (id:{}) as an input during execution, but does not list it as an input.",
 				self.current_op(),
-				node
+				node.id(),
 			);
-		}
+		});
 
 		unsafe {
 			// This reference must not escape the current method.
 			let borrows = &mut *self.borrows.get();
 
-			if let Some(&mutable) = borrows.get(node) {
+			if let Some(&mutable) = borrows.get(&node.id()) {
 				if mutable {
 					panic!("Op Bug: Op ({}) requested an input (immutable) borrow of node ({}) which it had already borrowed mutably.", self.current_op(), node);
 				}
 			} else {
-				borrows.insert(node.clone(), false);
+				borrows.insert(node.id(), false);
 			}
 
 			let arr = self.allocate_readable_or_input(node);
@@ -363,14 +363,14 @@ impl ExecutionContext {
 	///  * Panics if the node is not `is_required_output()`.
 	///  * Panics if the node has already been mutable borrowed by the `Op`.
 	///  * Panics if the node requested is not an output of the `Op`.
-	pub fn get_output<'b>(&'b self, node: &NodeInner) -> ArrayViewMutD<'b, f32> {
-		if !self.current_outputs.contains(node) {
+	pub fn get_output<'b>(&'b self, node: &NodeID) -> ArrayViewMutD<'b, f32> {
+		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(||{
 			panic!(
-				"Op Bug: Op ({}) requested node ({}) as an output during execution, but does not list it as an output.",
+				"Op Bug: Op ({}) requested node (id:{}) as an output during execution, but does not list it as an output.",
 				self.current_op(),
-				node
+				node.id()
 			);
-		}
+		});
 
 		if !self.is_required_output(node) {
 			panic!("Op Bug: Op ({}) requested node ({}) as an output during execution, but it is not required for the execution of the subgraph. Op should use is_required_output() when it has more than output", self.current_op(), node);
@@ -380,14 +380,14 @@ impl ExecutionContext {
 			// This reference must not escape the current method.
 			let borrows = &mut *self.borrows.get();
 
-			if let Some(&mutable) = borrows.get(node) {
+			if let Some(&mutable) = borrows.get(&node.id()) {
 				if mutable {
 					panic!("Op Bug: Op ({}) requested an output (mutable) borrow of node ({}) which it had already borrowed mutably.", self.current_op(), node);
 				} else {
 					panic!("Op Bug: Op ({}) requested an output (mutable) borrow of node ({}) which it had already borrowed immutably.", self.current_op(), node);
 				}
 			} else {
-				borrows.insert(node.clone(), true);
+				borrows.insert(node.id(), true);
 			}
 
 			self.allocate_writeable(node)
@@ -396,14 +396,14 @@ impl ExecutionContext {
 
 	/// Get a mutable view of an output. Must check `is_required_output()` if Op has more than one output which is
 	/// guaranteed to be in contiguous standard layout ( C order).
-	pub fn get_output_standard<'b>(&'b self, node: &NodeInner) -> ArrayViewMutD<'b, f32> {
-		if !self.current_outputs.contains(node) {
+	pub fn get_output_standard<'b>(&'b self, node: &NodeID) -> ArrayViewMutD<'b, f32> {
+		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(||{
 			panic!(
-				"Op Bug: Op ({}) requested node ({}) as an output during execution, but does not list it as an output.",
+				"Op Bug: Op ({}) requested node (id:{}) as an output during execution, but does not list it as an output.",
 				self.current_op(),
-				node
+				node.id()
 			);
-		}
+		});
 
 		if !self.is_required_output(node) {
 			panic!("Op Bug: Op ({}) requested node ({}) as an output during execution, but it is not required for the execution of the subgraph. Op should use is_required_output() when it has more than output", self.current_op(), node);
@@ -413,14 +413,14 @@ impl ExecutionContext {
 			// This reference must not escape the current method.
 			let borrows = &mut *self.borrows.get();
 
-			if let Some(&mutable) = borrows.get(node) {
+			if let Some(&mutable) = borrows.get(&node.id()) {
 				if mutable {
 					panic!("Op Bug: Op ({}) requested an output (mutable) borrow of node ({}) which it had already borrowed mutably.", self.current_op(), node);
 				} else {
 					panic!("Op Bug: Op ({}) requested an output (mutable) borrow of node ({}) which it had already borrowed immutably.", self.current_op(), node);
 				}
 			} else {
-				borrows.insert(node.clone(), true);
+				borrows.insert(node.id(), true);
 			}
 
 			let arr = self.allocate_writeable(node);
@@ -439,7 +439,7 @@ impl ExecutionContext {
 	/// Check whether a particular output is required from an `Op`.
 	///
 	/// Not necessary to check for ops which only have one output.
-	pub fn is_required_output(&self, node: &NodeInner) -> bool {
+	pub fn is_required_output(&self, node: &NodeID) -> bool {
 		unsafe {
 			// This reference must not escape the current method.
 			let value_map = &mut *self.value_map.get();
@@ -458,7 +458,7 @@ impl ExecutionContext {
 	/// if data has already been deallocated
 	/// if data is already readable
 	/// if shape is not compatible with the available input values
-	unsafe fn allocate_writeable(&self, node: &NodeInner) -> ArrayViewMutD<f32> {
+	unsafe fn allocate_writeable(&self, node: &NodeID) -> ArrayViewMutD<f32> {
 		// This reference must not escape the current method.
 		let value_map = &mut *self.value_map.get();
 
@@ -496,7 +496,7 @@ impl ExecutionContext {
 
 	/// Must check borrows to ensure the node hasnt been borrowed mutably before calling to avoid creating an illegal
 	/// reference.
-	unsafe fn allocate_readable_or_input(&self, node: &NodeInner) -> ArrayViewD<f32> {
+	unsafe fn allocate_readable_or_input(&self, node: &Node) -> ArrayViewD<f32> {
 		// This reference must not escape the current method.
 		let value_map = &mut *self.value_map.get();
 
@@ -587,12 +587,12 @@ impl ExecutionContext {
 	///
 	/// # Panics
 	/// * Panics if `node` is not an output.
-	pub fn can_set(&self, node: &NodeInner) -> bool {
+	pub fn can_set(&self, node: &NodeID) -> bool {
 		assert!(
 			self.current_outputs.contains(node),
-			"Op Bug: Op ({}) called can_set with node ({}) during execution, but does not list it as an output.",
+			"Op Bug: Op ({}) called can_set with node (id:{}) during execution, but does not list it as an output.",
 			self.current_op(),
-			node
+			node.id()
 		);
 		unsafe {
 			// These references must not escape the current method.
@@ -622,12 +622,12 @@ impl ExecutionContext {
 	/// * May panic if `can_set()` would panic.
 	/// * May panic if `can_set()` would have returned false.
 	/// * Panics if `node` is not an output.
-	pub fn set(&self, node: &NodeInner, array: ArcArray<f32, IxDyn>) {
+	pub fn set(&self, node: &NodeID, array: ArcArray<f32, IxDyn>) {
 		assert!(
 			self.can_set(node),
-			"Op Bug: Op ({}) called set on node ({}), but can_set returned false.",
+			"Op Bug: Op ({}) called set on node (id:{}), but can_set returned false.",
 			self.current_op(),
-			node
+			node.id()
 		);
 		// assert!(array.is_standard_layout(), "Op Bug: Op ({}) called set, but array does not have a standard layout,
 		// array has shape ({:?}) and strides ({:?})", self.current_op(), array.shape(), array.strides());
@@ -665,12 +665,12 @@ impl ExecutionContext {
 	///
 	/// # Panics
 	/// * Panics if `node` is not an input.
-	pub fn can_take(&self, node: &NodeInner) -> bool {
+	pub fn can_take(&self, node: &NodeID) -> bool {
 		assert!(
 			self.current_inputs.contains(node),
-			"Op Bug: Op ({}) called can_take with node ({}) during execution, but does not list it as an output.",
+			"Op Bug: Op ({}) called can_take with node (id:{}) during execution, but does not list it as an output.",
 			self.current_op(),
-			node
+			node.id()
 		);
 		unsafe {
 			// These references must not escape the current method.
@@ -679,7 +679,7 @@ impl ExecutionContext {
 
 			!borrows.contains_key(node)
 			&& match value_map[node] {
-				DataState::Unallocated{..} => panic!("Alumina Bug: Attempting to directly allocate node as readable indicates that an InsufficientInputs error should have been thrown: node {}", node),
+				DataState::Unallocated{..} => panic!("Alumina Bug: Attempting to directly allocate node as readable indicates that an InsufficientInputs error should have been thrown: node (id:{})", node.id()),
 				DataState::Readable{readers_remaining, ..} |
 				DataState::Writable{readers_remaining, ..} | DataState::Input {readers_remaining, ..} | DataState::BroadcastInput {readers_remaining, ..} => readers_remaining == 1,
 				DataState::Deallocated => false,
@@ -698,12 +698,12 @@ impl ExecutionContext {
 	/// * May panic if `can_take()` would panic.
 	/// * May panic if `can_take()` would have returned false.
 	/// * Panics if `node` is not an input.
-	pub fn take(&self, node: &NodeInner) -> ArcArray<f32, IxDyn> {
+	pub fn take(&self, node: &NodeID) -> ArcArray<f32, IxDyn> {
 		assert!(
 			self.can_take(node),
-			"Op Bug: Op ({}) called take on node ({}), but can_take returned false.",
+			"Op Bug: Op ({}) called take on node (id:{}), but can_take returned false.",
 			self.current_op(),
-			node
+			node.id()
 		);
 
 		unsafe {
@@ -729,7 +729,7 @@ impl ExecutionContext {
 	}
 
 	/// Take the value of a node as an owned array, which is guaranteed to be in standard layout ( C order).
-	pub fn take_standard(&self, node: &NodeInner) -> ArcArray<f32, IxDyn> {
+	pub fn take_standard(&self, node: &NodeID) -> ArcArray<f32, IxDyn> {
 		let arr = self.take(node);
 		if arr.is_standard_layout() {
 			arr
@@ -743,14 +743,14 @@ impl ExecutionContext {
 		}
 	}
 
-	pub fn shape(&self, node: &NodeInner) -> &[usize] {
+	pub fn shape(&self, node: &NodeID) -> &[usize] {
 		self.shape_map
 			.get(node)
 			.unwrap_or_else(|| {
 				panic!(
-					"Op Bug: Op ({}) called shape on node ({}), but it is not part of the subgraph",
+					"Op Bug: Op ({}) called shape on node (id:{}), but it is not part of the subgraph",
 					self.current_op(),
-					node
+					node.id()
 				)
 			})
 			.slice()
@@ -759,8 +759,8 @@ impl ExecutionContext {
 
 fn form_output_map(
 	outputs: IndexSet<Node>,
-	mut value_map: IndexMap<NodeInner, DataState<f32>>,
-	shape_map: IndexMap<NodeInner, IxDyn>,
+	mut value_map: IndexMap<Node, DataState<f32>>,
+	shape_map: IndexMap<Node, IxDyn>,
 ) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError> {
 	// if output was not calculated return error
 	let mut map = IndexMap::with_capacity(outputs.len());
@@ -768,7 +768,7 @@ fn form_output_map(
 		if map.contains_key(&node) {
 			continue;
 		}
-		match value_map.swap_remove(node.inner()) {
+		match value_map.swap_remove(&node.id()) {
 			Some(DataState::Writable { data, .. }) | Some(DataState::Readable { data, .. }) => {
 				map.insert(node, data.into_owned());
 			}
@@ -777,7 +777,7 @@ fn form_output_map(
 			}
 			Some(DataState::BroadcastInput { data, .. }) => {
 				let arr = data
-					.broadcast(shape_map[node.inner()].slice())
+					.broadcast(shape_map[&node.id()].slice())
 					.expect("Alumina Bug: an incorrect shape snuck through somehow")
 					.into_owned();
 				map.insert(node, arr);
@@ -883,21 +883,21 @@ where
 
 	let (writers_remaining, readers_remaining) = cached_node_input_output_count(subgraph, &outputs);
 
-	let mut inputs: IndexMap<NodeInner, ArcArray<f32, IxDyn>> = inputs
+	let mut inputs: IndexMap<NodeID, ArcArray<f32, IxDyn>> = inputs
 		.into_iter()
-		.map(|(node, data)| (node.borrow().inner().clone(), data))
+		.map(|(node, data)| (node.borrow().id().clone(), data))
 		.collect();
 
 	// put values into inputs now to avoid possible race condition if a value gets removed partway through the execution
 	if config.use_node_values {
 		for node in &subgraph.nodes {
 			if let Some(val) = node.value() {
-				inputs.entry(node.inner().clone()).or_insert_with(|| val);
+				inputs.entry(node.id().clone()).or_insert_with(|| val);
 			}
 		}
 	}
 
-	let shape_map = cached_shapes_inner(
+	let shape_map = shapes_inner(
 		subgraph,
 		&inputs
 			.iter()
@@ -907,30 +907,30 @@ where
 	)
 	.map_err(|e| ExecError::Shape { error: e })?;
 
-	let value_map: IndexMap<NodeInner, DataState<f32>> = subgraph
+	let value_map: IndexMap<Node, DataState<f32>> = subgraph
 		.nodes
 		.iter()
 		.map(|node| {
 			(
-				node.inner().clone(),
+				node.clone(),
 				inputs
-					.swap_remove(node.inner())
+					.swap_remove(&node.id())
 					.map(|data| {
-						if data.shape() == shape_map[node.inner()].slice() {
+						if data.shape() == shape_map[node].slice() {
 							DataState::Input {
-								readers_remaining: readers_remaining[node.inner()],
+								readers_remaining: readers_remaining[&node.id()],
 								data,
 							}
 						} else {
 							DataState::BroadcastInput {
-								readers_remaining: readers_remaining[node.inner()],
+								readers_remaining: readers_remaining[&node.id()],
 								data,
 							}
 						}
 					})
 					.unwrap_or_else(|| DataState::Unallocated {
-						writers_remaining: writers_remaining[node.inner()],
-						readers_remaining: readers_remaining[node.inner()],
+						writers_remaining: writers_remaining[&node.id()],
+						readers_remaining: readers_remaining[&node.id()],
 					}),
 			)
 		})
@@ -988,14 +988,14 @@ where
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 struct InputOutputCountCacheKey {
-	subgraph_nodes: Vec<WeakNodeInner>,
-	subgraph_ops: Vec<WeakOpInner>,
-	outputs: Vec<WeakNodeInner>,
+	subgraph_nodes: Vec<NodeID>,
+	subgraph_ops: Vec<OpID>,
+	outputs: Vec<NodeID>,
 }
 
 thread_local! {
 	#[allow(clippy::type_complexity)]
-	static NODE_INPUT_OUTPUT_COUNT_CACHE: RefCell<LruCache<InputOutputCountCacheKey, (IndexMap<NodeInner, usize>, IndexMap<NodeInner, usize>)>> = RefCell::new(LruCache::new(32));
+	static NODE_INPUT_OUTPUT_COUNT_CACHE: RefCell<LruCache<InputOutputCountCacheKey, (IndexMap<NodeID, usize>, IndexMap<NodeID, usize>)>> = RefCell::new(LruCache::new(32));
 }
 
 /// returns a tuple `(writers_remaining, readers_remaining)` of counts of inputs to a node and outputs to a node
@@ -1004,7 +1004,7 @@ thread_local! {
 fn cached_node_input_output_count<O>(
 	subgraph: &SubGraph,
 	outputs: &IndexSet<O>,
-) -> (IndexMap<NodeInner, usize>, IndexMap<NodeInner, usize>)
+) -> (IndexMap<NodeID, usize>, IndexMap<NodeID, usize>)
 where
 	O: Borrow<Node> + Hash + Eq,
 {
@@ -1013,9 +1013,9 @@ where
 
 		// Generate a key which has a unique result
 		let mut key = InputOutputCountCacheKey {
-			subgraph_nodes: subgraph.nodes.iter().map(|node| node.inner().into()).collect(),
-			subgraph_ops: subgraph.ops.iter().map(|op| op.inner().into()).collect(),
-			outputs: outputs.iter().map(|node| node.borrow().inner().into()).collect(),
+			subgraph_nodes: subgraph.nodes.iter().map(|node| node.id().into()).collect(),
+			subgraph_ops: subgraph.ops.iter().map(|op| op.id()).collect(),
+			outputs: outputs.iter().map(|node| node.borrow().id().into()).collect(),
 		};
 		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
 		key.subgraph_ops.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
@@ -1023,22 +1023,22 @@ where
 
 		// Get a copy of counts from the cache, or insert a new one for this subgraph
 		let (writers_remaining, readers_remaining) = cache.get(&key).cloned().unwrap_or_else(|| {
-			let writers_remaining: IndexMap<NodeInner, usize> = subgraph
+			let writers_remaining: IndexMap<NodeID, usize> = subgraph
 				.input_counts()
 				.0
 				.into_iter()
-				.map(|(node, count)| (node.inner().clone(), count))
+				.map(|(node, count)| (node.id().clone(), count))
 				.collect();
-			let mut readers_remaining: IndexMap<NodeInner, usize> = subgraph
+			let mut readers_remaining: IndexMap<NodeID, usize> = subgraph
 				.output_counts()
 				.0
 				.into_iter()
-				.map(|(node, count)| (node.inner().clone(), count))
+				.map(|(node, count)| (node.id().clone(), count))
 				.collect();
 
 			// Increase remaining readers to avoid deallocation
 			for output in outputs {
-				*readers_remaining.get_mut(output.borrow().inner()).unwrap() += 1;
+				*readers_remaining.get_mut(&output.borrow().id()).unwrap() += 1;
 			}
 
 			cache.put(key.clone(), (writers_remaining.clone(), readers_remaining.clone()));
@@ -1202,30 +1202,30 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn exec_error_SubGraphNotExecutable_order() {
-		let x = Node::new(&[2, 1]).set_name("x");
-		let y = Node::new(&[3, 2]).set_name("y");
-		let z = Node::new(&[3, 3]).set_name("z");
+	// #[test]
+	// fn exec_error_SubGraphNotExecutable_order() {
+	// 	let x = Node::new(&[2, 1]).set_name("x");
+	// 	let y = Node::new(&[3, 2]).set_name("y");
+	// 	let z = Node::new(&[3, 3]).set_name("z");
 
-		let op1 = DummyOp::new().input(&y).output(&z).build().unwrap();
-		let op2 = DummyOp::new().input(&x).output(&y).build().unwrap();
+	// 	let op1 = DummyOp::new().input(&y).output(&z).build().unwrap();
+	// 	let op2 = DummyOp::new().input(&x).output(&y).build().unwrap();
 
-		let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
+	// 	let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[y],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
-			Err(ExecError::Shape {
-				error: ShapesError::SubGraphNotExecutable { .. },
-			}) => {}
-			Err(ExecError::SubGraphNotExecutable { .. }) => {}
-			Err(x) => panic!("{}", x),
-			Ok(_) => panic!("No Error"),
-		}
-	}
+	// 	match exec(
+	// 		vec![(x, arr0(1.0).into_dyn().into_shared())],
+	// 		&[y],
+	// 		&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
+	// 	) {
+	// 		Err(ExecError::Shape {
+	// 			error: ShapesError::SubGraphNotExecutable { .. },
+	// 		}) => {}
+	// 		Err(ExecError::SubGraphNotExecutable { .. }) => {}
+	// 		Err(x) => panic!("{}", x),
+	// 		Ok(_) => panic!("No Error"),
+	// 	}
+	// }
 
 	#[test]
 	fn exec_error_SubGraphNotExecutable_cyclic() {

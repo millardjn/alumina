@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 };
 
 /// Calculates the elementwise multiplication (mul) of input1 and input2.
@@ -45,9 +45,9 @@ impl BinaryFunc for MulFunc {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		output: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		output: &NodeID,
 	) -> Result<(), GradientError> {
 		let _op = Mul::new_default(ctx.grad_of(output), ctx.node(input2), ctx.grad_of(input1)).build()?;
 		let _op = Mul::new_default(ctx.grad_of(output), ctx.node(input1), ctx.grad_of(input2)).build()?;

@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Converts the input from sRGB(0.0-1.0) to Linear RGB(0.0-1.0).
@@ -91,7 +91,7 @@ impl UnaryFunc for SrgbToLinearFunc {
 		"SrgbToLinear"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		SrgbToLinearBack::new_default(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}
@@ -119,9 +119,9 @@ impl BinaryFunc for SrgbToLinearBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}
@@ -150,7 +150,7 @@ impl UnaryFunc for LinearToSrgbFunc {
 		"LinearToSrgb"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		LinearToSrgbBack::new_default(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}
@@ -180,9 +180,9 @@ impl BinaryFunc for LinearToSrgbBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}
@@ -209,7 +209,7 @@ impl UnaryFunc for SrgbToLinearSlowFunc {
 		"SrgbToLinearSlow"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		SrgbToLinearSlowBack::new_default(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}
@@ -237,9 +237,9 @@ impl BinaryFunc for SrgbToLinearSlowBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}
@@ -266,7 +266,7 @@ impl UnaryFunc for LinearToSrgbSlowFunc {
 		"LinearToSrgbSlow"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		LinearToSrgbSlowBack::new_default(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}
@@ -294,9 +294,9 @@ impl BinaryFunc for LinearToSrgbSlowBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}

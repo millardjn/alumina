@@ -3,7 +3,7 @@ use crate::{
 	errors::{ExecutionError, GradientError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::NodeInner,
+	graph::NodeID,
 	shape_prop::ShapePropContext,
 };
 
@@ -25,11 +25,11 @@ impl OpInstance for NoOpInstance {
 	// 	Ok(Box::new(self.clone()))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		IndexSet::new()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		IndexSet::new()
 	}
 

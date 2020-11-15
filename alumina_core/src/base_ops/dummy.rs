@@ -3,7 +3,7 @@ use crate::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape_prop::ShapePropContext,
 };
 use indexmap::IndexSet;
@@ -73,16 +73,16 @@ impl OpBuilder for DummyOp {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(DummyOpInstance {
-			inputs: self.inputs.iter().map(|node| node.inner().clone()).collect(),
-			outputs: self.outputs.iter().map(|node| node.inner().clone()).collect(),
+			inputs: self.inputs.iter().map(|node| node.id().clone()).collect(),
+			outputs: self.outputs.iter().map(|node| node.id().clone()).collect(),
 		})
 	}
 }
 
 #[derive(Clone, Debug)]
 pub struct DummyOpInstance {
-	inputs: IndexSet<NodeInner>,
-	outputs: IndexSet<NodeInner>,
+	inputs: IndexSet<NodeID>,
+	outputs: IndexSet<NodeID>,
 }
 
 impl OpInstance for DummyOpInstance {
@@ -97,11 +97,11 @@ impl OpInstance for DummyOpInstance {
 	// 	Ok(Box::new(self.clone()))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.clone()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		self.outputs.clone()
 	}
 

@@ -43,7 +43,7 @@ impl From<Node> for Numbered<Node> {
 	fn from(node: Node) -> Self {
 		let index = node
 			.graph()
-			.with_nodes_ops(|nodes, _ops| nodes.get_full(node.inner()).unwrap().0);
+			.node_index(node.id());
 		Numbered { i: index, item: node }
 	}
 }
@@ -52,7 +52,7 @@ impl From<Op> for Numbered<Op> {
 	fn from(op: Op) -> Self {
 		let index = op
 			.graph()
-			.with_nodes_ops(|_nodes, ops| ops.get_full(op.inner()).unwrap().0);
+			.op_index(op.id());
 		Numbered { i: index, item: op }
 	}
 }
@@ -302,8 +302,8 @@ impl PartialEq for SubGraph {
 	fn eq(&self, other: &SubGraph) -> bool {
 		self.nodes.len() == other.nodes.len()
 			&& self.ops.len() == other.nodes.len()
-			&& self.nodes.iter().zip(&other.nodes).all(|(a, b)| a.inner() == b.inner())
-			&& self.ops.iter().zip(&other.ops).all(|(a, b)| a.inner() == b.inner())
+			&& self.nodes.iter().zip(&other.nodes).all(|(a, b)| a.id() == b.id())
+			&& self.ops.iter().zip(&other.ops).all(|(a, b)| a.id() == b.id())
 	}
 }
 impl Eq for SubGraph {}
@@ -312,10 +312,10 @@ impl Eq for SubGraph {}
 impl Hash for SubGraph {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		for node in &self.nodes {
-			node.inner().hash(state)
+			node.id().hash(state)
 		}
 		for op in &self.ops {
-			op.inner().hash(state)
+			op.id().hash(state)
 		}
 	}
 }

@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape_prop::ShapePropContext,
 };
 
@@ -76,8 +76,8 @@ impl OpBuilder for ShapeOf {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ShapeOfInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 		})
 	}
 }
@@ -85,8 +85,8 @@ impl OpBuilder for ShapeOf {
 /// ShapeOf OpInstance,
 #[derive(Clone, Debug)]
 pub struct ShapeOfInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 }
 
 impl OpInstance for ShapeOfInstance {
@@ -102,11 +102,11 @@ impl OpInstance for ShapeOfInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

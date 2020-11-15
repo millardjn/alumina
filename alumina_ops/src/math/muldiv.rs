@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
@@ -89,8 +89,8 @@ impl OpBuilder for MulDiv {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MulDivInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			epsilon: self.epsilon,
 		})
 	}
@@ -98,8 +98,8 @@ impl OpBuilder for MulDiv {
 
 #[derive(Clone, Debug)]
 pub struct MulDivInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	epsilon: f32,
 }
 
@@ -116,11 +116,11 @@ impl OpInstance for MulDivInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -247,9 +247,9 @@ impl OpBuilder for MulDivBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MulDivBackInstance {
-			input: self.input.inner().clone(),
-			input_grad: self.input_grad.inner().clone(),
-			output_grad: self.output_grad.inner().clone(),
+			input: self.input.id().clone(),
+			input_grad: self.input_grad.id().clone(),
+			output_grad: self.output_grad.id().clone(),
 			epsilon: self.epsilon,
 		})
 	}
@@ -257,9 +257,9 @@ impl OpBuilder for MulDivBack {
 
 #[derive(Clone, Debug)]
 pub struct MulDivBackInstance {
-	input: NodeInner,
-	input_grad: NodeInner,
-	output_grad: NodeInner,
+	input: NodeID,
+	input_grad: NodeID,
+	output_grad: NodeID,
 	epsilon: f32,
 }
 
@@ -276,11 +276,11 @@ impl OpInstance for MulDivBackInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.output_grad.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input_grad.clone()]
 	}
 

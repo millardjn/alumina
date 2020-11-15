@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the multiplication of the input and a fixed number.
@@ -39,7 +39,7 @@ impl UnaryFunc for ScaleFunc {
 		"Scale"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let _op = Scale::new(ctx.grad_of(output), ctx.grad_of(input), ScaleFunc { scale: self.scale }).build()?;
 		Ok(())
 	}

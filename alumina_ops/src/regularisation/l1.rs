@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeInner},
+	graph::{merge_node_graphs, Node, NodeID},
 	shape::SCALAR,
 	shape_prop::ShapePropContext,
 };
@@ -89,8 +89,8 @@ impl OpBuilder for L1 {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(L1Instance {
-			inputs: self.inputs.iter().map(Node::inner).cloned().collect(),
-			output: self.output.inner().clone(),
+			inputs: self.inputs.iter().map(Node::id).collect(),
+			output: self.output.id().clone(),
 		})
 	}
 }
@@ -98,8 +98,8 @@ impl OpBuilder for L1 {
 /// L1 OpInstance
 #[derive(Clone, Debug)]
 pub struct L1Instance {
-	inputs: IndexSet<NodeInner>,
-	output: NodeInner,
+	inputs: IndexSet<NodeID>,
+	output: NodeID,
 }
 
 impl OpInstance for L1Instance {
@@ -115,11 +115,11 @@ impl OpInstance for L1Instance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.clone()
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -228,9 +228,9 @@ impl OpBuilder for L1Back {
 			input_and_grads: self
 				.input_and_grads
 				.iter()
-				.map(|(n1, n2)| (n1.inner().clone(), n2.inner().clone()))
+				.map(|(n1, n2)| (n1.id().clone(), n2.id().clone()))
 				.collect(),
-			output_grad: self.output_grad.inner().clone(),
+			output_grad: self.output_grad.id().clone(),
 		})
 	}
 }
@@ -238,8 +238,8 @@ impl OpBuilder for L1Back {
 /// L1Back OpInstance
 #[derive(Clone, Debug)]
 pub struct L1BackInstance {
-	input_and_grads: IndexMap<NodeInner, NodeInner>,
-	output_grad: NodeInner,
+	input_and_grads: IndexMap<NodeID, NodeID>,
+	output_grad: NodeID,
 }
 
 impl OpInstance for L1BackInstance {
@@ -255,13 +255,13 @@ impl OpInstance for L1BackInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
-		let mut inputs: IndexSet<NodeInner> = self.input_and_grads.keys().cloned().collect();
+	fn inputs(&self) -> IndexSet<NodeID> {
+		let mut inputs: IndexSet<NodeID> = self.input_and_grads.keys().cloned().collect();
 		inputs.insert(self.output_grad.clone());
 		inputs
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		self.input_and_grads.values().cloned().collect()
 	}
 

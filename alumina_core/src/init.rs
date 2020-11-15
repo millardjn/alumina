@@ -1,6 +1,5 @@
 //! Types and tools for the initialisation of node values.
-use crate::graph::NodeInner;
-use ndarray::{ArrayD, ArrayViewMutD};
+use ndarray::{ArrayD, ArrayViewMutD, IxDyn};
 use rand::thread_rng;
 use rand_distr::{Distribution, Normal, Uniform};
 use std::{
@@ -33,8 +32,8 @@ impl Initialiser {
 	// 	}
 
 	// Panics if node has non-known dimensions
-	pub fn array(&mut self, node: &NodeInner) -> ArrayD<f32> {
-		let mut arr = ArrayD::zeros(node.shape().to_data_shape().unwrap());
+	pub fn array(&mut self, shape: IxDyn) -> ArrayD<f32> {
+		let mut arr = ArrayD::zeros(shape);
 		self.call(arr.view_mut());
 		arr
 	}

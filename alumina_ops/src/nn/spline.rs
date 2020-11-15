@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
 	init::Initialiser,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
@@ -237,7 +237,7 @@ impl OpBuilder for Spline {
 			.into());
 		}
 
-		if self.input.shape().merge(self.output.shape()).is_err() {
+		if self.input.shape().merge(&self.output.shape()).is_err() {
 			return Err(format!(
 				"It must be possible to merge input shape ({}) with output shape ({}) to ensure they can be set to be equal during shape propagation, i.e. at op construction they must have the same length and overlapping axis size ranges",
 				self.output.shape(),
@@ -247,18 +247,18 @@ impl OpBuilder for Spline {
 		}
 
 		Ok(SplineInstance {
-			input: self.input.inner().clone(),
-			weights: self.weights.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			weights: self.weights.id().clone(),
+			output: self.output.id().clone(),
 		})
 	}
 }
 
 #[derive(Debug, Clone)]
 pub struct SplineInstance {
-	input: NodeInner,
-	weights: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	weights: NodeID,
+	output: NodeID,
 }
 
 impl OpInstance for SplineInstance {
@@ -267,12 +267,12 @@ impl OpInstance for SplineInstance {
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.weights.clone()]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -295,7 +295,7 @@ impl OpInstance for SplineInstance {
 		if 3 != weights_shape[0] {
 			return Err(format!(
 				"weights shape ({}) must have a first (outermost) axis of size 3",
-				self.weights.shape(),
+				ctx.node(&self.weights).shape(),
 			)
 			.into());
 		}
@@ -425,7 +425,7 @@ impl OpBuilder for SplineBack {
 			.into());
 		}
 
-		if self.input.shape().merge(self.output_grad.shape()).is_err() {
+		if self.input.shape().merge(&self.output_grad.shape()).is_err() {
 			return Err(format!(
 				"It must be possible to merge input shape ({}) with output_grad shape ({}) to ensure they can be set to be equal during shape propagation, i.e. at op construction they must have the same length and overlapping axis size ranges",
 				self.output_grad.shape(),
@@ -434,7 +434,7 @@ impl OpBuilder for SplineBack {
 			.into());
 		}
 
-		if self.input.shape().merge(self.input_grad.shape()).is_err() {
+		if self.input.shape().merge(&self.input_grad.shape()).is_err() {
 			return Err(format!(
 				"It must be possible to merge input shape ({}) with input_grad shape ({}) to ensure they can be set to be equal during shape propagation, i.e. at op construction they must have the same length and overlapping axis size ranges",
 				self.input_grad.shape(),
@@ -443,7 +443,7 @@ impl OpBuilder for SplineBack {
 			.into());
 		}
 
-		if self.weights.shape().merge(self.weights_grad.shape()).is_err() {
+		if self.weights.shape().merge(&self.weights_grad.shape()).is_err() {
 			return Err(format!(
 				"It must be possible to merge input shape ({}) with weights_grad shape ({}) to ensure they can be set to be equal during shape propagation, i.e. at op construction they must have the same length and overlapping axis size ranges",
 				self.weights_grad.shape(),
@@ -453,22 +453,22 @@ impl OpBuilder for SplineBack {
 		}
 
 		Ok(SplineBackInstance {
-			input: self.input.inner().clone(),
-			weights: self.weights.inner().clone(),
-			output_grad: self.output_grad.inner().clone(),
-			input_grad: self.input_grad.inner().clone(),
-			weights_grad: self.weights_grad.inner().clone(),
+			input: self.input.id().clone(),
+			weights: self.weights.id().clone(),
+			output_grad: self.output_grad.id().clone(),
+			input_grad: self.input_grad.id().clone(),
+			weights_grad: self.weights_grad.id().clone(),
 		})
 	}
 }
 
 #[derive(Debug, Clone)]
 pub struct SplineBackInstance {
-	input: NodeInner,
-	weights: NodeInner,
-	output_grad: NodeInner,
-	input_grad: NodeInner,
-	weights_grad: NodeInner,
+	input: NodeID,
+	weights: NodeID,
+	output_grad: NodeID,
+	input_grad: NodeID,
+	weights_grad: NodeID,
 }
 
 impl OpInstance for SplineBackInstance {
@@ -477,12 +477,12 @@ impl OpInstance for SplineBackInstance {
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.weights.clone(), self.output_grad.clone()]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input_grad.clone(), self.weights_grad.clone()]
 	}
 

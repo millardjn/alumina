@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// An `Op` which implements a range of robust loss functions.
@@ -84,7 +84,7 @@ impl UnaryFunc for RobustFunc {
 		"Robust"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		RobustBack::new(
 			ctx.node(input),
 			ctx.grad_of(output),
@@ -138,9 +138,9 @@ impl BinaryFunc for RobustBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}

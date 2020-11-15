@@ -41,15 +41,16 @@ use crate::{
 	shape::NodeShape,
 	util::display::IterDebug,
 };
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{IndexMap, IndexSet, Equivalent};
 use ndarray::{arr0, arr1, ArcArray, ArrayBase, ArrayD, Data, Dimension, IxDyn, OwnedArcRepr, OwnedRepr, ViewRepr};
 use smallvec::SmallVec;
+use parking_lot::Mutex;
 use std::{
-	borrow::{Borrow, Cow},
+	borrow::Borrow,
 	fmt::{self, Debug, Display},
 	hash::{Hash, Hasher},
 	ops::Deref,
-	sync::{Arc, Mutex, MutexGuard, TryLockError, Weak},
+	sync::{Arc, atomic::AtomicU64, atomic::Ordering},
 };
 
 // TODO write explanation for all the ways of creating a Node
@@ -116,7 +117,8 @@ impl<S: Data<Elem = f32>, D: Dimension> ToNodeValue for &ArrayBase<S, D> {
 #[derive(Clone)]
 pub struct Node {
 	graph: Graph,
-	inner: NodeInner,
+	data: Arc<Mutex<NodeInnerData>>,
+	id: NodeID,
 }
 
 impl Node {
@@ -173,14 +175,9 @@ impl Node {
 	pub fn set_name<S: Into<String>>(&self, new_name: S) -> Self {
 		let new_name = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut name = self
-				.inner
-				.data
-				.name
-				.lock()
-				.expect("Mutex lock error when setting Node name");
-			inner.associate_node_name(self.inner.clone(), &new_name, Some(&name));
-			*name = new_name;
+			let mut data = self.data.lock();
+			inner.associations.associate_node_name(self.id.clone(), &new_name, Some(&data.name));
+			data.name = new_name;
 		});
 
 		self.clone()
@@ -194,14 +191,9 @@ impl Node {
 	pub fn set_name_unique(&self, new_name_root: &str) -> Self {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let new_name = inner.unique_node_name(new_name_root);
-			let mut name = self
-				.inner
-				.data
-				.name
-				.lock()
-				.expect("Mutex lock error when setting Node name");
-			inner.associate_node_name(self.inner.clone(), &new_name, Some(&name));
-			*name = new_name;
+			let mut data = self.data.lock();
+			inner.associations.associate_node_name(self.id.clone(), &new_name, Some(&data.name));
+			data.name = new_name;
 		});
 
 		self.clone()
@@ -211,14 +203,9 @@ impl Node {
 	pub fn add_tag<T: Into<NodeTag>>(&self, tag: T) -> Self {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when setting NodeTag");
-			inner.associate_node_tag(self.inner.clone(), &tag);
-			tags.insert(tag);
+			let mut data = self.data.lock();
+			inner.associations.associate_node_tag(self.id.clone(), &tag);
+			data.tags.insert(tag);
 		});
 
 		self.clone()
@@ -227,15 +214,10 @@ impl Node {
 	/// Associates new tags with the node.
 	pub fn add_tags<I: IntoIterator<Item = NodeTag>>(&self, tags: I) -> Self {
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut inner_tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when setting NodeTags");
+			let mut data = self.data.lock();
 			for tag in tags {
-				inner.associate_node_tag(self.inner.clone(), &tag);
-				inner_tags.insert(tag);
+				inner.associations.associate_node_tag(self.id.clone(), &tag);
+				data.tags.insert(tag);
 			}
 		});
 
@@ -248,14 +230,9 @@ impl Node {
 	pub fn remove_tag<T: Into<NodeTag>>(&self, tag: T) -> Self {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when removing NodeTag");
-			inner.associations = None;
-			tags.swap_remove(&tag);
+			let mut data = self.data.lock();
+			inner.associations.clear(); // TODO we should just remove this node from the tag group
+			data.tags.swap_remove(&tag);
 		});
 
 		self.clone()
@@ -275,26 +252,17 @@ impl Node {
 	/// let value_node2 = Node::new(&[2, 3]).set_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 	/// ```
 	pub fn set_value<V: ToNodeValue>(&self, new_value: V) -> Self {
-		let new_value = new_value.to_value();
-		let mut value = self
-			.inner
-			.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()));
-		*value = Some(new_value);
+		let mut data = self.data.lock();
+		data.value = Some(new_value.to_value());
+
 		self.clone()
 	}
 
 	/// Clear the persistant value for the node.
 	pub fn clear_value(&self) -> Self {
-		let mut value = self
-			.inner
-			.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()));
-		*value = None;
+		let mut data = self.data.lock();
+		data.value = None;
+
 		self.clone()
 	}
 
@@ -304,13 +272,9 @@ impl Node {
 	///
 	/// Panics if node shape is not fully determined.
 	pub fn set_init<I: Into<Initialiser>>(&self, new_init: I) -> Self {
-		let mut init = self
-			.inner
-			.data
-			.init
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting init for Node: {}", self.name()));
-		*init = Some(new_init.into());
+		let mut data = self.data.lock();
+		data.init = Some(new_init.into());
+
 		self.clone()
 	}
 
@@ -325,9 +289,9 @@ impl Node {
 	pub fn parent_ops(&self) -> IndexSet<Op> {
 		self.graph.with_root_inner_mut(|graph, inner| {
 			inner
-				.node_parents(&self.inner)
+				.node_parents(self.id)
 				.iter()
-				.map(|inner| graph.op_from_inner_unchecked(inner.clone()))
+				.map(|op_inner| inner.op_from_inner(graph, op_inner.clone())) // TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -339,16 +303,19 @@ impl Node {
 	/// Panics if number of input ops is not equal to 1.
 	pub fn parent_op(&self) -> Op {
 		self.graph
-			.with_root_inner_mut(|graph, inner| graph.op_from_inner_unchecked(inner.node_parent(&self.inner)))
+			.with_root_inner_mut(|graph, inner| {
+				let parent = inner.node_parent(self.id);
+				inner.op_from_inner(graph, parent)
+			})
 	}
 
 	/// Returns the set of `Op`s that use this `Node` as an input.
 	pub fn child_ops(&self) -> IndexSet<Op> {
 		self.graph.with_root_inner_mut(|graph, inner| {
 			inner
-				.node_children(&self.inner)
+				.node_children(self.id)
 				.iter()
-				.map(move |inner| graph.op_from_inner_unchecked(inner.clone()))
+				.map(move |op_inner| inner.op_from_inner(graph, op_inner.clone()))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -359,14 +326,73 @@ impl Node {
 	}
 
 	/// Returns a shared reference to the `NodeInner` which identifies this `Node`.
-	pub fn inner(&self) -> &NodeInner {
-		&self.inner
+	pub fn id(&self) -> NodeID {
+		self.id
+	}
+
+	/// Returns a copy of the current `Node` name.
+	///
+	/// Default: Unnamed_Node
+	pub fn name(&self) -> String {
+		let data = self.data.lock();
+		data.name.clone()
+	}
+
+	/// Returns a copy of the current `Node` tags.
+	pub fn tags(&self) -> IndexSet<NodeTag> {
+		let data = self.data.lock();
+		data.tags.clone()
+	}
+
+	/// Returns the `Initialiser` if one is set.
+	pub fn init(&self) -> Option<Initialiser> {
+		let data = self.data.lock();
+		data.init.clone()
+	}
+
+	/// Returns the nodes shape
+	pub fn shape(&self) -> NodeShape {
+		let data = self.data.lock();
+		data.shape.clone()
+	}
+
+	/// Returns copy-on-write value of the `Node`, if one has been set.
+	pub fn value(&self) -> Option<ArcArray<f32, IxDyn>> {
+		let data = self.data.lock();
+		data.value.clone()
+	}
+
+	/// Takes and returns value of the `Node`, if one has been set, leaving None in its place.
+	pub fn take_value(&self) -> Option<ArcArray<f32, IxDyn>> {
+		let mut data = self.data.lock();
+		data.value.take()
+	}
+
+	/// Returns the shape of the value if one is set
+	pub fn value_shape(&self) -> Option<IxDyn> {
+		let data = self.data.lock();
+		data.value.as_ref().map(|v|IxDyn(v.shape()))
+	}
+
+	pub fn has_value(&self) -> bool {
+		let data = self.data.lock();
+		data.value.is_some()
+	}
+
+	/// Returns the result of calling the initialiser.
+	///
+	/// # Panics
+	/// Panics if the node is not a fixed shape (all known axes).
+	pub fn init_array(&self) -> Option<ArrayD<f32>> {
+		let mut data = self.data.lock();
+		let NodeInnerData {ref shape, ref mut init, ..} = &mut *data;
+		init.as_mut().map(|i|i.array(shape.to_data_shape().unwrap()))
 	}
 }
 
 impl PartialEq for Node {
 	fn eq(&self, other: &Node) -> bool {
-		self.inner == other.inner
+		self.id == other.id
 	}
 }
 
@@ -374,30 +400,33 @@ impl Eq for Node {}
 
 impl Hash for Node {
 	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.inner.hash(state)
+		self.id.hash(state)
 	}
 }
 
+
+
+
 impl Display for Node {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		Display::fmt(&self.inner(), fmt)
+		Display::fmt(&self.name(), fmt)
 	}
 }
 
 impl Debug for Node {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
 		fmt.debug_struct("Node")
-			.field("name", &self.inner.data.name.lock().unwrap())
-			.field("shape", &format!("{}", self.inner.data.shape))
+			.field("name", &self.name())
+			.field("shape", &format!("{}", self.shape()))
 			.finish()
 	}
 }
 
 impl Deref for Node {
-	type Target = NodeInner;
+	type Target = NodeID;
 
 	fn deref(&self) -> &Self::Target {
-		&self.inner
+		&self.id
 	}
 }
 
@@ -439,204 +468,201 @@ impl<T> From<HeavyNode<T>> for Node {
 	}
 }
 
+static NEXT_NODE_ID: AtomicU64 = AtomicU64::new(0);
+
 /// A reference to a node without reference to the `Graph`.
 ///
 /// To avoid circular references this type is used inside `Graph` and `OpInstance`s, however most users should prefer
 /// to use `Node` unless extending the library.
 ///
 /// Implements methods which are possible without the graph.
-pub struct NodeInner {
-	/// This data should never be moved, its address is used as a unique id.
-	data: Arc<NodeInnerData>,
+#[derive(Copy, Debug)]
+pub struct NodeID {
+	id: u64,
 }
 
-impl NodeInner {
+impl NodeID {
 	/// Returns the memory address of the node data for use as a unique identifer.
 	///
 	/// Hash and Eq are implemented based on this value.
-	pub fn id(&self) -> usize {
-		&*self.data as *const NodeInnerData as usize
+	pub fn id(&self) -> u64 {
+		self.id
 	}
 
-	/// Returns a copy of the current `Node` name.
-	///
-	/// Default: Unnamed_Node
-	pub fn name(&self) -> String {
-		self.data
-			.name
-			.lock()
-			.expect("Mutex lock error when getting Node name")
-			.clone()
+	pub fn new() -> Self {
+		Self {
+			id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
+		}
 	}
 
-	/// Returns a copy of the `Node` shape.
-	pub fn shape(&self) -> &NodeShape {
-		&self.data.shape
-	}
+	// /// Returns a copy of the `Node` shape.
+	// pub fn shape(&self, graph: &Graph) -> &NodeShape {
+	// 	&self.data.shape
+	// }
 
-	/// Returns a copy of the current `Node` tags.
-	pub fn tags(&self) -> IndexSet<NodeTag> {
-		self.data
-			.tags
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Node: {}", self.name()))
-			.clone()
-	}
 
-	pub fn has_value(&self) -> bool {
-		self.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-			.is_some()
-	}
 
-	/// Returns copy-on-write value of the `Node`, if one has been set.
-	///
-	/// This avoids cloning the
-	pub fn value(&self) -> Option<ArcArray<f32, IxDyn>> {
-		self.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-			.clone()
-	}
+	// pub fn has_value(&self, graph: &Graph) -> bool {
+	// 	self.data
+	// 		.value
+	// 		.lock()
+	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
+	// 		.is_some()
+	// }
 
-	/// Takes and returns value of the `Node`, if one has been set, leaving None in its place.
-	pub fn take_value(&self) -> Option<ArcArray<f32, IxDyn>> {
-		self.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-			.take()
-	}
+	// /// Returns copy-on-write value of the `Node`, if one has been set.
+	// ///
+	// /// This avoids cloning the
+	// pub fn value(&self, graph: &Graph) -> Option<ArcArray<f32, IxDyn>> {
+	// 	self.data
+	// 		.value
+	// 		.lock()
+	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
+	// 		.clone()
+	// }
 
-	/// Returns shape of the of the `Node`, if one has been set.
-	pub fn value_shape(&self) -> Option<IxDyn> {
-		self.data
-			.value
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-			.as_ref()
-			.map(|v| IxDyn(v.shape()))
-	}
+	// /// Takes and returns value of the `Node`, if one has been set, leaving None in its place.
+	// pub fn take_value(&self, graph: &Graph) -> Option<ArcArray<f32, IxDyn>> {
+	// 	self.data
+	// 		.value
+	// 		.lock()
+	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
+	// 		.take()
+	// }
 
-	/// Returns the `Initialiser` if one is set.
-	pub fn init(&self) -> Option<Initialiser> {
-		self.data
-			.init
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-			.clone()
-	}
+	// /// Returns shape of the of the `Node`, if one has been set.
+	// pub fn value_shape(&self, graph: &Graph) -> Option<IxDyn> {
+	// 	self.data
+	// 		.value
+	// 		.lock()
+	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
+	// 		.as_ref()
+	// 		.map(|v| IxDyn(v.shape()))
+	// }
 
-	/// Returns the result of calling the initialiser.
-	///
-	/// # Panics
-	/// Panics if the node is not a fixed shape (all known axes).
-	pub fn init_array(&self) -> Option<ArrayD<f32>> {
-		self.init().map(|mut init| init.array(self))
-	}
+	// /// Returns the `Initialiser` if one is set.
+	// pub fn init(&self, graph: &Graph) -> Option<Initialiser> {
+	// 	self.data
+	// 		.init
+	// 		.lock()
+	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
+	// 		.clone()
+	// }
+
+	// /// Returns the result of calling the initialiser.
+	// ///
+	// /// # Panics
+	// /// Panics if the node is not a fixed shape (all known axes).
+	// pub fn init_array(&self, graph: &Graph) -> Option<ArrayD<f32>> {
+	// 	self.init().map(|mut init| init.array(self))
+	// }
 }
 
-impl Clone for NodeInner {
+impl Clone for NodeID {
 	fn clone(&self) -> Self {
-		NodeInner {
-			data: self.data.clone(),
+		NodeID {
+			//data: self.data.clone(),
+			id: self.id,
 		}
 	}
 }
 
-impl PartialEq for NodeInner {
-	fn eq(&self, other: &NodeInner) -> bool {
+impl PartialEq for NodeID {
+	fn eq(&self, other: &NodeID) -> bool {
 		self.id() == other.id()
 	}
 }
 
-impl Eq for NodeInner {}
+impl Eq for NodeID {}
 
-impl Hash for NodeInner {
+impl Hash for NodeID {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.id().hash(state)
 	}
 }
 
-impl Display for NodeInner {
-	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
-		Display::fmt(&self.name(), f)
+impl Equivalent<Node> for NodeID {
+	fn equivalent(&self, key: &Node) -> bool {
+		key.id().id == self.id
 	}
 }
 
-impl Debug for NodeInner {
-	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		fmt.debug_struct("NodeInner")
-			.field("name", &self.data.name.lock().unwrap())
-			.field("shape", &format!("{}", self.data.shape))
-			.finish()
-	}
-}
+// impl Display for NodeInner {
+// 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
+// 		Display::fmt(&self.name(), f)
+// 	}
+// }
 
-/// A weak reference that doesn't prevent deallocation
-///
-/// Used for implementing LRU caches.
-pub struct WeakNodeInner {
-	inner: Weak<NodeInnerData>,
-	ptr_val: usize,
-}
+// impl Debug for NodeInner {
+// 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
+// 		fmt.debug_struct("NodeInner")
+// 			.field("name", &self.data.name.lock().unwrap())
+// 			.field("shape", &format!("{}", self.data.shape))
+// 			.finish()
+// 	}
+// }
 
-impl WeakNodeInner {
-	/// returns the memory address of the InnerRef for use as a unique identifer
-	///
-	/// Hash and Eq are implemented based on this value
-	pub fn id(&self) -> usize {
-		self.ptr_val
-	}
-}
+// /// A weak reference that doesn't prevent deallocation
+// ///
+// /// Used for implementing LRU caches.
+// pub struct WeakNodeInner {
+// 	inner: Weak<NodeInnerData>,
+// 	ptr_val: usize,
+// }
 
-impl<'a> From<&'a NodeInner> for WeakNodeInner {
-	fn from(val: &'a NodeInner) -> Self {
-		WeakNodeInner {
-			inner: Arc::downgrade(&val.data),
-			ptr_val: val.id(),
-		}
-	}
-}
+// impl WeakNodeInner {
+// 	/// returns the memory address of the InnerRef for use as a unique identifer
+// 	///
+// 	/// Hash and Eq are implemented based on this value
+// 	pub fn id(&self) -> usize {
+// 		self.ptr_val
+// 	}
+// }
 
-impl Clone for WeakNodeInner {
-	fn clone(&self) -> Self {
-		WeakNodeInner {
-			inner: self.inner.clone(),
-			ptr_val: self.ptr_val,
-		}
-	}
-}
+// impl<'a> From<&'a NodeInner> for WeakNodeInner {
+// 	fn from(val: &'a NodeInner) -> Self {
+// 		WeakNodeInner {
+// 			inner: Arc::downgrade(&val.data),
+// 			ptr_val: val.id(),
+// 		}
+// 	}
+// }
 
-impl PartialEq for WeakNodeInner {
-	fn eq(&self, other: &WeakNodeInner) -> bool {
-		if self.ptr_val != other.ptr_val {
-			return false;
-		}
-		match (self.inner.upgrade(), other.inner.upgrade()) {
-			(Some(_), Some(_)) | (None, None) => true,
-			_ => false,
-		}
-	}
-}
+// impl Clone for WeakNodeInner {
+// 	fn clone(&self) -> Self {
+// 		WeakNodeInner {
+// 			inner: self.inner.clone(),
+// 			ptr_val: self.ptr_val,
+// 		}
+// 	}
+// }
 
-impl Eq for WeakNodeInner {}
+// impl PartialEq for WeakNodeInner {
+// 	fn eq(&self, other: &WeakNodeInner) -> bool {
+// 		if self.ptr_val != other.ptr_val {
+// 			return false;
+// 		}
+// 		match (self.inner.upgrade(), other.inner.upgrade()) {
+// 			(Some(_), Some(_)) | (None, None) => true,
+// 			_ => false,
+// 		}
+// 	}
+// }
 
-impl Hash for WeakNodeInner {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.ptr_val.hash(state)
-	}
-}
+// impl Eq for WeakNodeInner {}
 
-struct NodeInnerData {
-	shape: NodeShape,
-	name: Mutex<String>,
-	tags: Mutex<IndexSet<NodeTag>>,
-	value: Mutex<Option<ArcArray<f32, IxDyn>>>,
-	init: Mutex<Option<Initialiser>>,
+// impl Hash for WeakNodeInner {
+// 	fn hash<H: Hasher>(&self, state: &mut H) {
+// 		self.ptr_val.hash(state)
+// 	}
+// }
+
+pub struct NodeInnerData {
+	pub shape: NodeShape,
+	pub name: String,
+	pub tags: IndexSet<NodeTag>,
+	pub value: Option<ArcArray<f32, IxDyn>>,
+	pub init: Option<Initialiser>,
 }
 
 /// A Node, plus an additional data component
@@ -703,36 +729,33 @@ impl<T> From<(Node, T)> for HeavyNode<T> {
 #[derive(Clone)]
 pub struct Op {
 	graph: Graph,
-	inner: OpInner,
+	id: OpID,
+	data: Arc<Mutex<OpInnerData>>,
+	instance: Arc<dyn OpInstance>,
 }
 
 impl Op {
-	/// Returns a copy of the current `Op` name.
-	///
-	/// Default: Unnamed_Op
-	///
-	/// Usually this default is overwritten by a name derived from parent and child `Node`s.
-	pub fn name(&self) -> String {
-		self.inner.name()
-	}
+	// /// Returns a copy of the current `Op` name.
+	// ///
+	// /// Default: Unnamed_Op
+	// ///
+	// /// Usually this default is overwritten by a name derived from parent and child `Node`s.
+	// pub fn name(&self) -> String {
+	// 	self.inner.name()
+	// }
 
-	/// Returns a copy of the current `Node` tags.
-	pub fn tags(&self) -> IndexSet<OpTag> {
-		self.inner.tags()
-	}
+	// /// Returns a copy of the current `Node` tags.
+	// pub fn tags(&self) -> IndexSet<OpTag> {
+	// 	self.inner.tags()
+	// }
 
 	/// Set the name of the Op, replaces existing name.
 	pub fn set_name<S: Into<String>>(&self, new_name: S) -> Self {
-		let new_name = new_name.into();
+		let new_name:String = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut name = self
-				.inner
-				.data
-				.name
-				.lock()
-				.expect("Mutex lock error when setting Op name");
-			inner.associate_op_name(self.inner.clone(), &new_name, Some(&name));
-			*name = new_name;
+			let mut data = self.data.lock();
+			inner.associations.associate_op_name(self.id.clone(), &new_name, Some(&data.name));
+			data.name = new_name;
 		});
 
 		self.clone()
@@ -743,14 +766,9 @@ impl Op {
 	pub fn set_name_unique(&self, new_name_root: &str) -> Self {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let new_name = inner.unique_op_name(new_name_root);
-			let mut name = self
-				.inner
-				.data
-				.name
-				.lock()
-				.expect("Mutex lock error when setting Op name");
-			inner.associate_op_name(self.inner.clone(), &new_name, Some(&name));
-			*name = new_name;
+			let mut data = self.data.lock();
+			inner.associations.associate_op_name(self.id.clone(), &new_name, Some(&data.name));
+			data.name = new_name;
 		});
 
 		self.clone()
@@ -760,14 +778,9 @@ impl Op {
 	pub fn add_tag<T: Into<OpTag>>(&self, tag: T) -> Self {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when setting OpTag");
-			inner.associate_op_tag(self.inner.clone(), &tag);
-			tags.insert(tag);
+			let mut data = self.data.lock();
+			inner.associations.associate_op_tag(self.id.clone(), &tag);
+			data.tags.insert(tag);
 		});
 
 		self.clone()
@@ -776,15 +789,11 @@ impl Op {
 	/// Associates a new tags with the op.
 	pub fn add_tags<I: IntoIterator<Item = OpTag>>(&self, tags: I) -> Self {
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut inner_tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when setting OpTags");
+			let mut data = self.data.lock();
+			
 			for tag in tags {
-				inner.associate_op_tag(self.inner.clone(), &tag);
-				inner_tags.insert(tag);
+				inner.associations.associate_op_tag(self.id.clone(), &tag);
+				data.tags.insert(tag);
 			}
 		});
 
@@ -797,22 +806,17 @@ impl Op {
 	pub fn remove_tag<T: Into<OpTag>>(&self, tag: T) -> Self {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
-			let mut tags = self
-				.inner
-				.data
-				.tags
-				.lock()
-				.expect("Mutex lock error when removing OpTag");
-			inner.associations = None;
-			tags.swap_remove(&tag);
+			let mut data = self.data.lock();
+			inner.associations.clear(); //TODO we should probably just remove this one
+			data.tags.swap_remove(&tag);
 		});
 
 		self.clone()
 	}
 
-	pub fn instance(&self) -> &dyn OpInstance {
-		&*self.inner.instance()
-	}
+	// pub fn instance(&self) -> &dyn OpInstance {
+	// 	&*self.inner.instance()
+	// }
 
 	// TODO this doesn't uphold the invariant that an OpInstance is always in the same graph as its inputs/outputs
 	// Need to use conversion to OpBuilder and replace nodes
@@ -828,9 +832,9 @@ impl Op {
 	pub fn parent_nodes(&self) -> IndexSet<Node> {
 		self.graph.with_root_inner_mut(|graph, inner| {
 			inner
-				.op_parents(&self.inner)
+				.op_parents(&self.id)
 				.iter()
-				.map(|inner| graph.node_from_inner_unchecked(inner.clone()))
+				.map(|node_inner| inner.node_from_inner(graph, node_inner.clone()))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -839,9 +843,9 @@ impl Op {
 	pub fn child_nodes(&self) -> IndexSet<Node> {
 		self.graph.with_root_inner_mut(|graph, inner| {
 			inner
-				.op_children(&self.inner)
+				.op_children(&self.id)
 				.iter()
-				.map(|inner| graph.node_from_inner_unchecked(inner.clone()))
+				.map(|node_inner| inner.node_from_inner(graph, node_inner.clone()))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -852,65 +856,8 @@ impl Op {
 	}
 
 	/// Returns a shared reference to the `OpInner` which identifies this `Op`.
-	pub fn inner(&self) -> &OpInner {
-		&self.inner
-	}
-}
-
-impl PartialEq for Op {
-	fn eq(&self, other: &Op) -> bool {
-		self.inner == other.inner
-	}
-}
-
-impl Eq for Op {}
-
-impl Hash for Op {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.inner.hash(state)
-	}
-}
-
-impl Display for Op {
-	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		Display::fmt(&self.inner(), fmt)
-	}
-}
-
-impl Debug for Op {
-	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		fmt.debug_struct("Op")
-			.field("name", &self.data.name.lock().unwrap())
-			.field("type", &self.data.instance.type_name())
-			.finish()
-	}
-}
-
-impl Deref for Op {
-	type Target = OpInner;
-
-	fn deref(&self) -> &Self::Target {
-		&self.inner
-	}
-}
-
-/// A reference to an op without reference to the `Graph`.
-///
-/// To avoid circular references this type is used inside `Graph` and `OpInstance`s, however most users should prefer
-/// to use `Op` unless extending the library.
-///
-/// Implements methods which are possible without the graph.
-pub struct OpInner {
-	/// This data should never be moved, its address is used as a unique id.
-	data: Arc<OpInnerData>,
-}
-
-impl OpInner {
-	/// Returns the memory address of the op data for use as a unique identifer.
-	///
-	/// Hash and Eq are implemented based on this value.
-	pub fn id(&self) -> usize {
-		&*self.data as *const OpInnerData as usize
+	pub fn id(&self) -> OpID {
+		self.id
 	}
 
 	/// Returns a copy of the current `Op` name.
@@ -919,123 +866,193 @@ impl OpInner {
 	///
 	/// Usually this default is overwritten by a name derived from parent and child `Node`s.
 	pub fn name(&self) -> String {
-		self.data
-			.name
-			.lock()
-			.expect("Mutex lock error when getting Op name")
-			.clone()
+		let data = self.data.lock();
+		data.name.clone()
+	}
+
+	pub fn type_name(&self) -> &'static str {
+		let data = self.data.lock();
+		data.instance.type_name()
 	}
 
 	/// Returns a copy of the current `Node` tags.
 	pub fn tags(&self) -> IndexSet<OpTag> {
-		self.data
-			.tags
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for op: {}", self.name()))
-			.clone()
+		let data = self.data.lock();
+		data.tags.clone()
 	}
 
-	pub fn instance(&self) -> &dyn OpInstance {
-		&*self.data.instance
+	pub fn instance(&self) -> Arc<dyn OpInstance> {
+		self.instance.clone()
 	}
 }
 
-impl Clone for OpInner {
-	fn clone(&self) -> Self {
-		OpInner {
-			data: self.data.clone(),
+impl PartialEq for Op {
+	fn eq(&self, other: &Op) -> bool {
+		self.id == other.id
+	}
+}
+
+impl Eq for Op {}
+
+impl Hash for Op {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		self.id.hash(state)
+	}
+}
+
+impl Display for Op {
+	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
+		Display::fmt(&self.name(), fmt)
+	}
+}
+
+impl Debug for Op {
+	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
+		fmt.debug_struct("Op")
+			.field("name", &self.name())
+			.field("type", &self.type_name())
+			.finish()
+	}
+}
+
+impl Deref for Op {
+	type Target = OpID;
+
+	fn deref(&self) -> &Self::Target {
+		&self.id
+	}
+}
+
+static NEXT_OP_ID: AtomicU64 = AtomicU64::new(0);
+
+/// A reference to an op without reference to the `Graph`.
+///
+/// To avoid circular references this type is used inside `Graph` and `OpInstance`s, however most users should prefer
+/// to use `Op` unless extending the library.
+///
+/// Implements methods which are possible without the graph.
+#[derive(Copy, Debug)]
+pub struct OpID {
+	id: u64,
+}
+
+impl OpID {
+	/// Returns the memory address of the op data for use as a unique identifer.
+	///
+	/// Hash and Eq are implemented based on this value.
+	pub fn id(&self) -> u64 {
+		self.id
+	}
+
+	pub fn new() -> Self {
+		Self {
+			id: NEXT_OP_ID.fetch_add(1, Ordering::Relaxed),
 		}
 	}
 }
 
-impl PartialEq for OpInner {
-	fn eq(&self, other: &OpInner) -> bool {
+impl Clone for OpID {
+	fn clone(&self) -> Self {
+		OpID {
+			id: self.id,
+		}
+	}
+}
+
+impl PartialEq for OpID {
+	fn eq(&self, other: &OpID) -> bool {
 		self.id() == other.id()
 	}
 }
 
-impl Eq for OpInner {}
+impl Eq for OpID {}
 
-impl Hash for OpInner {
+impl Hash for OpID {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.id().hash(state)
 	}
 }
 
-impl Display for OpInner {
-	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
-		Display::fmt(&self.name(), f)
+impl Equivalent<Op> for OpID {
+	fn equivalent(&self, key: &Op) -> bool {
+		key.id().id == self.id
 	}
 }
 
-impl Debug for OpInner {
-	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		fmt.debug_struct("OpInner")
-			.field("name", &self.data.name.lock().unwrap())
-			.field("type", &self.data.instance.type_name())
-			.finish()
-	}
-}
+// impl Display for OpInner {
+// 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
+// 		Display::fmt(&self.name(), f)
+// 	}
+// }
 
-/// A weak reference that doesn't prevent deallocation
-///
-/// Used for implementing LRU caches.
-pub struct WeakOpInner {
-	inner: Weak<OpInnerData>,
-	ptr_val: usize,
-}
+// impl Debug for OpInner {
+// 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
+// 		fmt.debug_struct("OpInner")
+// 			.field("name", &self.data.name.lock().unwrap())
+// 			.field("type", &self.data.instance.type_name())
+// 			.finish()
+// 	}
+// }
 
-impl WeakOpInner {
-	/// returns the memory address of the InnerRef for use as a unique identifer
-	///
-	/// Hash and Eq are implemented based on this value
-	pub fn id(&self) -> usize {
-		self.ptr_val
-	}
-}
+// /// A weak reference that doesn't prevent deallocation
+// ///
+// /// Used for implementing LRU caches.
+// pub struct WeakOpInner {
+// 	inner: Weak<OpInnerData>,
+// 	ptr_val: usize,
+// }
 
-impl<'a> From<&'a OpInner> for WeakOpInner {
-	fn from(val: &'a OpInner) -> Self {
-		WeakOpInner {
-			inner: Arc::downgrade(&val.data),
-			ptr_val: val.id(),
-		}
-	}
-}
+// impl WeakOpInner {
+// 	/// returns the memory address of the InnerRef for use as a unique identifer
+// 	///
+// 	/// Hash and Eq are implemented based on this value
+// 	pub fn id(&self) -> usize {
+// 		self.ptr_val
+// 	}
+// }
 
-impl Clone for WeakOpInner {
-	fn clone(&self) -> Self {
-		WeakOpInner {
-			inner: self.inner.clone(),
-			ptr_val: self.ptr_val,
-		}
-	}
-}
+// impl<'a> From<&'a OpInner> for WeakOpInner {
+// 	fn from(val: &'a OpInner) -> Self {
+// 		WeakOpInner {
+// 			inner: Arc::downgrade(&val.data),
+// 			ptr_val: val.id(),
+// 		}
+// 	}
+// }
 
-impl PartialEq for WeakOpInner {
-	fn eq(&self, other: &WeakOpInner) -> bool {
-		if self.ptr_val != other.ptr_val {
-			return false;
-		}
-		match (self.inner.upgrade(), other.inner.upgrade()) {
-			(Some(_), Some(_)) | (None, None) => true,
-			_ => false,
-		}
-	}
-}
+// impl Clone for WeakOpInner {
+// 	fn clone(&self) -> Self {
+// 		WeakOpInner {
+// 			inner: self.inner.clone(),
+// 			ptr_val: self.ptr_val,
+// 		}
+// 	}
+// }
 
-impl Eq for WeakOpInner {}
+// impl PartialEq for WeakOpInner {
+// 	fn eq(&self, other: &WeakOpInner) -> bool {
+// 		if self.ptr_val != other.ptr_val {
+// 			return false;
+// 		}
+// 		match (self.inner.upgrade(), other.inner.upgrade()) {
+// 			(Some(_), Some(_)) | (None, None) => true,
+// 			_ => false,
+// 		}
+// 	}
+// }
 
-impl Hash for WeakOpInner {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.ptr_val.hash(state)
-	}
-}
+// impl Eq for WeakOpInner {}
 
-struct OpInnerData {
-	name: Mutex<String>,
-	tags: Mutex<IndexSet<OpTag>>,
-	instance: Box<dyn OpInstance>,
+// impl Hash for WeakOpInner {
+// 	fn hash<H: Hasher>(&self, state: &mut H) {
+// 		self.ptr_val.hash(state)
+// 	}
+// }
+
+pub struct OpInnerData {
+	pub name: String,
+	pub tags: IndexSet<OpTag>,
+	pub instance: Arc<dyn OpInstance>,
 }
 
 impl Default for Graph {
@@ -1054,18 +1071,18 @@ pub struct Graph {
 impl Clone for Graph {
 	fn clone(&self) -> Self {
 		// If chasing the root would block, then just return at the current position in the tree.
-		let mut self_link: MutexGuard<GraphLink> = match self.link.try_lock() {
-			Ok(guard) => guard,
-			Err(TryLockError::WouldBlock) => {
+		let mut self_link = match self.link.try_lock() {
+			Some(guard) => guard,
+			None => {
 				return Graph {
 					link: self.link.clone(),
 				};
 			}
-			x @ Err(_) => x.expect("Graph mutex is poisoned"), // If poisoned, just crash and burn
+			//x @ Err(_) => x.expect("Graph mutex is poisoned"), // If poisoned, just crash and burn
 		};
 
 		// get root by either being root, or cloning
-		let root = match &mut *self_link {
+		let root = match &*self_link {
 			GraphLink::Root(_) => {
 				return Graph {
 					link: self.link.clone(),
@@ -1085,7 +1102,7 @@ impl Clone for Graph {
 
 impl Hash for Graph {
 	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.with_root_link_mut(|graph, _link| (&*graph.link as *const Mutex<GraphLink> as usize).hash(state))
+		self.with_root_link_mut(|graph, _link| graph.link_addr().hash(state))
 	}
 }
 
@@ -1096,21 +1113,21 @@ impl Display for Graph {
 		// ops.clone()})?; 	Ok(())
 		// })
 
-		self.with_nodes_ops(|nodes, ops| {
+		self.with_root_inner_mut(|_graph, inner| {
 			write!(f, "Graph {{ nodes: [")?;
-			let mut iter = nodes.iter();
-			if let Some(node) = iter.next() {
-				write!(f, "{}", node)?;
-				for node in iter {
-					write!(f, ", {}", node)?;
+			let mut iter = inner.nodes.iter();
+			if let Some((_node, node_data)) = iter.next() {
+				write!(f, "{}", node_data.lock().name)?;
+				for (_node, node_data) in iter {
+					write!(f, ", {}", node_data.lock().name)?;
 				}
 			}
 			write!(f, "], ops: [")?;
-			let mut iter = ops.iter();
-			if let Some(op) = iter.next() {
-				write!(f, "{}", op)?;
-				for op in iter {
-					write!(f, ", {}", op)?;
+			let mut iter = inner.ops.iter();
+			if let Some((_op, op_data)) = iter.next() {
+				write!(f, "{}", op_data.lock().name)?;
+				for (_op, op_data) in iter {
+					write!(f, ", {}", op_data.lock().name)?;
 				}
 			}
 			write!(f, "] }}")?;
@@ -1121,12 +1138,18 @@ impl Display for Graph {
 
 impl Debug for Graph {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-		self.with_nodes_ops(|nodes, ops| {
+		self.with_root_inner_mut(|_graph, inner| {
 			fmt.debug_struct("Graph")
-				.field("nodes", &IterDebug { inner: nodes.clone() })
-				.field("ops", &IterDebug { inner: ops.clone() })
+				.field("nodes", &IterDebug { inner: inner.nodes.iter().map(|(_, data)| data.lock().name.clone()).collect::<Vec<_>>() })
+				.field("ops", &IterDebug { inner: inner.ops.iter().map(|(_, data)| data.lock().name.clone()).collect::<Vec<_>>() })
 				.finish()
 		})
+		// self.with_nodes_ops(|nodes, ops| {
+		// 	fmt.debug_struct("Graph")
+		// 		.field("nodes", &IterDebug { inner: nodes.iter().map(|(_, data)| data.name.clone()).collect::<Vec<_>>() })
+		// 		.field("ops", &IterDebug { inner: ops.iter().map(|(_, data)| data.name.clone()).collect::<Vec<_>>() })
+		// 		.finish()
+		// })
 	}
 }
 
@@ -1149,95 +1172,99 @@ impl Graph {
 
 	/// Create a new node within the Graph
 	pub fn new_node(&self, shape: NodeShape) -> Node {
-		let node_inner = NodeInner {
-			data: Arc::new(NodeInnerData {
-				shape,
-				name: Mutex::new("Unnamed_Node".to_string()),
-				tags: Mutex::new(IndexSet::new()),
-				value: Mutex::new(None),
-				init: Mutex::new(None),
-			}),
+		// let node_inner = NodeInner {
+		// 	data: Arc::new(NodeInnerData {
+		// 		shape,
+		// 		name: "Unnamed_Node".to_string(),
+		// 		tags: IndexSet::new(),
+		// 		value: None,
+		// 		init: None,
+		// 	}),
+		// };
+		let node_inner = NodeID::new();
+		let node_data = NodeInnerData {
+			shape,
+			name: "Unnamed_Node".to_string(),
+			tags: IndexSet::new(),
+			value: None,
+			init: None,
 		};
 
 		self.with_root_inner_mut(|graph, inner| {
-			inner.add_node(node_inner.clone());
-			graph.node_from_inner_unchecked(node_inner)
+			inner.add_node(node_inner.clone(), Arc::new(Mutex::new(node_data)));
+			inner.node_from_inner(graph, node_inner)
 		})
 	}
 
 	/// Create a new `Op` within the Graph
-	pub fn new_op(&self, instance: Box<dyn OpInstance>) -> Op {
+	pub fn new_op(&self, instance: Arc<dyn OpInstance>) -> Op {
 		#[allow(clippy::block_in_if_condition_stmt)]
 		{
 			debug_assert!(
 				self.with_root_inner_mut(|_, inner|{
-					instance.inputs().iter().chain(&instance.outputs()).all(|node| inner.nodes.contains(node))
+					instance.inputs().iter().chain(&instance.outputs()).all(|node| inner.nodes.contains_key(node))
 				}),
 				"New OpInstance lists input or output nodes that are not part of this Graph. Prior to constructing an OpInstance, Graphs must be merged."
 			);
 		}
 
-		let op_inner = OpInner {
-			data: Arc::new(OpInnerData {
-				name: Mutex::new("Unnamed_Op".to_string()),
-				tags: Mutex::new(IndexSet::new()),
-				instance,
-			}),
+		let op_inner = OpID::new();
+		let op_data = OpInnerData {
+			name: "Unnamed_Op".to_string(),
+			tags: IndexSet::new(),
+			instance,
 		};
 
 		self.with_root_inner_mut(|graph, inner| {
-			inner.add_op(op_inner.clone());
-			graph.op_from_inner_unchecked(op_inner)
+			inner.add_op(op_inner.clone(), Arc::new(Mutex::new(op_data)));
+			inner.op_from_inner(graph, op_inner)
 		})
 	}
 
 	/// Create a `Node` from a `NodeInner`
 	///
+	/// # Locking
+	/// This locks the underlying graph. If the graph is already locked then GraphInner should be used to avoid deadlocks.
 	/// # Panics
 	/// Panics if the NodeInner is not a member of this graph.
-	pub fn node_from(&self, inner: NodeInner) -> Node {
-		assert!(
-			self.with_nodes_ops(|nodes, _| nodes.contains(&inner)),
-			"NodeInner {} is not a part of this Graph.",
-			inner
-		);
-		Node {
-			graph: self.clone(),
-			inner,
-		}
+	pub fn node_from_inner(&self, inner: NodeID) -> Node {
+		self.with_root_inner_mut(|graph, graph_inner| {
+			graph_inner.node_from_inner(graph, inner)
+		})
 	}
 
 	/// Create an `Op` from an `OpInner`
-	///
+	///	
+	/// # Locking
+	/// This locks the underlying graph. If the graph is already locked then GraphInner should be used to avoid deadlocks.
 	/// # Panics
 	/// Panics if the OpInner is not a member of this graph.
-	pub fn op_from_inner(&self, inner: OpInner) -> Op {
-		assert!(
-			self.with_nodes_ops(|_, ops| ops.contains(&inner)),
-			"OpInner {} is not a part of this Graph.",
-			inner
-		);
-		Op {
-			graph: self.clone(),
-			inner,
-		}
+	pub fn op_from_inner(&self, inner: OpID) -> Op {
+		self.with_root_inner_mut(|graph, graph_inner| {
+			graph_inner.op_from_inner(graph, inner)
+		})
 	}
 
-	/// Create a `Node` from a `NodeInner`
-	fn node_from_inner_unchecked(&self, inner: NodeInner) -> Node {
-		Node {
-			graph: self.clone(),
-			inner,
-		}
-	}
+	// /// Create a `Node` from a `NodeInner`
+	// fn node_from_inner_unchecked(&self, inner: NodeInner) -> Node {
+	// 	Node {
+	// 		graph: self.clone(),
+	// 		inner,
+	// 	}
+	// }
 
-	/// Create an `Op` from an `OpInner`
-	fn op_from_inner_unchecked(&self, inner: OpInner) -> Op {
-		Op {
-			graph: self.clone(),
-			inner,
-		}
-	}
+	// /// Create an `Op` from an `OpInner`
+	// fn op_from_inner_unchecked(&self, inner: OpInner) -> Op {
+	// 	let instance = 		self.with_root_inner_mut(|_graph, graph_inner| {
+	// 		graph_inner.ops.get(&inner).unwrap().instance.clone()
+	// 	});
+
+	// 	Op {
+	// 		graph: self.clone(),
+	// 		inner,
+	// 		instance
+	// 	}
+	// }
 
 	/// Return the set of `Node`s associated with the given tag.
 	pub fn nodes_tagged<T: Into<NodeTag>>(&self, tag: T) -> IndexSet<Node> {
@@ -1245,7 +1272,7 @@ impl Graph {
 			inner
 				.nodes_tagged(&tag.into())
 				.iter()
-				.map(|inner| graph.node_from_inner_unchecked(inner.clone()))
+				.map(|node_inner| inner.node_from_inner(graph, *node_inner))
 				.collect()
 		})
 	}
@@ -1256,7 +1283,7 @@ impl Graph {
 			inner
 				.nodes_named(name)
 				.iter()
-				.map(|inner| graph.node_from_inner_unchecked(inner.clone()))
+				.map(|node_inner| inner.node_from_inner(graph, *node_inner))
 				.collect()
 		})
 	}
@@ -1267,7 +1294,10 @@ impl Graph {
 	///
 	/// Panics if number of `Node`s found is not equal to 1.
 	pub fn node_named(&self, name: &str) -> Node {
-		self.with_root_inner_mut(|graph, inner| graph.node_from_inner_unchecked(inner.node_named(name)))
+		self.with_root_inner_mut(|graph, inner| {
+			let node = inner.node_named(name);
+			inner.node_from_inner(graph, node)
+		})
 	}
 
 	/// Return the set of `Op`s associated with the given tag.
@@ -1276,7 +1306,7 @@ impl Graph {
 			inner
 				.ops_tagged(&tag.into())
 				.iter()
-				.map(|inner| graph.op_from_inner_unchecked(inner.clone()))
+				.map(|op_inner| inner.op_from_inner(graph, *op_inner))
 				.collect()
 		})
 	}
@@ -1287,7 +1317,7 @@ impl Graph {
 			inner
 				.ops_named(name)
 				.iter()
-				.map(|inner| graph.op_from_inner_unchecked(inner.clone()))
+				.map(|op_inner| inner.op_from_inner(graph, *op_inner))
 				.collect()
 		})
 	}
@@ -1298,7 +1328,10 @@ impl Graph {
 	///
 	/// Panics if number of `Op`s found is not equal to 1.
 	pub fn op_named(&self, name: &str) -> Op {
-		self.with_root_inner_mut(|graph, inner| graph.op_from_inner_unchecked(inner.op_named(name)))
+		self.with_root_inner_mut(|graph, inner| {
+			let op = inner.op_named(name);
+			inner.op_from_inner(graph, op)
+		})
 	}
 
 	/// Returns a clone of the current set of `Node`s in the graph.
@@ -1308,8 +1341,8 @@ impl Graph {
 		self.with_root_inner_mut(|graph, inner| {
 			inner
 				.nodes
-				.iter()
-				.map(|inner| graph.node_from_inner_unchecked(inner.clone()))
+				.keys()
+				.map(|node_inner| inner.node_from_inner(graph, *node_inner))
 				.collect()
 		})
 	}
@@ -1321,18 +1354,44 @@ impl Graph {
 		self.with_root_inner_mut(|graph, inner| {
 			inner
 				.ops
-				.iter()
-				.map(|inner| graph.op_from_inner_unchecked(inner.clone()))
+				.keys()
+				.map(|op_inner| inner.op_from_inner(graph, *op_inner))
 				.collect()
 		})
 	}
 
 	pub fn node_count(&self) -> usize {
-		self.with_nodes_ops(|nodes, _ops| nodes.len())
+		self.with_root_inner_mut(|_graph, inner| {
+			inner
+				.nodes
+				.len()
+		})
 	}
 
 	pub fn op_count(&self) -> usize {
-		self.with_nodes_ops(|_nodes, ops| ops.len())
+		self.with_root_inner_mut(|_graph, inner| {
+			inner
+				.ops
+				.len()
+		})
+	}
+
+	pub fn node_index(&self, node: NodeID) -> usize {
+		self.with_root_inner_mut(|_graph, inner| {
+			inner.nodes.get_full(&node).unwrap().0
+		})
+	}
+
+	/// Returns the index of the op
+	///
+	/// Ops are indicies are in order of addition to the `Graph`
+	/// Graph merges produce
+	/// # Panics
+	/// Panics if the OpInner is not a member of the Graph
+	pub fn op_index(&self, node: OpID) -> usize {
+		self.with_root_inner_mut(|_graph, inner| {
+			inner.ops.get_full(&node).unwrap().0
+		})
 	}
 
 	/// Merges `g2` into self.
@@ -1345,12 +1404,12 @@ impl Graph {
 
 					let g1_inner: &mut GraphInner = gl1.inner_mut().unwrap();
 
-					for node in g2_inner.nodes.drain(..) {
-						g1_inner.add_node(node)
+					for (node, node_data) in g2_inner.nodes.drain(..) {
+						g1_inner.add_node(node, node_data)
 					}
 
-					for op in g2_inner.ops.drain(..) {
-						g1_inner.add_op(op)
+					for (op, op_data) in g2_inner.ops.drain(..) {
+						g1_inner.add_op(op, op_data)
 					}
 				},
 				|_, _| {},
@@ -1358,19 +1417,20 @@ impl Graph {
 		}
 	}
 
-	fn lock_graph_link(&self) -> MutexGuard<GraphLink> {
-		self.link
-			.lock()
-			.expect("Another thread has poisoned (panicked while holding) the GraphLink Mutex")
-	}
+	// fn lock_graph_link(&self) -> MutexGuard<GraphLink> {
+	// 	self.link
+	// 		.lock()
+	// 		.expect("Another thread has poisoned (panicked while holding) the GraphLink Mutex")
+	// }
 
 	/// Finds the graph root, locks it, then runs the provided closure
 	fn with_root_link_mut<T, F: FnOnce(&Graph, &mut GraphLink) -> T>(&self, f: F) -> T {
 		let mut graph = self.clone();
 		loop {
 			{
-				let mut graph_link: MutexGuard<GraphLink> = graph.lock_graph_link();
+				let mut graph_link = graph.link.lock();
 				if let x @ &mut GraphLink::Root(_) = &mut *graph_link {
+
 					return f(&graph, x);
 				}
 			}
@@ -1388,14 +1448,15 @@ impl Graph {
 		})
 	}
 
-	/// Run a closure taking the sets of `Node`s and `Op`s in the graph.
-	///
-	/// Useful to avoid cloning the sets of ops and nodes in the graph by running the closure while the graph internals
-	/// are locked. However, caution is advised as nesting multiple calls, or triggering any other lock of the graph
-	/// will deadlock.
-	pub fn with_nodes_ops<T, F: FnOnce(&IndexSet<NodeInner>, &IndexSet<OpInner>) -> T>(&self, f: F) -> T {
-		self.with_root_inner_mut(|_, inner| f(&inner.nodes, &inner.ops))
-	}
+	// /// Run a closure taking the sets of `Node`s and `Op`s in the graph.
+	// ///
+	// /// # Locking
+	// /// Useful to avoid cloning the sets of ops and nodes in the graph by running the closure while the graph internals
+	// /// are locked. However, caution is advised as nesting multiple calls, or triggering any other lock of the graph
+	// /// will deadlock.
+	// pub fn with_nodes_ops<T, F: FnOnce(&IndexMap<NodeInner, NodeInnerData>, &IndexMap<OpInner, OpInnerData>) -> T>(&self, f: F) -> T {
+	// 	self.with_root_inner_mut(|_, inner| f(&inner.nodes, &inner.ops))
+	// }
 
 	/// Find and lock the roo(s). Run either of two functions depending on whether the two graphs share a root.
 	fn with_locked_roots<T, F, G>(&self, g2: &Graph, different_root: F, same_root: G) -> T
@@ -1411,23 +1472,23 @@ impl Graph {
 		loop {
 			// Lock graph with lower memory address first to avoid dining philosophers problem.
 			if g1.link_addr() < g2.link_addr() {
-				let mut g1_link: MutexGuard<GraphLink> = g1.lock_graph_link();
+				let mut g1_link = g1.link.lock();
 				if let gl1 @ &mut GraphLink::Root(_) = &mut *g1_link {
-					let mut g2_link: MutexGuard<GraphLink> = g2.lock_graph_link();
+					let mut g2_link = g2.link.lock();
 					if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
 						return different_root(&g1, gl1, &g2, gl2);
 					}
 				}
 			} else if g1.link_addr() > g2.link_addr() {
-				let mut g2_link: MutexGuard<GraphLink> = g2.lock_graph_link();
+				let mut g2_link = g2.link.lock();
 				if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
-					let mut g1_link: MutexGuard<GraphLink> = g1.lock_graph_link();
+					let mut g1_link = g1.link.lock();
 					if let gl1 @ &mut GraphLink::Root(_) = &mut *g1_link {
 						return different_root(&g1, gl1, &g2, gl2);
 					}
 				}
 			} else {
-				let mut g1_link: MutexGuard<GraphLink> = g1.lock_graph_link();
+				let mut g1_link = g1.link.lock();
 				match &mut *g1_link {
 					x @ &mut GraphLink::Root(_) => return same_root(&g1, x),
 					&mut GraphLink::MergedInto(_) => continue,
@@ -1527,172 +1588,153 @@ impl GraphLink {
 /// computations
 #[derive(Default)]
 struct GraphInner {
-	nodes: IndexSet<NodeInner>,
-	ops: IndexSet<OpInner>,
+	nodes: IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+	ops: IndexMap<OpID, Arc<Mutex<OpInnerData>>>,
 
 	// De-normalised data only
 	// NodeInner and OpInner contain the primary record
-	associations: Option<Associations>,
-	relations: Option<Relations>,
-	/* Caches for execution. These do not form part of the graph definition.
-	 * shape_cache: ShapeCache,
-	 * execution_order_cache: ExecutionOrderCache, */
+	associations: Associations,
+	relations: Relations,
 }
 
 impl GraphInner {
-	fn node_children(&mut self, node: &NodeInner) -> Cow<IndexSet<OpInner>> {
-		self.get_or_instantiate_relations()
-			.node_children
-			.get(node)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	/// Create a `Node` from a `NodeInner`
+	///
+	/// # Panics
+	/// Panics if the NodeInner is not a member of this graph.
+	pub fn node_from_inner(&self, graph: &Graph, inner: NodeID) -> Node {
+		let data = self.nodes.get(&inner);
+
+		Node {
+			graph: graph.clone(),
+			data: match data {
+				Some(x) => x.clone(),
+				None => panic!("NodeInner (id:{}) is not a part of this Graph.", inner.id())
+			},
+			id: inner,
+		}
 	}
 
-	fn node_parents(&mut self, node: &NodeInner) -> Cow<IndexSet<OpInner>> {
-		self.get_or_instantiate_relations()
-			.node_parents
-			.get(node)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	/// Create an `Op` from an `OpInner`
+	///	
+	/// # Panics
+	/// Panics if the OpInner is not a member of this graph.
+	pub fn op_from_inner(&self, graph: &Graph, inner: OpID) -> Op {
+		let data = self.ops.get(&inner);
+		match data {
+			Some(x) => {
+				Op {
+					graph: graph.clone(),
+					id: inner,
+					data: x.clone(),
+					instance: x.lock().instance.clone(),
+				}
+			},
+			None => panic!("OpInner (id:{}) is not a part of this Graph.", inner.id())
+		}
 	}
 
-	fn node_parent(&mut self, node: &NodeInner) -> OpInner {
-		let mut iter = self
-			.get_or_instantiate_relations()
-			.node_parents
-			.get(node)
-			.unwrap_or_else(|| panic!("Node: {} is not a member of this graph", node.name()))
-			.iter();
+	fn node_children(&mut self, node: NodeID) -> IndexSet<OpID> {
+		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).node_children(node)
+	}
+
+	fn node_parents(&mut self, node: NodeID) -> IndexSet<OpID> {
+		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).node_parents(node)
+	}
+
+	fn node_parent(&mut self, node: NodeID) -> OpID {
+		let set = self.node_parents(node);
+		let mut iter = set.iter();
 
 		let op = iter
 			.next()
-			.unwrap_or_else(|| panic!("No parent Op for Node: {}", node.name()));
+			.unwrap_or_else(|| panic!("No parent Op for Node: {}",));
 		assert!(
 			iter.next().is_none(),
 			"More than one parent Op for Node : {}",
-			node.name()
+			self.nodes.get(&node).unwrap().lock().name
 		);
 		op.clone()
 	}
 
-	fn op_children(&mut self, op: &OpInner) -> Cow<IndexSet<NodeInner>> {
-		self.get_or_instantiate_relations()
-			.op_children
-			.get(op)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn nodes_tagged(&mut self, tag: &NodeTag) -> IndexSet<NodeID> {
+		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).nodes_tagged(tag)
 	}
 
-	fn op_parents(&mut self, op: &OpInner) -> Cow<IndexSet<NodeInner>> {
-		self.get_or_instantiate_relations()
-			.op_parents
-			.get(op)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn nodes_named(&mut self, name: &str) -> IndexSet<NodeID> {
+		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).nodes_named(name)
 	}
 
-	fn nodes_tagged(&mut self, tag: &NodeTag) -> Cow<IndexSet<NodeInner>> {
-		self.get_or_instantiate_association()
-			.tag_to_nodes
-			.get(tag)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn node_named(&mut self, name: &str) -> NodeID {
+		let set = self.nodes_named(name);
+		let mut iter = set.iter();
+
+		let node = iter
+			.next()
+			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
+		assert!(
+			iter.next().is_none(),
+			"More than one Node named: {}",
+			name
+		);
+		node.clone()
 	}
 
-	fn nodes_named(&mut self, name: &str) -> Cow<IndexSet<NodeInner>> {
-		self.get_or_instantiate_association()
-			.name_to_nodes
-			.get(name)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
+		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).op_children(op)
 	}
 
-	fn node_named(&mut self, name: &str) -> NodeInner {
-		let iter_opt = self
-			.get_or_instantiate_association()
-			.name_to_nodes
-			.get(name)
-			.map(IndexSet::iter);
-
-		if let Some(mut iter) = iter_opt {
-			let node = iter
-				.next()
-				.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
-			assert!(
-				iter.next().is_none(),
-				"More than one parent Op for Node : {}",
-				node.name()
-			);
-			node.clone()
-		} else {
-			panic!("No Node associated with name: {}", name)
-		}
+	fn op_parents(&mut self, op: &OpID) -> IndexSet<NodeID> {
+		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).op_parents(op)
 	}
 
-	fn ops_tagged<'a>(&'a mut self, tag: &OpTag) -> Cow<'a, IndexSet<OpInner>> {
-		self.get_or_instantiate_association()
-			.tag_to_ops
-			.get(tag)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn ops_tagged(&mut self, tag: &OpTag) -> IndexSet<OpID> {
+		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).ops_tagged(tag)
 	}
 
-	fn ops_named(&mut self, name: &str) -> Cow<IndexSet<OpInner>> {
-		self.get_or_instantiate_association()
-			.name_to_ops
-			.get(name)
-			.map_or_else(|| Cow::Owned(IndexSet::new()), |r| Cow::Borrowed(r))
+	fn ops_named(&mut self, name: &str) -> IndexSet<OpID> {
+		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).ops_named(name)
 	}
 
-	fn op_named(&mut self, name: &str) -> OpInner {
-		let iter_opt = self
-			.get_or_instantiate_association()
-			.name_to_ops
-			.get(name)
-			.map(IndexSet::iter);
+	fn op_named(&mut self, name: &str) -> OpID {
+		let set = self.ops_named(name);
+		let mut iter = set.iter();
 
-		if let Some(mut iter) = iter_opt {
-			let op = iter
-				.next()
-				.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
-			assert!(
-				iter.next().is_none(),
-				"More than one parent Op for Node : {}",
-				op.name()
-			);
-			op.clone()
-		} else {
-			panic!("No Node associated with name: {}", name)
-		}
+
+		let op = iter
+			.next()
+			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
+		assert!(
+			iter.next().is_none(),
+			"More than one Op named: {}",
+			name
+		);
+		op.clone()
 	}
 
-	fn get_or_instantiate_relations(&mut self) -> &mut Relations {
-		if self.relations.is_none() {
-			self.relations = Some(Relations::from_graph(self))
-		}
-		self.relations.as_mut().unwrap()
-	}
 
-	fn get_or_instantiate_association(&mut self) -> &mut Associations {
-		if self.associations.is_none() {
-			self.associations = Some(Associations::from_graph(self))
-		}
-		self.associations.as_mut().unwrap()
-	}
 
 	/// Add an existing node to the graph.
 	/// Updates membership in the graph and denormalised data for names and tags.
 	/// Does not add information for relationships to ops.
-	fn add_node(&mut self, node: NodeInner) {
-		self.nodes.insert(node.clone());
+	fn add_node(&mut self, node: NodeID, node_data: Arc<Mutex<NodeInnerData>>) {
+		assert!(!self.nodes.contains_key(&node), "Cannot add node that is already in graph: {}", node_data.lock().name);
+		let node_data = self.nodes.entry(node.clone()).or_insert(node_data);
+		//self.nodes.insert(node.clone(), node_data);
 
-		let node_name = node.data.name.lock().expect("Mutex lock error when getting Node name");
-		self.associate_node_name(node.clone(), &node_name, None);
+		//let node_name = node_data.name;//.lock().expect("Mutex lock error when getting Node name");
+		self.associations.associate_node_name(node.clone(), &node_data.lock().name, None);
 
-		let node_tags = node
-			.data
-			.tags
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Node: {}", node.name()));
+		// let node_tags = node_data
+		// 	.tags;
+			//.lock()
+			//.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Node: {}", node_name));
 
-		for tag in node_tags.iter() {
-			self.associate_node_tag(node.clone(), tag);
+		for tag in node_data.lock().tags.iter() {
+			self.associations.associate_node_tag(node.clone(), tag);
 		}
 
-		if let Some(ref mut relations) = self.relations {
+		if let Some(ref mut relations) = self.relations.inner {
 			relations.node_parents.insert(node.clone(), IndexSet::new());
 			relations.node_children.insert(node.clone(), IndexSet::new());
 		}
@@ -1702,49 +1744,51 @@ impl GraphInner {
 	///
 	/// # Panics
 	/// May panic if input and output nodes haven't already been added.
-	fn add_op(&mut self, op: OpInner) {
-		self.ops.insert(op.clone());
+	fn add_op(&mut self, op: OpID, op_data: Arc<Mutex<OpInnerData>>) {
+		assert!(!self.ops.contains_key(&op), "Cannot add node that is already in graph: {}", op_data.lock().name);
+		let op_data = self.ops.entry(op.clone()).or_insert(op_data);
+		//self.ops.insert(op.clone());
 
-		let op_name = op.data.name.lock().expect("Mutex lock error when getting Op name");
-		self.associate_op_name(op.clone(), &*op_name, None);
+		//let op_name = op.data.name;//.lock().expect("Mutex lock error when getting Op name");
+		self.associations.associate_op_name(op.clone(), &op_data.lock().name, None);
 
-		let op_tags = op
-			.data
-			.tags
-			.lock()
-			.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Op: {}", op.name()));
+		// let op_tags = op
+		// 	.data
+		// 	.tags
+		// 	.lock()
+		// 	.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Op: {}", op.name()));
 
-		for tag in op_tags.iter() {
-			self.associate_op_tag(op.clone(), tag);
+		for tag in op_data.lock().tags.iter() {
+			self.associations.associate_op_tag(op.clone(), tag);
 		}
 
-		if let Some(ref mut relations) = self.relations {
-			let inputs = op.instance().inputs();
+		if let Some(ref mut relations) = self.relations.inner {
+			let inputs = op_data.lock().instance.inputs();
 			for node in &inputs {
 				relations
 					.node_children
 					.get_mut(node)
 					.unwrap_or_else(|| {
 						panic!(
-							"Bug in Op: {}, input Node: {} has not been added as a member of the graph",
-							op.name(),
-							node.name()
+							"Bug in Op: {}, input Node (id:{}) has not been added as a member of the graph",
+							op_data.lock().name,
+							node.id()
 						)
 					})
 					.insert(op.clone());
 			}
 			relations.op_parents.insert(op.clone(), inputs);
 
-			let outputs = op.instance().outputs();
+			let outputs = op_data.lock().instance.outputs();
 			for node in &outputs {
 				relations
 					.node_parents
 					.get_mut(node)
 					.unwrap_or_else(|| {
 						panic!(
-							"Bug in Op: {}, output Node: {} has not been added as a member of the graph",
-							op.name(),
-							node.name()
+							"Bug in Op: {}, output Node (id:{}) has not been added as a member of the graph",
+							op_data.lock().name,
+							node.id()
 						)
 					})
 					.insert(op.clone());
@@ -1753,58 +1797,7 @@ impl GraphInner {
 		}
 	}
 
-	fn associate_node_name(&mut self, node: NodeInner, name: &str, old_name: Option<&str>) {
-		if let Some(ref mut assoc) = self.associations {
-			// remove from previous name group
-			if let Some(old_name) = old_name {
-				assoc.name_to_nodes.get_mut(old_name).map(|set| set.swap_remove(&node));
-			}
-
-			// add to new name group
-			assoc
-				.name_to_nodes
-				.entry(name.to_string())
-				.or_insert_with(IndexSet::new)
-				.insert(node);
-		}
-	}
-
-	fn associate_node_tag(&mut self, node: NodeInner, tag: &NodeTag) {
-		if let Some(ref mut assoc) = self.associations {
-			// add to new tag group
-			assoc
-				.tag_to_nodes
-				.entry(tag.clone())
-				.or_insert_with(IndexSet::new)
-				.insert(node);
-		}
-	}
-
-	fn associate_op_name(&mut self, op: OpInner, name: &str, old_name: Option<&str>) {
-		if let Some(ref mut assoc) = self.associations {
-			// remove from previous name group
-			if let Some(old_name) = old_name {
-				assoc.name_to_ops.get_mut(old_name).map(|set| set.swap_remove(&op));
-			}
-
-			// add to new name group
-			assoc
-				.name_to_ops
-				.entry(name.to_string())
-				.or_insert_with(IndexSet::new)
-				.insert(op);
-		}
-	}
-
-	fn associate_op_tag(&mut self, op: OpInner, tag: &OpTag) {
-		if let Some(ref mut assoc) = self.associations {
-			assoc
-				.tag_to_ops
-				.entry(tag.clone())
-				.or_insert_with(IndexSet::new)
-				.insert(op);
-		}
-	}
+	
 
 	fn unique_node_name(&mut self, new_name_root: &str) -> String {
 		if self.nodes_named(&new_name_root).is_empty() {
@@ -1838,19 +1831,19 @@ impl GraphInner {
 impl Display for GraphInner {
 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
 		write!(f, "GraphInner {{ nodes: [")?;
-		let mut iter = self.nodes.iter();
+		let mut iter = self.nodes.values();
 		if let Some(node) = iter.next() {
-			write!(f, "{}", node)?;
+			write!(f, "{}", node.lock().name)?;
 			for node in iter {
-				write!(f, ", {}", node)?;
+				write!(f, ", {}", node.lock().name)?;
 			}
 		}
 		write!(f, "], ops: [")?;
-		let mut iter = self.ops.iter();
+		let mut iter = self.ops.values();
 		if let Some(op) = iter.next() {
-			write!(f, "{}", op)?;
+			write!(f, "{}", op.lock().name)?;
 			for op in iter {
-				write!(f, ", {}", op)?;
+				write!(f, ", {}", op.lock().name)?;
 			}
 		}
 		write!(f, "] }}")?;
@@ -1874,31 +1867,51 @@ impl Debug for GraphInner {
 // 	}
 // }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Relations {
-	node_parents: IndexMap<NodeInner, IndexSet<OpInner>>,
-	node_children: IndexMap<NodeInner, IndexSet<OpInner>>,
-	op_parents: IndexMap<OpInner, IndexSet<NodeInner>>,
-	op_children: IndexMap<OpInner, IndexSet<NodeInner>>,
+	inner: Option<RelationsInner>,
 }
 
 impl Relations {
-	fn from_graph(graph: &GraphInner) -> Self {
-		let mut relations = Relations { ..Default::default() };
+	fn get_or_instantiate_relations(&mut self, nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut RelationsInner {
+		if self.inner.is_none() {
+			self.inner = Some(RelationsInner::from_graph(nodes, ops))
+		}
+		self.inner.as_mut().unwrap()
+	}
 
-		for node in &graph.nodes {
+	fn clear(&mut self) {
+		self.inner = None
+	}
+
+
+}
+
+#[derive(Default)]
+struct RelationsInner {
+	node_parents: IndexMap<NodeID, IndexSet<OpID>>,
+	node_children: IndexMap<NodeID, IndexSet<OpID>>,
+	op_parents: IndexMap<OpID, IndexSet<NodeID>>,
+	op_children: IndexMap<OpID, IndexSet<NodeID>>,
+}
+
+impl RelationsInner {
+	fn from_graph(nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+		let mut relations = RelationsInner { ..Default::default() };
+
+		for node in nodes.keys() {
 			relations.node_parents.insert(node.clone(), IndexSet::new());
 			relations.node_children.insert(node.clone(), IndexSet::new());
 		}
 
-		for op in &graph.ops {
-			let inputs = op.instance().inputs();
+		for (op, op_data) in ops {
+			let inputs = op_data.lock().instance.inputs();
 			for node in &inputs {
 				relations.node_children.get_mut(node).unwrap().insert(op.clone());
 			}
 			relations.op_parents.insert(op.clone(), inputs);
 
-			let outputs = op.instance().outputs();
+			let outputs = op_data.lock().instance.outputs();
 			for node in &outputs {
 				relations.node_parents.get_mut(node).unwrap().insert(op.clone());
 			}
@@ -1907,54 +1920,182 @@ impl Relations {
 
 		relations
 	}
+
+	fn node_children(&mut self, node: NodeID) -> IndexSet<OpID> {
+		self.node_children
+			.get(&node)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn node_parents(&mut self, node: NodeID) -> IndexSet<OpID> {
+		self.node_parents
+			.get(&node)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
+		self.op_children
+			.get(op)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn op_parents(&mut self, op: &OpID) -> IndexSet<NodeID> {
+		self.op_parents
+			.get(op)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}	
 }
 
-/// denormalised for reverse lookups
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Associations {
-	name_to_nodes: IndexMap<String, IndexSet<NodeInner>>,
-	name_to_ops: IndexMap<String, IndexSet<OpInner>>,
-	tag_to_nodes: IndexMap<NodeTag, IndexSet<NodeInner>>,
-	tag_to_ops: IndexMap<OpTag, IndexSet<OpInner>>,
+	inner: Option<AssociationsInner>
 }
 
 impl Associations {
-	fn from_graph(graph: &GraphInner) -> Self {
-		let mut associations = Associations { ..Default::default() };
+	fn get_or_instantiate_association(&mut self, nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut AssociationsInner {
+		if self.inner.is_none() {
+			self.inner = Some(AssociationsInner::from_graph(nodes, ops))
+		}
+		self.inner.as_mut().unwrap()
+	}
 
-		for node in &graph.nodes {
+	fn clear(&mut self) {
+		self.inner = None
+	}
+
+
+
+
+
+
+	fn associate_node_name(&mut self, node: NodeID, name: &str, old_name: Option<&str>) {
+		if let Some(ref mut assoc) = self.inner {
+			// remove from previous name group
+			if let Some(old_name) = old_name {
+				assoc.name_to_nodes.get_mut(old_name).map(|set| set.swap_remove(&node));
+			}
+
+			// add to new name group
+			assoc
+				.name_to_nodes
+				.entry(name.to_string())
+				.or_insert_with(IndexSet::new)
+				.insert(node);
+		}
+	}
+
+	fn associate_node_tag(&mut self, node: NodeID, tag: &NodeTag) {
+		if let Some(ref mut assoc) = self.inner {
+			// add to new tag group
+			assoc
+				.tag_to_nodes
+				.entry(tag.clone())
+				.or_insert_with(IndexSet::new)
+				.insert(node);
+		}
+	}
+
+	fn associate_op_name(&mut self, op: OpID, name: &str, old_name: Option<&str>) {
+		if let Some(ref mut assoc) = self.inner {
+			// remove from previous name group
+			if let Some(old_name) = old_name {
+				assoc.name_to_ops.get_mut(old_name).map(|set| set.swap_remove(&op));
+			}
+
+			// add to new name group
+			assoc
+				.name_to_ops
+				.entry(name.to_string())
+				.or_insert_with(IndexSet::new)
+				.insert(op);
+		}
+	}
+
+	fn associate_op_tag(&mut self, op: OpID, tag: &OpTag) {
+		if let Some(ref mut assoc) = self.inner {
+			assoc
+				.tag_to_ops
+				.entry(tag.clone())
+				.or_insert_with(IndexSet::new)
+				.insert(op);
+		}
+	}	
+}
+
+/// denormalised for reverse lookups
+#[derive(Default)]
+struct AssociationsInner {
+	name_to_nodes: IndexMap<String, IndexSet<NodeID>>,
+	name_to_ops: IndexMap<String, IndexSet<OpID>>,
+	tag_to_nodes: IndexMap<NodeTag, IndexSet<NodeID>>,
+	tag_to_ops: IndexMap<OpTag, IndexSet<OpID>>,
+}
+
+
+
+impl AssociationsInner {
+	fn from_graph(nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+		let mut associations = Self { ..Default::default() };
+
+		for (node, data) in nodes {
+			let NodeInnerData{ref name, ref tags, ..} = &*data.lock();
 			associations
 				.name_to_nodes
-				.entry(node.name())
+				.entry(name.clone())
 				.or_insert_with(IndexSet::new)
 				.insert(node.clone());
 
-			for tag in node.tags() {
+			for tag in tags {
 				associations
 					.tag_to_nodes
-					.entry(tag)
+					.entry(tag.clone())
 					.or_insert_with(IndexSet::new)
 					.insert(node.clone());
 			}
 		}
 
-		for op in &graph.ops {
+		for (op, data) in ops {
+			let OpInnerData{ref name, ref tags, ..} = &*data.lock();
 			associations
 				.name_to_ops
-				.entry(op.name())
+				.entry(name.clone())
 				.or_insert_with(IndexSet::new)
 				.insert(op.clone());
 
-			for tag in op.tags() {
+			for tag in tags {
 				associations
 					.tag_to_ops
-					.entry(tag)
+					.entry(tag.clone())
 					.or_insert_with(IndexSet::new)
 					.insert(op.clone());
 			}
 		}
 
 		associations
+	}
+
+	fn nodes_tagged(&mut self, tag: &NodeTag) -> IndexSet<NodeID> {
+		self.tag_to_nodes
+			.get(tag)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn nodes_named(&mut self, name: &str) -> IndexSet<NodeID> {
+		self.name_to_nodes
+			.get(name)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn ops_tagged<'a>(&'a mut self, tag: &OpTag) -> IndexSet<OpID> {
+		self.tag_to_ops
+			.get(tag)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
+
+	fn ops_named(&mut self, name: &str) -> IndexSet<OpID> {
+		self.name_to_ops
+			.get(name)
+			.map_or_else(|| IndexSet::new(), |r| r.clone())
 	}
 }
 
@@ -2043,6 +2184,7 @@ mod tests {
 		base_ops::noop::NoOpInstance,
 		graph::{Graph, Node, NodeTag},
 	};
+	use std::sync::Arc;
 
 	#[test]
 	fn display() {
@@ -2051,7 +2193,7 @@ mod tests {
 		let n1 = g.new_node((&[1]).into()).set_name("n1");
 		let n2 = g.new_node((&[1]).into()).set_name("n2");
 
-		let o1 = g.new_op(Box::new(NoOpInstance {})).set_name("o1");
+		let o1 = g.new_op(Arc::new(NoOpInstance {})).set_name("o1");
 
 		assert_eq!(&format!("{}", n2), "n2");
 		assert_eq!(format!("{}", n1), "n1".to_string());

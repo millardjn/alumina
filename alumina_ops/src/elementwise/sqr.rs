@@ -6,7 +6,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the square (sqr) of the input.
@@ -40,7 +40,7 @@ impl UnaryFunc for SqrFunc {
 		"Sqr"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let _op = Mul::new_default(ctx.grad_of(output), scale(ctx.node(input), 2.0)?, ctx.grad_of(input)).build()?;
 		Ok(())
 	}

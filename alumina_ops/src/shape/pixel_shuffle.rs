@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -163,8 +163,8 @@ impl OpBuilder for Collapse {
 		}
 
 		Ok(CollapseInstance::new(
-			self.input.inner().clone(),
-			self.output.inner().clone(),
+			self.input.id().clone(),
+			self.output.id().clone(),
 			self.factors,
 		))
 	}
@@ -172,14 +172,14 @@ impl OpBuilder for Collapse {
 
 #[derive(Debug, Clone)]
 pub struct CollapseInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	factors: Vec<usize>,
 	batch_end: usize,
 }
 
 impl CollapseInstance {
-	fn new(input: NodeInner, output: NodeInner, factors: Vec<usize>) -> Self {
+	fn new(input: NodeID, output: NodeID, factors: Vec<usize>) -> Self {
 		let batch_end = factors.iter().take_while(|&&i| i == 1).count();
 		CollapseInstance {
 			input,
@@ -195,11 +195,11 @@ impl OpInstance for CollapseInstance {
 		"Collapse"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 
@@ -365,8 +365,8 @@ impl OpBuilder for Expand {
 		);
 
 		Ok(ExpandInstance::new(
-			self.input.inner().clone(),
-			self.output.inner().clone(),
+			self.input.id().clone(),
+			self.output.id().clone(),
 			self.factors,
 		))
 	}
@@ -374,14 +374,14 @@ impl OpBuilder for Expand {
 
 #[derive(Debug, Clone)]
 pub struct ExpandInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	factors: Vec<usize>,
 	batch_end: usize,
 }
 
 impl ExpandInstance {
-	fn new(input: NodeInner, output: NodeInner, factors: Vec<usize>) -> Self {
+	fn new(input: NodeID, output: NodeID, factors: Vec<usize>) -> Self {
 		let batch_end = factors.iter().take_while(|&&i| i == 1).count();
 		ExpandInstance {
 			input,
@@ -397,11 +397,11 @@ impl OpInstance for ExpandInstance {
 		"Expand"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

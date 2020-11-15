@@ -4,7 +4,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
 	init::{duplicate, Initialiser},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
@@ -51,7 +51,7 @@ where
 	let input = input.into();
 
 	let n = output_channels;
-	let (k, outer) = get_inner_outer(input.shape());
+	let (k, outer) = get_inner_outer(&input.shape());
 
 	let weights = input
 		.graph()
@@ -81,8 +81,8 @@ where
 	let input = input.into();
 	let output = output.into();
 
-	let (n, _outer) = get_inner_outer(output.shape());
-	let (k, _outer) = get_inner_outer(input.shape());
+	let (n, _outer) = get_inner_outer(&output.shape());
+	let (k, _outer) = get_inner_outer(&input.shape());
 
 	let weights = input
 		.graph()
@@ -112,7 +112,7 @@ where
 	let input = input.into();
 
 	let n = output_channels;
-	let (k, _) = get_inner_outer(input.shape());
+	let (k, _) = get_inner_outer(&input.shape());
 
 	let weights = input
 		.graph()
@@ -272,9 +272,9 @@ impl OpBuilder for MatMul {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MatMulInstance {
-			matrix_a: self.matrix_a.inner().clone(),
-			matrix_b: self.matrix_b.inner().clone(),
-			matrix_c: self.matrix_c.inner().clone(),
+			matrix_a: self.matrix_a.id().clone(),
+			matrix_b: self.matrix_b.id().clone(),
+			matrix_c: self.matrix_c.id().clone(),
 			a_trans: self.a_trans,
 			b_trans: self.b_trans,
 			c_trans: self.c_trans,
@@ -288,9 +288,9 @@ impl OpBuilder for MatMul {
 
 #[derive(Debug, Clone)]
 pub struct MatMulInstance {
-	matrix_a: NodeInner,
-	matrix_b: NodeInner,
-	matrix_c: NodeInner,
+	matrix_a: NodeID,
+	matrix_b: NodeID,
+	matrix_c: NodeID,
 	a_trans: bool,
 	b_trans: bool,
 	c_trans: bool,
@@ -305,11 +305,11 @@ impl OpInstance for MatMulInstance {
 		"ReduceSum"
 	}
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.matrix_a.clone(), self.matrix_b.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.matrix_c.clone()]
 	}
 

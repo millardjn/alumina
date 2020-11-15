@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Calculates the elementwise negation of the input, returning 1.0 if it is 0.0 and 0.0 otherwise.
@@ -47,7 +47,7 @@ impl UnaryFunc for NotFunc {
 		"Not"
 	}
 
-	fn grad(&self, _ctx: &mut GradientContext, _input: &NodeInner, _output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, _ctx: &mut GradientContext, _input: &NodeID, _output: &NodeID) -> Result<(), GradientError> {
 		Ok(())
 	}
 }

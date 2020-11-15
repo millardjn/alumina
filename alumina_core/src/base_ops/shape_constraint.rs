@@ -3,7 +3,7 @@ use crate::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner, Op},
+	graph::{Node, NodeID, Op},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -137,16 +137,16 @@ impl OpBuilder for ShapeConstraint {
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ShapeConstraintInstance {
 			rules: self.rules,
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 		})
 	}
 }
 
 #[derive(Clone, Debug)]
 pub struct ShapeConstraintInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	rules: Rules,
 }
 
@@ -163,11 +163,11 @@ impl OpInstance for ShapeConstraintInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

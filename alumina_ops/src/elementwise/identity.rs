@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, merge_node_graphs, Node, NodeInner},
+	graph::{merge_graphs, merge_node_graphs, Node, NodeID},
 	shape::SCALAR,
 };
 
@@ -97,7 +97,7 @@ impl UnaryFunc for IdentityFunc {
 		"Identity"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		Identity::new_default(ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}

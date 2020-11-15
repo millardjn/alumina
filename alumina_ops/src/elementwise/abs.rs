@@ -6,7 +6,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the absolute (abs) of the input.
@@ -39,7 +39,7 @@ impl UnaryFunc for AbsFunc {
 		"Abs"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let _op = Mul::new_default(ctx.grad_of(output), sign(ctx.node(input))?, ctx.grad_of(input)).build()?;
 		Ok(())
 	}

@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the sine (sin) of the input.
@@ -39,7 +39,7 @@ impl UnaryFunc for SinFunc {
 		"Sin"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		SinBack::new_default(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input)).build()?;
 		Ok(())
 	}
@@ -63,9 +63,9 @@ impl BinaryFunc for SinBackFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Err(GradientError::Unimplemented)
 	}

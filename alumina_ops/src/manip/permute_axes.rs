@@ -3,7 +3,7 @@ use alumina_core::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
@@ -21,10 +21,11 @@ where
 	I: Into<Node>,
 {
 	let input = input.into();
+	let input_shape = input.shape();
 
 	let output = input
 		.graph()
-		.new_node(permutation.iter().map(|&i| &input.shape().slice()[i]).into())
+		.new_node(permutation.iter().map(|&i| &input_shape.slice()[i]).into())
 		.set_name_unique(&format!("permute_axes({})", input));
 
 	let _op = PermuteAxes::new(&input, &output, permutation).build()?;
@@ -41,12 +42,13 @@ where
 	I: Into<Node>,
 {
 	let input = input.into();
+	let input_shape = input.shape();
 
 	let permutation: Vec<usize> = (0..input.shape().len()).rev().collect();
 
 	let output = input
 		.graph()
-		.new_node(permutation.iter().map(|&i| &input.shape().slice()[i]).into())
+		.new_node(permutation.iter().map(|&i| &input_shape.slice()[i]).into())
 		.set_name_unique(&format!("transpose({})", input));
 
 	let _op = PermuteAxes::new(&input, &output, &permutation).build()?;
@@ -128,8 +130,8 @@ impl OpBuilder for PermuteAxes {
 		}
 
 		Ok(PermuteAxesInstance {
-			input: self.input.inner().clone(),
-			output: self.output.inner().clone(),
+			input: self.input.id().clone(),
+			output: self.output.id().clone(),
 			permutation: self.permutation,
 		})
 	}
@@ -138,8 +140,8 @@ impl OpBuilder for PermuteAxes {
 /// PermuteAxes OpInstance
 #[derive(Clone, Debug)]
 pub struct PermuteAxesInstance {
-	input: NodeInner,
-	output: NodeInner,
+	input: NodeID,
+	output: NodeID,
 	permutation: Vec<usize>,
 }
 
@@ -156,11 +158,11 @@ impl OpInstance for PermuteAxesInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

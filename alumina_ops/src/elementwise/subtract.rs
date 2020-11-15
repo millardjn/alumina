@@ -7,7 +7,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 };
 
 /// Calculates the elementwise subtractision (subtract) of input1 over input2.
@@ -47,9 +47,9 @@ impl BinaryFunc for SubtractFunc {
 	fn grad(
 		&self,
 		ctx: &mut GradientContext,
-		input1: &NodeInner,
-		input2: &NodeInner,
-		output: &NodeInner,
+		input1: &NodeID,
+		input2: &NodeID,
+		output: &NodeID,
 	) -> Result<(), GradientError> {
 		let _op = Identity::new_default(&ctx.grad_of(output), &ctx.grad_of(input1)).build()?;
 		let _op = Negative::new_default(&ctx.grad_of(output), &ctx.grad_of(input2)).build()?;

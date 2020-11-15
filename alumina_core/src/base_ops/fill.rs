@@ -3,7 +3,7 @@ use crate::{
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
@@ -73,7 +73,7 @@ impl OpBuilder for Fill {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(FillInstance {
-			output: self.output.inner().clone(),
+			output: self.output.id().clone(),
 			value: self.value,
 		})
 	}
@@ -82,7 +82,7 @@ impl OpBuilder for Fill {
 /// Elementwise Op, the value of the input is added to
 #[derive(Clone, Debug)]
 pub struct FillInstance {
-	output: NodeInner,
+	output: NodeID,
 	value: f32,
 }
 
@@ -99,11 +99,11 @@ impl OpInstance for FillInstance {
 	// 	}))
 	// }
 
-	fn inputs(&self) -> IndexSet<NodeInner> {
+	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]
 	}
 
-	fn outputs(&self) -> IndexSet<NodeInner> {
+	fn outputs(&self) -> IndexSet<NodeID> {
 		indexset![self.output.clone()]
 	}
 

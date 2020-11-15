@@ -9,7 +9,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the softsign (y = x / (x.abs() + 1.0)) of the input element-wise.
@@ -43,7 +43,7 @@ impl UnaryFunc for SoftsignFunc {
 		"Softsign"
 	}
 
-	fn grad(&self, ctx: &mut GradientContext, input: &NodeInner, output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let abs = abs(ctx.node(input))?;
 		let abs_p1 = offset(abs.clone(), 1.0)?;
 		let sqr_abs_p1 = sqr(abs_p1)?;

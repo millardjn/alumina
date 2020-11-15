@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{Node, NodeInner},
+	graph::{Node, NodeID},
 };
 
 /// Returns the closest integer (round) to the input.
@@ -36,7 +36,7 @@ impl UnaryFunc for RoundFunc {
 		"Round"
 	}
 
-	fn grad(&self, _ctx: &mut GradientContext, _input: &NodeInner, _output: &NodeInner) -> Result<(), GradientError> {
+	fn grad(&self, _ctx: &mut GradientContext, _input: &NodeID, _output: &NodeID) -> Result<(), GradientError> {
 		Ok(())
 	}
 }

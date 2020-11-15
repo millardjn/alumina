@@ -177,7 +177,7 @@ where
 			);
 
 			if let Some(arr) = param.value() {
-				if param.shape() != &arr.shape().iter().into() {
+				if param.shape() != arr.shape().iter().into() {
 					let x = arr.broadcast(param.shape().to_data_shape().unwrap()).unwrap();
 					param.set_value(x);
 				}

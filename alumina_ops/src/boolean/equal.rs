@@ -3,7 +3,7 @@ use alumina_core::{
 	base_ops::OpBuilder,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeInner},
+	graph::{merge_graphs, Node, NodeID},
 };
 
 /// Calculates the elementwise equality of input1 and input2, returning 1.0 if they are equal and 0.0 otherwise.
@@ -53,9 +53,9 @@ impl BinaryFunc for EqualFunc {
 	fn grad(
 		&self,
 		_ctx: &mut GradientContext,
-		_input1: &NodeInner,
-		_input2: &NodeInner,
-		_output: &NodeInner,
+		_input1: &NodeID,
+		_input2: &NodeID,
+		_output: &NodeID,
 	) -> Result<(), GradientError> {
 		Ok(())
 	}

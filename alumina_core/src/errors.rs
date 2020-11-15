@@ -1,4 +1,4 @@
-use crate::graph::{Node, NodeInner, Op, OpInner};
+use crate::graph::{Node, Op};
 use crate::shape::{NodeAxis, NodeShape};
 use crate::util::display::{Iter2Display, IterDisplay};
 use failure::{Context, Error, Fail};
@@ -142,7 +142,7 @@ pub enum ShapesError {
 	)]
 	InputCantMerge {
 		input_errors: Iter2Display<Node, ShapeError, IndexMap<Node, ShapeError>>,
-		partial: IndexMap<NodeInner, NodeShape>,
+		partial: IndexMap<Node, NodeShape>,
 	},
 
 	///
@@ -150,7 +150,7 @@ pub enum ShapesError {
 	ShapePropError {
 		op: Op,
 		error: ShapePropError,
-		partial: IndexMap<NodeInner, NodeShape>,
+		partial: IndexMap<Node, NodeShape>,
 	},
 
 	/// Returned when the `SubGraph` contains an `Op` which has inputs outside the `SubGraph`.
@@ -158,7 +158,7 @@ pub enum ShapesError {
 		display = "An input node ({}) of op ({}) is missing from the SubGraph",
 		op, input_node
 	)]
-	OpInputNotInSubgraph { op: Op, input_node: NodeInner },
+	OpInputNotInSubgraph { op: Op, input_node: Node },
 
 	/// Returned due to problems with order of `Op`s in the `SubGraph`.
 	///
@@ -168,7 +168,7 @@ pub enum ShapesError {
 		display = "The node ({}) is used as an output after being used as an input, indicating the Subgraph is not topologically sorted.",
 		node
 	)]
-	SubGraphNotExecutable { node: NodeInner },
+	SubGraphNotExecutable { node: Node },
 }
 
 impl ::std::fmt::Debug for ShapesError {
@@ -229,7 +229,7 @@ pub enum ExecError {
 		display = "ExecError::OpInputNotInSubgraph An input node ({}) of op ({}) is missing from the SubGraph",
 		op, node
 	)]
-	OpInputNotInSubgraph { op: OpInner, node: NodeInner },
+	OpInputNotInSubgraph { op: Op, node: Node },
 
 	/// This is returned when execution subgraphs are extracted with insufficient inputs to calculate the required
 	/// outputs.
@@ -237,7 +237,7 @@ pub enum ExecError {
 		display = "ExecError::InsufficientInputs The execution Subgraph contained a node that is not an input and is not written to by any Ops: node {} was read by {} ",
 		node, op
 	)]
-	InsufficientInputs { node: NodeInner, op: OpInner },
+	InsufficientInputs { node: Node, op: Op },
 
 	/// Returned from `exec()` if errors arise when extracting the default execution `SubGraph`.
 	#[fail(
@@ -272,7 +272,7 @@ pub enum ExecError {
 		display = "ExecError::SubGraphNotExecutable The node ({}) is used as an output after being used as an input, indicating the Subgraph is not topologically sorted.",
 		node
 	)]
-	SubGraphNotExecutable { node: NodeInner },
+	SubGraphNotExecutable { node: Node },
 }
 
 /// Fail type returned when extraction of an execution subgraph
