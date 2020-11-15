@@ -404,9 +404,6 @@ impl Hash for Node {
 	}
 }
 
-
-
-
 impl Display for Node {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
 		Display::fmt(&self.name(), fmt)
@@ -494,68 +491,6 @@ impl NodeID {
 			id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
 		}
 	}
-
-	// /// Returns a copy of the `Node` shape.
-	// pub fn shape(&self, graph: &Graph) -> &NodeShape {
-	// 	&self.data.shape
-	// }
-
-
-
-	// pub fn has_value(&self, graph: &Graph) -> bool {
-	// 	self.data
-	// 		.value
-	// 		.lock()
-	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-	// 		.is_some()
-	// }
-
-	// /// Returns copy-on-write value of the `Node`, if one has been set.
-	// ///
-	// /// This avoids cloning the
-	// pub fn value(&self, graph: &Graph) -> Option<ArcArray<f32, IxDyn>> {
-	// 	self.data
-	// 		.value
-	// 		.lock()
-	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-	// 		.clone()
-	// }
-
-	// /// Takes and returns value of the `Node`, if one has been set, leaving None in its place.
-	// pub fn take_value(&self, graph: &Graph) -> Option<ArcArray<f32, IxDyn>> {
-	// 	self.data
-	// 		.value
-	// 		.lock()
-	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-	// 		.take()
-	// }
-
-	// /// Returns shape of the of the `Node`, if one has been set.
-	// pub fn value_shape(&self, graph: &Graph) -> Option<IxDyn> {
-	// 	self.data
-	// 		.value
-	// 		.lock()
-	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-	// 		.as_ref()
-	// 		.map(|v| IxDyn(v.shape()))
-	// }
-
-	// /// Returns the `Initialiser` if one is set.
-	// pub fn init(&self, graph: &Graph) -> Option<Initialiser> {
-	// 	self.data
-	// 		.init
-	// 		.lock()
-	// 		.unwrap_or_else(|_| panic!("Mutex lock error when setting value for Node: {}", self.name()))
-	// 		.clone()
-	// }
-
-	// /// Returns the result of calling the initialiser.
-	// ///
-	// /// # Panics
-	// /// Panics if the node is not a fixed shape (all known axes).
-	// pub fn init_array(&self, graph: &Graph) -> Option<ArrayD<f32>> {
-	// 	self.init().map(|mut init| init.array(self))
-	// }
 }
 
 impl Clone for NodeID {
@@ -587,75 +522,11 @@ impl Equivalent<Node> for NodeID {
 	}
 }
 
-// impl Display for NodeInner {
-// 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
-// 		Display::fmt(&self.name(), f)
-// 	}
-// }
-
-// impl Debug for NodeInner {
-// 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-// 		fmt.debug_struct("NodeInner")
-// 			.field("name", &self.data.name.lock().unwrap())
-// 			.field("shape", &format!("{}", self.data.shape))
-// 			.finish()
-// 	}
-// }
-
-// /// A weak reference that doesn't prevent deallocation
-// ///
-// /// Used for implementing LRU caches.
-// pub struct WeakNodeInner {
-// 	inner: Weak<NodeInnerData>,
-// 	ptr_val: usize,
-// }
-
-// impl WeakNodeInner {
-// 	/// returns the memory address of the InnerRef for use as a unique identifer
-// 	///
-// 	/// Hash and Eq are implemented based on this value
-// 	pub fn id(&self) -> usize {
-// 		self.ptr_val
-// 	}
-// }
-
-// impl<'a> From<&'a NodeInner> for WeakNodeInner {
-// 	fn from(val: &'a NodeInner) -> Self {
-// 		WeakNodeInner {
-// 			inner: Arc::downgrade(&val.data),
-// 			ptr_val: val.id(),
-// 		}
-// 	}
-// }
-
-// impl Clone for WeakNodeInner {
-// 	fn clone(&self) -> Self {
-// 		WeakNodeInner {
-// 			inner: self.inner.clone(),
-// 			ptr_val: self.ptr_val,
-// 		}
-// 	}
-// }
-
-// impl PartialEq for WeakNodeInner {
-// 	fn eq(&self, other: &WeakNodeInner) -> bool {
-// 		if self.ptr_val != other.ptr_val {
-// 			return false;
-// 		}
-// 		match (self.inner.upgrade(), other.inner.upgrade()) {
-// 			(Some(_), Some(_)) | (None, None) => true,
-// 			_ => false,
-// 		}
-// 	}
-// }
-
-// impl Eq for WeakNodeInner {}
-
-// impl Hash for WeakNodeInner {
-// 	fn hash<H: Hasher>(&self, state: &mut H) {
-// 		self.ptr_val.hash(state)
-// 	}
-// }
+impl Equivalent<NodeID> for Node {
+	fn equivalent(&self, key: &NodeID) -> bool {
+		key.id == self.id().id
+	}
+}
 
 pub struct NodeInnerData {
 	pub shape: NodeShape,
@@ -735,19 +606,6 @@ pub struct Op {
 }
 
 impl Op {
-	// /// Returns a copy of the current `Op` name.
-	// ///
-	// /// Default: Unnamed_Op
-	// ///
-	// /// Usually this default is overwritten by a name derived from parent and child `Node`s.
-	// pub fn name(&self) -> String {
-	// 	self.inner.name()
-	// }
-
-	// /// Returns a copy of the current `Node` tags.
-	// pub fn tags(&self) -> IndexSet<OpTag> {
-	// 	self.inner.tags()
-	// }
 
 	/// Set the name of the Op, replaces existing name.
 	pub fn set_name<S: Into<String>>(&self, new_name: S) -> Self {
@@ -813,20 +671,6 @@ impl Op {
 
 		self.clone()
 	}
-
-	// pub fn instance(&self) -> &dyn OpInstance {
-	// 	&*self.inner.instance()
-	// }
-
-	// TODO this doesn't uphold the invariant that an OpInstance is always in the same graph as its inputs/outputs
-	// Need to use conversion to OpBuilder and replace nodes
-	// pub fn clone_instance(&self) -> Op {
-	// 	let graph = Graph::new();
-	// 	graph
-	// 		.new_op(self.inner.data.instance.clone())
-	// 		.set_name(self.inner.data.name.lock().unwrap().clone())
-	// 		.add_tags(self.inner.data.tags.lock().unwrap().clone())
-	// }
 
 	/// Returns the set of `Node`s this `Op` uses as inputs in the `Graph`.
 	pub fn parent_nodes(&self) -> IndexSet<Node> {
@@ -979,76 +823,6 @@ impl Equivalent<Op> for OpID {
 	}
 }
 
-// impl Display for OpInner {
-// 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
-// 		Display::fmt(&self.name(), f)
-// 	}
-// }
-
-// impl Debug for OpInner {
-// 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
-// 		fmt.debug_struct("OpInner")
-// 			.field("name", &self.data.name.lock().unwrap())
-// 			.field("type", &self.data.instance.type_name())
-// 			.finish()
-// 	}
-// }
-
-// /// A weak reference that doesn't prevent deallocation
-// ///
-// /// Used for implementing LRU caches.
-// pub struct WeakOpInner {
-// 	inner: Weak<OpInnerData>,
-// 	ptr_val: usize,
-// }
-
-// impl WeakOpInner {
-// 	/// returns the memory address of the InnerRef for use as a unique identifer
-// 	///
-// 	/// Hash and Eq are implemented based on this value
-// 	pub fn id(&self) -> usize {
-// 		self.ptr_val
-// 	}
-// }
-
-// impl<'a> From<&'a OpInner> for WeakOpInner {
-// 	fn from(val: &'a OpInner) -> Self {
-// 		WeakOpInner {
-// 			inner: Arc::downgrade(&val.data),
-// 			ptr_val: val.id(),
-// 		}
-// 	}
-// }
-
-// impl Clone for WeakOpInner {
-// 	fn clone(&self) -> Self {
-// 		WeakOpInner {
-// 			inner: self.inner.clone(),
-// 			ptr_val: self.ptr_val,
-// 		}
-// 	}
-// }
-
-// impl PartialEq for WeakOpInner {
-// 	fn eq(&self, other: &WeakOpInner) -> bool {
-// 		if self.ptr_val != other.ptr_val {
-// 			return false;
-// 		}
-// 		match (self.inner.upgrade(), other.inner.upgrade()) {
-// 			(Some(_), Some(_)) | (None, None) => true,
-// 			_ => false,
-// 		}
-// 	}
-// }
-
-// impl Eq for WeakOpInner {}
-
-// impl Hash for WeakOpInner {
-// 	fn hash<H: Hasher>(&self, state: &mut H) {
-// 		self.ptr_val.hash(state)
-// 	}
-// }
-
 pub struct OpInnerData {
 	pub name: String,
 	pub tags: IndexSet<OpTag>,
@@ -1078,7 +852,6 @@ impl Clone for Graph {
 					link: self.link.clone(),
 				};
 			}
-			//x @ Err(_) => x.expect("Graph mutex is poisoned"), // If poisoned, just crash and burn
 		};
 
 		// get root by either being root, or cloning
@@ -1108,11 +881,6 @@ impl Hash for Graph {
 
 impl Display for Graph {
 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::fmt::Result {
-		// self.with_nodes_ops(|nodes, ops| {
-		// 	write!(f, "Graph {{ nodes: {}, ops: {} }}", IterDisplay{inner: nodes.clone()}, IterDisplay{inner:
-		// ops.clone()})?; 	Ok(())
-		// })
-
 		self.with_root_inner_mut(|_graph, inner| {
 			write!(f, "Graph {{ nodes: [")?;
 			let mut iter = inner.nodes.iter();

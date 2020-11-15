@@ -3,7 +3,7 @@ use crate::{
 	errors::ExecError,
 	graph::{Node, NodeID, Op, OpID},
 	//shape_prop::cached_shapes_inner,
-	shape_prop::shapes_inner,
+	shape_prop::cached_shapes_inner,
 	subgraph::{execution_subgraph, SubGraph},
 };
 use indexmap::{IndexMap, IndexSet};
@@ -96,7 +96,7 @@ impl<T> DataState<T> {
 /// mutable borrows.
 pub struct ExecutionContext {
 	value_map: UnsafeCell<IndexMap<Node, DataState<f32>>>,
-	shape_map: IndexMap<Node, IxDyn>,
+	shape_map: IndexMap<NodeID, IxDyn>,
 
 	/// None = not borrowed
 	/// false = shared borrow
@@ -109,7 +109,7 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-	fn new(value_map: IndexMap<Node, DataState<f32>>, shape_map: IndexMap<Node, IxDyn>) -> ExecutionContext {
+	fn new(value_map: IndexMap<Node, DataState<f32>>, shape_map: IndexMap<NodeID, IxDyn>) -> ExecutionContext {
 		ExecutionContext {
 			value_map: UnsafeCell::new(value_map),
 			shape_map,
@@ -553,10 +553,10 @@ impl ExecutionContext {
 					unreachable!()
 				};
 
-				let data = if self.shape_map[node].slice() == data.shape() {
+				let data = if self.shape_map[&node.id()].slice() == data.shape() {
 					data
 				} else {
-					data.broadcast(self.shape_map[node].slice())
+					data.broadcast(self.shape_map[&node.id()].slice())
 						.expect("Alumina Bug: an incorrect shape snuck through somehow")
 						.to_owned()
 						.into_shared()
@@ -760,7 +760,7 @@ impl ExecutionContext {
 fn form_output_map(
 	outputs: IndexSet<Node>,
 	mut value_map: IndexMap<Node, DataState<f32>>,
-	shape_map: IndexMap<Node, IxDyn>,
+	shape_map: IndexMap<NodeID, IxDyn>,
 ) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError> {
 	// if output was not calculated return error
 	let mut map = IndexMap::with_capacity(outputs.len());
@@ -897,7 +897,7 @@ where
 		}
 	}
 
-	let shape_map = shapes_inner(
+	let shape_map = cached_shapes_inner(
 		subgraph,
 		&inputs
 			.iter()
@@ -916,7 +916,7 @@ where
 				inputs
 					.swap_remove(&node.id())
 					.map(|data| {
-						if data.shape() == shape_map[node].slice() {
+						if data.shape() == shape_map[&node.id()].slice() {
 							DataState::Input {
 								readers_remaining: readers_remaining[&node.id()],
 								data,
@@ -1202,30 +1202,30 @@ mod tests {
 		}
 	}
 
-	// #[test]
-	// fn exec_error_SubGraphNotExecutable_order() {
-	// 	let x = Node::new(&[2, 1]).set_name("x");
-	// 	let y = Node::new(&[3, 2]).set_name("y");
-	// 	let z = Node::new(&[3, 3]).set_name("z");
+	#[test]
+	fn exec_error_SubGraphNotExecutable_order() {
+		let x = Node::new(&[2, 1]).set_name("x");
+		let y = Node::new(&[3, 2]).set_name("y");
+		let z = Node::new(&[3, 3]).set_name("z");
 
-	// 	let op1 = DummyOp::new().input(&y).output(&z).build().unwrap();
-	// 	let op2 = DummyOp::new().input(&x).output(&y).build().unwrap();
+		let op1 = DummyOp::new().input(&y).output(&z).build().unwrap();
+		let op2 = DummyOp::new().input(&x).output(&y).build().unwrap();
 
-	// 	let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
+		let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
 
-	// 	match exec(
-	// 		vec![(x, arr0(1.0).into_dyn().into_shared())],
-	// 		&[y],
-	// 		&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-	// 	) {
-	// 		Err(ExecError::Shape {
-	// 			error: ShapesError::SubGraphNotExecutable { .. },
-	// 		}) => {}
-	// 		Err(ExecError::SubGraphNotExecutable { .. }) => {}
-	// 		Err(x) => panic!("{}", x),
-	// 		Ok(_) => panic!("No Error"),
-	// 	}
-	// }
+		match exec(
+			vec![(x, arr0(1.0).into_dyn().into_shared())],
+			&[y],
+			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
+		) {
+			Err(ExecError::Shape {
+				error: ShapesError::SubGraphNotExecutable { .. },
+			}) => {}
+			Err(ExecError::SubGraphNotExecutable { .. }) => {}
+			Err(x) => panic!("{}", x),
+			Ok(_) => panic!("No Error"),
+		}
+	}
 
 	#[test]
 	fn exec_error_SubGraphNotExecutable_cyclic() {

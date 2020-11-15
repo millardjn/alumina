@@ -43,14 +43,14 @@ pub fn shapes_inner(
 	execution_subgraph: &SubGraph,
 	inputs: &IndexMap<NodeID, IxDyn>,
 	use_node_values: bool,
-) -> Result<IndexMap<Node, IxDyn>, ShapesError> {
+) -> Result<IndexMap<NodeID, IxDyn>, ShapesError> {
 	// Set up initial map of nodes to shapes from node shapes, the inputs, and optionally the shape of node valued
 	let (input_errors, mut map) = input_update(&execution_subgraph, inputs, use_node_values);
 
 	if !input_errors.is_empty() {
 		return Err(ShapesError::InputCantMerge {
 			input_errors: Iter2Display { inner: input_errors },
-			partial: map,
+			partial: map.iter().map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone())).collect(),
 		});
 	}
 
@@ -62,7 +62,7 @@ pub fn shapes_inner(
 		.into_iter()
 		.map(|(node, mut shape)| {
 			shape.collapse_dimensions_to_minimum();
-			(node.clone(), shape.to_data_shape().unwrap())
+			(node, shape.to_data_shape().unwrap())
 		})
 		.collect())
 }
@@ -72,7 +72,7 @@ fn input_update<'a>(
 	execution_subgraph: &'a SubGraph,
 	inputs: &IndexMap<NodeID, IxDyn>,
 	use_node_values: bool,
-) -> (IndexMap<Node, ShapeError>, IndexMap<Node, NodeShape>) {
+) -> (IndexMap<Node, ShapeError>, IndexMap<NodeID, NodeShape>) {
 	let mut map = IndexMap::with_capacity(execution_subgraph.nodes.len());
 
 	let mut input_errors = IndexMap::new();
@@ -95,7 +95,7 @@ fn input_update<'a>(
 				});
 			}
 		}
-		map.insert(node.clone(), shape);
+		map.insert(node.id(), shape);
 	}
 	(input_errors, map)
 }
@@ -103,8 +103,8 @@ fn input_update<'a>(
 /// If there are any ops, then propagate shapes and collect errors
 fn op_update<'a>(
 	execution_subgraph: &SubGraph,
-	map: &'a mut IndexMap<Node, NodeShape>,
-	map_completed: &'a mut IndexMap<Node, IxDyn>,
+	map: &'a mut IndexMap<NodeID, NodeShape>,
+	map_completed: &'a mut IndexMap<NodeID, IxDyn>,
 ) -> Result<(), ShapesError> {
 	for op in execution_subgraph.ops.iter() {
 		{
@@ -124,102 +124,102 @@ fn op_update<'a>(
 		.map_err(|e| ShapesError::ShapePropError {
 			op: op.clone(),
 			error: e,
-			partial: map.clone(),
+			partial: map.iter().map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone())).collect(),
 		})?;
 	}
 
 	Ok(())
 }
 
-// #[derive(Hash, PartialEq, Eq, Clone)]
-// struct ShapeCacheKey {
-// 	subgraph_nodes: Vec<NodeInner>,
-// 	subgraph_ops: Vec<OpInner>,
-// 	input_shapes: Vec<(NodeInner, IxDyn)>,
-// }
+#[derive(Hash, PartialEq, Eq, Clone)]
+struct ShapeCacheKey {
+	subgraph_nodes: Vec<NodeID>,
+	subgraph_ops: Vec<OpID>,
+	input_shapes: Vec<(NodeID, IxDyn)>,
+}
 
-// impl ShapeCacheKey {
-// 	fn new(subgraph: &SubGraph, inputs: &IndexMap<Node, IxDyn>, use_node_values: bool) -> Self {
-// 		let mut key = ShapeCacheKey {
-// 			subgraph_nodes: subgraph.nodes.iter().map(|node| node.inner().into()).collect(),
-// 			subgraph_ops: subgraph.ops.iter().map(|op| op.inner().into()).collect(),
-// 			input_shapes: if use_node_values {
-// 				inputs
-// 					.iter()
-// 					.map(|(node, shape)| (node.into(), shape.clone()))
-// 					.chain(
-// 						subgraph
-// 							.nodes
-// 							.iter()
-// 							.filter(|node| !inputs.contains_key(node.inner()))
-// 							.filter_map(|node| node.value_shape().map(|shape| (node.inner().into(), shape))),
-// 					)
-// 					.collect()
-// 			} else {
-// 				inputs
-// 					.iter()
-// 					.map(|(node, shape)| (node.into(), shape.clone()))
-// 					.collect()
-// 			},
-// 		};
-// 		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
-// 		key.input_shapes.sort_unstable_by(|a, b| a.0.id().cmp(&b.0.id()));
-// 		key
-// 	}
-// }
+impl ShapeCacheKey {
+	fn new(subgraph: &SubGraph, inputs: &IndexMap<NodeID, IxDyn>, use_node_values: bool) -> Self {
+		let mut key = ShapeCacheKey {
+			subgraph_nodes: subgraph.nodes.iter().map(|node| node.id()).collect(),
+			subgraph_ops: subgraph.ops.iter().map(|op| op.id().into()).collect(),
+			input_shapes: if use_node_values {
+				inputs
+					.iter()
+					.map(|(node, shape)| (*node, shape.clone()))
+					.chain(
+						subgraph
+							.nodes
+							.iter()
+							.filter(|node| !inputs.contains_key(&node.id()))
+							.filter_map(|node| node.value_shape().map(|shape| (node.id(), shape))),
+					)
+					.collect()
+			} else {
+				inputs
+					.iter()
+					.map(|(node, shape)| (*node, shape.clone()))
+					.collect()
+			},
+		};
+		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
+		key.input_shapes.sort_unstable_by(|a, b| a.0.id().cmp(&b.0.id()));
+		key
+	}
+}
 
-// thread_local! {
-// 	static NODE_SHAPE_CACHE: RefCell<LruCache<ShapeCacheKey, IndexMap<NodeInner, IxDyn>>> = RefCell::new(LruCache::new(32));
-// }
+thread_local! {
+	static NODE_SHAPE_CACHE: RefCell<LruCache<ShapeCacheKey, IndexMap<NodeID, IxDyn>>> = RefCell::new(LruCache::new(32));
+}
 
-// /// Computes the shapes of the `Node`s in a `SubGraph`, using the `Op`s to propagate from the supplied inputs.
-// ///
-// /// #Contract
-// /// Execution subgraph must be topologically sorted
-// pub(crate) fn cached_shapes_inner(
-// 	subgraph: &SubGraph,
-// 	inputs: &IndexMap<NodeInner, IxDyn>,
-// 	use_node_values: bool,
-// ) -> Result<IndexMap<Node, IxDyn>, ShapesError> {
-// 	let result = NODE_SHAPE_CACHE.with(|cache_cell| {
-// 		let mut cache = cache_cell.borrow_mut();
+/// Computes the shapes of the `Node`s in a `SubGraph`, using the `Op`s to propagate from the supplied inputs.
+///
+/// #Contract
+/// Execution subgraph must be topologically sorted
+pub(crate) fn cached_shapes_inner(
+	subgraph: &SubGraph,
+	inputs: &IndexMap<NodeID, IxDyn>,
+	use_node_values: bool,
+) -> Result<IndexMap<NodeID, IxDyn>, ShapesError> {
+	let result = NODE_SHAPE_CACHE.with(|cache_cell| {
+		let mut cache = cache_cell.borrow_mut();
 
-// 		// Generate a key which has a unique result
-// 		let key = ShapeCacheKey::new(subgraph, inputs, use_node_values);
+		// Generate a key which has a unique result
+		let key = ShapeCacheKey::new(subgraph, inputs, use_node_values);
 
-// 		// Get a copy of counts from the cache, or insert a new one for this subgraph
-// 		let result: Result<IndexMap<NodeInner, IxDyn>, ShapesError> =
-// 			cache.get(&key).cloned().map(Ok).unwrap_or_else(|| {
-// 				let shape_map = shapes_inner(&subgraph, &inputs, use_node_values)?;
+		// Get a copy of counts from the cache, or insert a new one for this subgraph
+		let result: Result<IndexMap<NodeID, IxDyn>, ShapesError> =
+			cache.get(&key).cloned().map(Ok).unwrap_or_else(|| {
+				let shape_map = shapes_inner(&subgraph, &inputs, use_node_values)?;
 
-// 				cache.put(key.clone(), shape_map.clone());
+				cache.put(key.clone(), shape_map.clone());
 
-// 				Ok(shape_map)
-// 			});
+				Ok(shape_map)
+			});
 
-// 		// Return
-// 		result
-// 	});
+		// Return
+		result
+	});
 
-// 	debug_assert!(
-// 		match (&result, &shapes_inner(&subgraph, &inputs, use_node_values)) {
-// 			(&Err(_), &Err(_)) => true,
-// 			(&Ok(ref m1), &Ok(ref m2)) => m1 == m2,
-// 			(_, _) => false,
-// 		},
-// 		"cached shape did not match shapes_inner result"
-// 	);
+	debug_assert!(
+		match (&result, &shapes_inner(&subgraph, &inputs, use_node_values)) {
+			(&Err(_), &Err(_)) => true,
+			(&Ok(ref m1), &Ok(ref m2)) => m1 == m2,
+			(_, _) => false,
+		},
+		"cached shape did not match shapes_inner result"
+	);
 
-// 	result
-// }
+	result
+}
 
 /// This context is supplied to `Op`s during shape propagation.
 ///
 /// Only worry about this when implementing new `Op`s.
 pub struct ShapePropContext<'a> {
 	subgraph: &'a SubGraph,
-	map: &'a mut IndexMap<Node, NodeShape>,
-	map_completed: &'a mut IndexMap<Node, IxDyn>,
+	map: &'a mut IndexMap<NodeID, NodeShape>,
+	map_completed: &'a mut IndexMap<NodeID, IxDyn>,
 
 	current_op: Op,
 	current_inputs: IndexSet<Node>,
@@ -246,8 +246,6 @@ impl<'a> ShapePropContext<'a> {
 	}
 
 	/// Get the current output shape
-	///
-	/// 
 	///
 	/// # Panics
 	/// If the `Node` which shape is accessed isn't listed as an output to the `Op`, or otherwise isn't included in the
@@ -297,14 +295,16 @@ impl<'a> ShapePropContext<'a> {
 		);
 
 		let op = self.current_op();
-		if let Some((_, node, existing_shape)) = self.map.get_full_mut(node) {
+		let map = &mut self.map;
+		let subgraph = &self.subgraph;
+		if let Some((_, node, existing_shape)) = map.get_full_mut(node) {
 			let new_shape = existing_shape.merge(shape).with_context(|_e| {
 				format!(
 					"Op `{}` could not merge calculated shape ({}) with existing shape ({}) for Node `{}`.",
 					op,
 					shape,
 					existing_shape,
-					node.name(),
+					subgraph.nodes.get(node).expect("all nodes in map must be in subgraph").name(),
 				)
 			})?;
 			*existing_shape = new_shape;
@@ -325,7 +325,9 @@ impl<'a> ShapePropContext<'a> {
 		);
 
 		let op = self.current_op();
-		if let Some((_, node, existing_shape)) = self.map.get_full_mut(node) {
+		let map = &mut self.map;
+		let subgraph = &self.subgraph;
+		if let Some((_, node, existing_shape)) = map.get_full_mut(node) {
 			let new_shape = existing_shape.broadcast_merge(shape).with_context(|_e| {
 				// TODO proper error
 				format!(
@@ -333,7 +335,7 @@ impl<'a> ShapePropContext<'a> {
 					op,
 					shape,
 					existing_shape,
-					node.name()
+					subgraph.nodes.get(node).expect("all nodes in map must be in subgraph").name(),
 				)
 			})?;
 			*existing_shape = new_shape;
@@ -356,7 +358,7 @@ impl<'a> ShapePropContext<'a> {
 		);
 
 		if let Some((_, node)) = self.current_outputs.get_full(node) {
-			self.map.insert(node.clone(), shape);
+			self.map.insert(node.id(), shape);
 		}
 	}
 
@@ -381,7 +383,7 @@ impl<'a> ShapePropContext<'a> {
 			if !self.map_completed.contains_key(node) {
 				let shape = self.map.get_mut(node).unwrap();
 				shape.collapse_dimensions_to_minimum();
-				self.map_completed.insert(node.clone(), shape.to_data_shape().unwrap());
+				self.map_completed.insert(node.id(), shape.to_data_shape().unwrap());
 			}
 		}
 
