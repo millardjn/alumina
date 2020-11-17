@@ -1,19 +1,18 @@
 use crate::math::broadcast::Broadcast;
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
 	init::{duplicate, Initialiser},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::Dimension;
-
 use matrixmultiply_mt;
+use std::any::Any;
 
 fn get_inner_outer(shape: &NodeShape) -> (usize, NodeAxis) {
 	let mut iter = shape.slice().iter().enumerate().rev();
@@ -253,7 +252,7 @@ impl MatMul {
 	}
 }
 
-impl OpBuilder for MatMul {
+impl OpSpecification for MatMul {
 	type InstanceType = MatMulInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -303,6 +302,21 @@ pub struct MatMulInstance {
 impl OpInstance for MatMulInstance {
 	fn type_name(&self) -> &'static str {
 		"ReduceSum"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(MatMul {
+			matrix_a: graph.node_from_id(self.matrix_a),
+			matrix_b: graph.node_from_id(self.matrix_b),
+			matrix_c: graph.node_from_id(self.matrix_c),
+			a_trans: self.a_trans,
+			b_trans: self.b_trans,
+			c_trans: self.c_trans,
+			m: self.m,
+			n: self.n,
+			k: self.k,
+			alpha: self.alpha,
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
@@ -700,7 +714,7 @@ fn get_outer(inner: usize, outer: Option<usize>, shape: &[usize], trans: bool) -
 mod tests {
 	use super::MatMul;
 	use crate::elementwise::identity::Identity;
-	use alumina_core::{base_ops::OpBuilder, graph::Node};
+	use alumina_core::{base_ops::OpSpecification, graph::Node};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 	use indexmap::indexset;
 

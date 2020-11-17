@@ -28,11 +28,11 @@
 
 use crate::manip::expand_dims::ExpandDims;
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
@@ -42,6 +42,7 @@ use indexmap::{indexset, IndexSet};
 use ndarray::{ArrayViewD, ArrayViewMutD, Dimension};
 
 use smallvec::SmallVec;
+use std::any::Any;
 
 /// Removes unit axes from a nodes shape.
 ///
@@ -55,7 +56,7 @@ where
 	let input = input.into();
 	let input_len = input.shape().ndim();
 
-	let mut axes: Vec<_> = axes.iter().map(|&dim| wrap_dim(dim, input_len)).collect();
+	let mut axes: SmallVec<[usize; 4]> = axes.iter().map(|&dim| wrap_dim(dim, input_len)).collect();
 	axes.sort_unstable();
 	axes.dedup();
 
@@ -103,7 +104,7 @@ where
 pub struct RemoveDims {
 	output: Node,
 	input: Node,
-	axes: Vec<usize>,
+	axes: SmallVec<[usize; 4]>,
 }
 
 impl RemoveDims {
@@ -116,7 +117,7 @@ impl RemoveDims {
 		RemoveDims {
 			input: input.into(),
 			output: output.into(),
-			axes: vec![],
+			axes: SmallVec::new(),
 		}
 	}
 
@@ -157,7 +158,7 @@ impl RemoveDims {
 	}
 }
 
-impl OpBuilder for RemoveDims {
+impl OpSpecification for RemoveDims {
 	type InstanceType = RemoveDimsInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -195,7 +196,7 @@ impl OpBuilder for RemoveDims {
 pub struct RemoveDimsInstance {
 	input: NodeID,
 	output: NodeID,
-	axes: Vec<usize>, // must be sorted
+	axes: SmallVec<[usize; 4]>, // must be sorted
 }
 
 impl OpInstance for RemoveDimsInstance {
@@ -203,13 +204,13 @@ impl OpInstance for RemoveDimsInstance {
 		"RemoveDims"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(RemoveDims {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			axes: self.axes.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]

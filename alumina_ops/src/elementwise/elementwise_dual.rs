@@ -12,21 +12,21 @@
 //! See the Scale Op for a simple example of how this is used.
 
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Dimension, Zip};
-
-use std::fmt;
-
 use rayon::prelude::*;
+use std::fmt;
+use std::any::Any;
+
+
 
 pub trait NullaryDualFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn calc(&self) -> (f32, f32);
@@ -63,7 +63,7 @@ impl<F: NullaryDualFunc> NullaryElementwiseDual<F> {
 	}
 }
 
-impl<F: NullaryDualFunc> OpBuilder for NullaryElementwiseDual<F> {
+impl<F: NullaryDualFunc> OpSpecification for NullaryElementwiseDual<F> {
 	type InstanceType = NullaryElementwiseDualInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -111,13 +111,13 @@ impl<F: NullaryDualFunc> OpInstance for NullaryElementwiseDualInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(NullaryElementwiseDual {
+			output1: graph.node_from_id(self.output1),
+			output2: graph.node_from_id(self.output2),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]
@@ -207,7 +207,7 @@ impl<F: UnaryDualFunc> UnaryElementwiseDual<F> {
 	}
 }
 
-impl<F: UnaryDualFunc> OpBuilder for UnaryElementwiseDual<F> {
+impl<F: UnaryDualFunc> OpSpecification for UnaryElementwiseDual<F> {
 	type InstanceType = UnaryElementwiseDualInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -257,13 +257,14 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(UnaryElementwiseDual {
+			input: graph.node_from_id(self.input),
+			output1: graph.node_from_id(self.output1),
+			output2: graph.node_from_id(self.output2),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
@@ -415,7 +416,7 @@ impl<F: BinaryDualFunc> BinaryElementwiseDual<F> {
 	}
 }
 
-impl<F: BinaryDualFunc> OpBuilder for BinaryElementwiseDual<F> {
+impl<F: BinaryDualFunc> OpSpecification for BinaryElementwiseDual<F> {
 	type InstanceType = BinaryElementwiseDualInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -467,13 +468,15 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(BinaryElementwiseDual {
+			input1: graph.node_from_id(self.input1),
+			input2: graph.node_from_id(self.input2),
+			output1: graph.node_from_id(self.output1),
+			output2: graph.node_from_id(self.output2),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone()]
@@ -742,7 +745,7 @@ impl<F: NaryDualFunc> NaryElementwiseDual<F> {
 	}
 }
 
-impl<F: NaryDualFunc> OpBuilder for NaryElementwiseDual<F> {
+impl<F: NaryDualFunc> OpSpecification for NaryElementwiseDual<F> {
 	type InstanceType = NaryElementwiseDualInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -792,13 +795,14 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(NaryElementwiseDual {
+			inputs: self.inputs.iter().map(|&i| graph.node_from_id(i)).collect(),
+			output1: graph.node_from_id(self.output1),
+			output2: graph.node_from_id(self.output2),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()

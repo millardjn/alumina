@@ -1,15 +1,15 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID},
+	graph::{merge_graphs, Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Axis, Dimension, Zip};
+use std::any::Any;
 
 /// Calculates the Softmax of the logits across the select axis followed by CrossEntropy of that result with the
 /// supplied labels.
@@ -83,7 +83,7 @@ impl SoftmaxCrossEntropy {
 	}
 }
 
-impl OpBuilder for SoftmaxCrossEntropy {
+impl OpSpecification for SoftmaxCrossEntropy {
 	type InstanceType = SoftmaxCrossEntropyInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -131,13 +131,14 @@ impl OpInstance for SoftmaxCrossEntropyInstance {
 		"SoftmaxCrossEntropy"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(SoftmaxCrossEntropy {
+			logits: graph.node_from_id(self.logits),
+			labels: graph.node_from_id(self.labels),
+			output: graph.node_from_id(self.output),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.labels.clone()]
@@ -267,7 +268,7 @@ impl SoftmaxCrossEntropyBack {
 	}
 }
 
-impl OpBuilder for SoftmaxCrossEntropyBack {
+impl OpSpecification for SoftmaxCrossEntropyBack {
 	type InstanceType = SoftmaxCrossEntropyBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -319,13 +320,16 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 		"SoftmaxCrossEntropyBack"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(SoftmaxCrossEntropyBack {
+			logits: graph.node_from_id(self.logits),
+			logits_grad: graph.node_from_id(self.logits_grad),
+			labels: graph.node_from_id(self.labels),
+			labels_grad: graph.node_from_id(self.labels_grad),
+			output_grad: graph.node_from_id(self.output_grad),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.labels.clone(), self.output_grad.clone()]

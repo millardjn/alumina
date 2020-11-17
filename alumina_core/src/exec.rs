@@ -1069,7 +1069,7 @@ mod tests {
 	#![allow(non_snake_case)]
 
 	use crate::{
-		base_ops::{dummy::DummyOp, shape_constraint::same_shape, OpBuilder},
+		base_ops::{dummy::DummyOp, shape_constraint::same_shape, OpSpecification},
 		errors::{ExecutionSubgraphError, ShapesError},
 		exec::{exec, ExecConfig, ExecError},
 		graph::Node,

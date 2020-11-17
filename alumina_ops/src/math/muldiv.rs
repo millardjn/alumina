@@ -1,16 +1,15 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Axis, Dimension, Zip};
-
 use unchecked_index as ui;
+use std::any::Any;
 
 /// An activation function based on complex multiplication and division.
 ///
@@ -63,7 +62,7 @@ impl MulDiv {
 	}
 }
 
-impl OpBuilder for MulDiv {
+impl OpSpecification for MulDiv {
 	type InstanceType = MulDivInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -108,13 +107,13 @@ impl OpInstance for MulDivInstance {
 		"MulDiv"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(MulDiv {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			epsilon: self.epsilon,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
@@ -221,7 +220,7 @@ impl MulDivBack {
 	}
 }
 
-impl OpBuilder for MulDivBack {
+impl OpSpecification for MulDivBack {
 	type InstanceType = MulDivBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -268,13 +267,14 @@ impl OpInstance for MulDivBackInstance {
 		"MulDivBack"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(MulDivBack {
+			input: graph.node_from_id(self.input),
+			input_grad: graph.node_from_id(self.input_grad),
+			output_grad: graph.node_from_id(self.output_grad),
+			epsilon: self.epsilon,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone(), self.output_grad.clone()]
@@ -392,7 +392,7 @@ impl OpInstance for MulDivBackInstance {
 #[cfg(test)]
 mod tests {
 	use super::{muldiv, MulDiv};
-	use alumina_core::{base_ops::OpBuilder, graph::Node};
+	use alumina_core::{base_ops::OpSpecification, graph::Node};
 	use alumina_test::{grad_numeric_test::GradNumericTest, relatively_close::RelClose};
 
 	use indexmap::indexset;

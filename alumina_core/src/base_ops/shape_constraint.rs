@@ -1,9 +1,9 @@
 use crate::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Op},
+	graph::{Node, NodeID, Op, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -13,6 +13,7 @@ use std::{
 	convert::Into,
 	fmt::{Debug, Formatter},
 	sync::Arc,
+	any::Any,
 };
 
 /// Applies a ShapeConstraint  which enforces propagation of the runtime input shape to the output shape at runtime.
@@ -108,7 +109,7 @@ impl ShapeConstraint {
 	}
 }
 
-impl OpBuilder for ShapeConstraint {
+impl OpSpecification for ShapeConstraint {
 	type InstanceType = ShapeConstraintInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -155,13 +156,13 @@ impl OpInstance for ShapeConstraintInstance {
 		"ShapeConstraint"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ShapeConstraintInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		rules: self.rules.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ShapeConstraint {
+			rules: self.rules.clone(),
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]

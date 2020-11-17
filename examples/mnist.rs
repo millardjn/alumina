@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
 	// 3. Set up MNIST training DataSet and DataStream
 	let data_set = Mnist::training("D:/ML/Mnist");
 	let epoch = data_set.length();
-	let batch_size = 8;
+	let batch_size = 80;
 	let mut data_stream = data_set.shuffle_random().batch(batch_size).buffered(1);
 
 	// 4. Set up validation procedure

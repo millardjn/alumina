@@ -1,20 +1,18 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, HeavyNode, Node, NodeID, NodeTag, Op},
+	graph::{merge_graphs, HeavyNode, Node, NodeID, NodeTag, Op, Graph},
 	init::msra,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{ArrayD, Dimension, IxDyn};
 use threadpool::ThreadPool;
 use threadpool_scope::scope_with;
 use smallvec::SmallVec;
-
 use lazy_static::lazy_static;
 use matrixmultiply_mt;
 use num_cpus;
@@ -28,6 +26,7 @@ use std::{
 		atomic::{AtomicUsize, Ordering},
 		Mutex,
 	},
+	any::Any,
 };
 use typenum::{bit::*, marker_traits::Unsigned, operator_aliases::Sub1, UInt, UTerm, U1, U2, U3};
 use unchecked_index as ui;
@@ -315,7 +314,7 @@ impl Conv {
 	}
 }
 
-impl OpBuilder for Conv {
+impl OpSpecification for Conv {
 	type InstanceType = ConvInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -379,6 +378,16 @@ pub struct ConvInstance {
 impl OpInstance for ConvInstance {
 	fn type_name(&self) -> &'static str {
 		"Conv"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Conv {
+			padding: self.padding.clone(),
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			filter: graph.node_from_id(self.filter),
+			lowering_memory: self.lowering_memory,
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
@@ -680,7 +689,7 @@ impl ConvBack {
 	}
 }
 
-impl OpBuilder for ConvBack {
+impl OpSpecification for ConvBack {
 	type InstanceType = ConvBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -769,6 +778,18 @@ pub struct ConvBackInstance {
 impl OpInstance for ConvBackInstance {
 	fn type_name(&self) -> &'static str {
 		"ConvBackward"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ConvBack {
+			padding: self.padding.clone(),
+			input: graph.node_from_id(self.input),
+			filter: graph.node_from_id(self.filter),
+			output_grad: graph.node_from_id(self.output_grad),
+			input_grad: graph.node_from_id(self.input_grad),
+			filter_grad: graph.node_from_id(self.filter_grad),
+			lowering_memory: self.lowering_memory,
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {

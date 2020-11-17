@@ -373,7 +373,7 @@ impl Display for NodeAxis {
 /// Represents the range of shapes a tensor can take on.
 #[derive(Clone, PartialEq)]
 pub struct NodeShape {
-	dimensions: SmallVec<[NodeAxis; 8]>,
+	dimensions: SmallVec<[NodeAxis; 4]>,
 }
 
 impl Display for NodeShape {
@@ -410,7 +410,7 @@ impl<'a> IntoIterator for &'a NodeShape {
 
 impl<T: Into<NodeAxis>, I: IntoIterator<Item = T>> From<I> for NodeShape {
 	fn from(i: I) -> NodeShape {
-		let dimensions: SmallVec<[NodeAxis; 8]> = i
+		let dimensions: SmallVec<[NodeAxis; 4]> = i
 			.into_iter()
 			.map(Into::into)
 			.inspect(|dim| match dim {

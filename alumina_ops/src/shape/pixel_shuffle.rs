@@ -1,15 +1,15 @@
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpBuilder, OpInstance},
+	base_ops::{shape_constraint::ShapeConstraint, OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
 use ndarray::Dimension;
-use std::{cmp::min, iter::once};
+use std::{cmp::min, iter::once, any::Any};
 
 /// Collapse outer dimensions, shuffling entries into the channel dimension
 ///
@@ -133,7 +133,7 @@ impl Collapse {
 	}
 }
 
-impl OpBuilder for Collapse {
+impl OpSpecification for Collapse {
 	type InstanceType = CollapseInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -193,6 +193,14 @@ impl CollapseInstance {
 impl OpInstance for CollapseInstance {
 	fn type_name(&self) -> &'static str {
 		"Collapse"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Collapse {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			factors: self.factors.clone(),
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
@@ -329,7 +337,7 @@ impl Expand {
 	}
 }
 
-impl OpBuilder for Expand {
+impl OpSpecification for Expand {
 	type InstanceType = ExpandInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -395,6 +403,14 @@ impl ExpandInstance {
 impl OpInstance for ExpandInstance {
 	fn type_name(&self) -> &'static str {
 		"Expand"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Expand {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			factors: self.factors.clone(),
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {

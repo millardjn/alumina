@@ -4,24 +4,21 @@ use crate::{
 	reduce::reduce_sum::{reduce_sum, ReduceSum},
 };
 use alumina_core::{
-	base_ops::{shape_constraint::same_shape, OpBuilder, OpInstance},
+	base_ops::{shape_constraint::same_shape, OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
 	init::duplicate,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Zip, ArrayViewD, ArrayViewMutD, Dimension};
-
-//use failure::Context;
-
 use smallvec::SmallVec;
 use std::iter::repeat;
+use std::any::Any;
 
 /// broadcast the values of value_input to the shape of shape_input and return the result
 pub fn broadcast<I1, I2>(shape_input: I1, value_input: I2) -> Result<Node, OpBuildError>
@@ -181,7 +178,7 @@ impl Broadcast {
 	}
 }
 
-impl OpBuilder for Broadcast {
+impl OpSpecification for Broadcast {
 	type InstanceType = BroadcastInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -227,13 +224,12 @@ impl OpInstance for BroadcastInstance {
 		"Broadcast"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Broadcast {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
@@ -337,7 +333,7 @@ impl OpInstance for BroadcastInstance {
 mod tests {
 	use super::{bias, broadcast_fn, Broadcast};
 	use crate::elementwise::identity;
-	use alumina_core::{base_ops::OpBuilder, graph::Node};
+	use alumina_core::{base_ops::OpSpecification, graph::Node};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 
 	use ndarray::{arr0, ArrayD, IxDyn};

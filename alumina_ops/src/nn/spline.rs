@@ -1,18 +1,17 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op},
+	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
 	init::Initialiser,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{ArrayViewMutD, Dimension, Zip};
-
 use std::iter::once;
+use std::any::Any;
 
 fn _custom(name: &'static str, left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser {
 	Initialiser::new(name.to_string(), move |mut arr: ArrayViewMutD<f32>| {
@@ -204,7 +203,7 @@ impl Spline {
 	}
 }
 
-impl OpBuilder for Spline {
+impl OpSpecification for Spline {
 	type InstanceType = SplineInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -264,6 +263,14 @@ pub struct SplineInstance {
 impl OpInstance for SplineInstance {
 	fn type_name(&self) -> &'static str {
 		"Spline"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Spline {
+			input: graph.node_from_id(self.input),
+			weights: graph.node_from_id(self.weights),
+			output: graph.node_from_id(self.output),
+		})
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
@@ -392,7 +399,7 @@ impl SplineBack {
 	}
 }
 
-impl OpBuilder for SplineBack {
+impl OpSpecification for SplineBack {
 	type InstanceType = SplineBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -474,6 +481,16 @@ pub struct SplineBackInstance {
 impl OpInstance for SplineBackInstance {
 	fn type_name(&self) -> &'static str {
 		"SplineBack"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(SplineBack {
+			input: graph.node_from_id(self.input),
+			weights: graph.node_from_id(self.weights),
+			output_grad: graph.node_from_id(self.output_grad),
+			input_grad: graph.node_from_id(self.input_grad),
+			weights_grad: graph.node_from_id(self.weights_grad),
+		})
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed

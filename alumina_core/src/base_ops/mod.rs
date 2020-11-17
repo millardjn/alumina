@@ -12,7 +12,7 @@ use crate::{
 	graph::{merge_node_graphs, Graph, Node, Op},
 	shape_prop::ShapePropContext,
 };
-use indexmap::IndexSet;
+use indexmap::{IndexSet, IndexMap};
 use itertools::Itertools;
 use std::any::Any;
 use std::fmt;
@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// input and output nodes. Similar for to: `format!("{}({},{}=>{},{}){}" type_name(), i, node1_name, node2_name,
 /// node3_name, node4_name)` e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until a unique/unused name
 /// is found.
-pub fn standard_op_name<O: OpBuilder>(graph: &Graph, op: &O) -> String {
+pub fn standard_op_name<O: OpSpecification>(graph: &Graph, op: &O) -> String {
 	standard_op_name_inner(graph, op.type_name().to_string(), op.inputs(), op.outputs())
 }
 
@@ -62,7 +62,7 @@ fn standard_op_name_inner(
 	}
 }
 
-pub trait OpBuilder: Sized {
+pub trait OpSpecification: Any + Sized {
 	type InstanceType: OpInstance;
 
 	fn type_name(&self) -> &'static str;
@@ -73,9 +73,7 @@ pub trait OpBuilder: Sized {
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<Node>;
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError>;
-	// todo into
+	//fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Self; //, CloneError>;
 
 	/// Construct the instance of this op
 	///
@@ -101,8 +99,7 @@ pub trait OpInstance: fmt::Debug + OpClone + Any + Send + Sync {
 	fn type_name(&self) -> &'static str;
 
 	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError>; TODO into builder
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any>;
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
 	fn inputs(&self) -> IndexSet<NodeID>;

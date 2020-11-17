@@ -1,17 +1,17 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeID},
+	graph::{merge_node_graphs, Node, NodeID, Graph},
 	shape::SCALAR,
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
-
 use ndarray::{ArrayViewD, ArrayViewMutD, Zip};
 use rayon::prelude::*;
 use smallvec::SmallVec;
+use std::any::Any;
 
 /// Calculates the combined L1 norm of the input nodes, returning a scalar node.
 pub fn l1<I, T: IntoIterator<Item = I>>(inputs: T) -> Result<Node, OpBuildError>
@@ -63,7 +63,7 @@ impl L1 {
 	}
 }
 
-impl OpBuilder for L1 {
+impl OpSpecification for L1 {
 	type InstanceType = L1Instance;
 
 	fn type_name(&self) -> &'static str {
@@ -107,13 +107,12 @@ impl OpInstance for L1Instance {
 		"L1"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(L1 {
+			inputs: self.inputs.iter().map(|&i| graph.node_from_id(i)).collect(),
+			output: graph.node_from_id(self.output),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.clone()
@@ -197,7 +196,7 @@ impl L1Back {
 	}
 }
 
-impl OpBuilder for L1Back {
+impl OpSpecification for L1Back {
 	type InstanceType = L1BackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -247,13 +246,12 @@ impl OpInstance for L1BackInstance {
 		"L1Back"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(L1Back {
+			input_and_grads: self.input_and_grads.iter().map(|(&i, &g)| (graph.node_from_id(i), graph.node_from_id(g))).collect(),
+			output_grad: graph.node_from_id(self.output_grad),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		let mut inputs: IndexSet<NodeID> = self.input_and_grads.keys().cloned().collect();

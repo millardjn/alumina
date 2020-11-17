@@ -18,11 +18,11 @@
 // use indexmap::IndexSet;
 
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpBuilder, OpInstance},
+	base_ops::{shape_constraint::ShapeConstraint, OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
@@ -34,6 +34,7 @@ use smallvec::SmallVec;
 use std::{
 	cmp::{max, min},
 	ops::Range,
+	any::Any,
 };
 
 pub fn linterp<I>(input: I, factors: &[usize]) -> Result<Node, OpBuildError>
@@ -97,7 +98,7 @@ impl Linterp {
 	}
 }
 
-impl OpBuilder for Linterp {
+impl OpSpecification for Linterp {
 	type InstanceType = LinterpInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -217,6 +218,14 @@ impl LinterpInstance {
 impl OpInstance for LinterpInstance {
 	fn type_name(&self) -> &'static str {
 		"Linterp"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Linterp {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			factors: self.factors.clone()
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
@@ -396,7 +405,7 @@ impl LinterpBack {
 	}
 }
 
-impl OpBuilder for LinterpBack {
+impl OpSpecification for LinterpBack {
 	type InstanceType = LinterpBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -479,6 +488,14 @@ impl LinterpBackInstance {
 impl OpInstance for LinterpBackInstance {
 	fn type_name(&self) -> &'static str {
 		"LinterpBack"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(LinterpBack {
+			input_grad: graph.node_from_id(self.input_grad),
+			output_grad: graph.node_from_id(self.output_grad),
+			factors: self.factors.clone()
+		})
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
@@ -940,7 +957,7 @@ fn fill_next_axis(factors: &[usize], axis: usize, col_stride: usize, matrix: &mu
 #[cfg(test)]
 mod tests {
 	use super::{linterp, pack_lowres_patch, patch_strides, unpack_hires_patch, upscale_matrix, Linterp};
-	use alumina_core::{base_ops::OpBuilder, graph::Node};
+	use alumina_core::{base_ops::OpSpecification, graph::Node};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 	use indexmap::indexset;
 	use ndarray::arr1;

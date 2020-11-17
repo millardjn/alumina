@@ -6,7 +6,7 @@ use crate::{
 	elementwise::{abs::abs, div::Div, offset::offset, sqr::sqr},
 };
 use alumina_core::{
-	base_ops::OpBuilder,
+	base_ops::OpSpecification,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
 	graph::{Node, NodeID},

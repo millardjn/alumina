@@ -3,7 +3,7 @@ use crate::{
 	elementwise::identity::Identity,
 };
 use alumina_core::{
-	base_ops::OpBuilder,
+	base_ops::OpSpecification,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
 	graph::{Node, NodeID},

@@ -1,12 +1,13 @@
 use crate::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 };
 use indexmap::IndexSet;
+use std::any::Any;
 
 #[derive(Default)]
 pub struct DummyOp {
@@ -41,7 +42,7 @@ impl DummyOp {
 	}
 }
 
-impl OpBuilder for DummyOp {
+impl OpSpecification for DummyOp {
 	type InstanceType = DummyOpInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -90,12 +91,12 @@ impl OpInstance for DummyOpInstance {
 		"DummyOp"
 	}
 
-	// fn clone_with_nodes_changed(
-	// 	&self,
-	// 	_mapping: IndexMap<NodeInner, NodeInner>,
-	// ) -> Result<Box<OpInstance>, CloneError> {
-	// 	Ok(Box::new(self.clone()))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(DummyOp {
+			inputs: self.inputs.iter().map(|&i| graph.node_from_id(i)).collect(),
+			outputs: self.outputs.iter().map(|&o| graph.node_from_id(o)).collect(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.clone()

@@ -28,20 +28,19 @@
 
 use crate::manip::remove_dims::RemoveDims;
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{ArrayViewD, ArrayViewMutD, Dimension};
-
 use smallvec::SmallVec;
+use std::any::Any;
 
 /// Insert unit axes into a nodes shape.
 ///
@@ -56,7 +55,7 @@ where
 {
 	let input = input.into();
 
-	let mut extra_axes = extra_axes.to_vec();
+	let mut extra_axes: SmallVec<[usize; 4]> = extra_axes.into_iter().cloned().collect();
 	extra_axes.sort_unstable();
 	extra_axes.dedup();
 
@@ -106,7 +105,7 @@ where
 pub struct ExpandDims {
 	output: Node,
 	input: Node,
-	extra_axes: Vec<usize>,
+	extra_axes: SmallVec<[usize; 4]>,
 }
 
 impl ExpandDims {
@@ -118,7 +117,7 @@ impl ExpandDims {
 		ExpandDims {
 			input: input.into(),
 			output: output.into(),
-			extra_axes: vec![],
+			extra_axes: SmallVec::new(),
 		}
 	}
 
@@ -152,7 +151,7 @@ impl ExpandDims {
 	}
 }
 
-impl OpBuilder for ExpandDims {
+impl OpSpecification for ExpandDims {
 	type InstanceType = ExpandDimsInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -180,7 +179,7 @@ impl OpBuilder for ExpandDims {
 		Ok(ExpandDimsInstance {
 			input: self.input.id().clone(),
 			output: self.output.id().clone(),
-			extra_axes: SmallVec::from_vec(self.extra_axes),
+			extra_axes: self.extra_axes,
 		})
 	}
 }
@@ -210,7 +209,7 @@ fn expanded_shape(input_shape: &[usize], extra_axes: &[usize]) -> SmallVec<[usiz
 pub struct ExpandDimsInstance {
 	input: NodeID,
 	output: NodeID,
-	extra_axes: SmallVec<[usize; 8]>,
+	extra_axes: SmallVec<[usize; 4]>,
 }
 
 impl OpInstance for ExpandDimsInstance {
@@ -218,13 +217,13 @@ impl OpInstance for ExpandDimsInstance {
 		"ExpandDims"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ExpandDims {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			extra_axes: self.extra_axes.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]

@@ -6,19 +6,18 @@ use crate::{
 	shape::shape_of::shape_of,
 };
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Dimension, Zip};
-
 use smallvec::SmallVec;
+use std::any::Any;
 
 pub fn reduce_sum<I>(input: I, axes: &[isize], keep_dims: bool) -> Result<Node, OpBuildError>
 where
@@ -112,7 +111,7 @@ impl ReduceSum {
 	}
 }
 
-impl OpBuilder for ReduceSum {
+impl OpSpecification for ReduceSum {
 	type InstanceType = ReduceSumInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -162,13 +161,14 @@ impl OpInstance for ReduceSumInstance {
 		"ReduceSum"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ReduceSumInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ReduceSum {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			axes: self.axes.clone(),
+			keep_dims: self.keep_dims,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]

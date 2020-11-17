@@ -1,13 +1,52 @@
 use crate::{
-	base_ops::OpInstance,
-	errors::{ExecutionError, GradientError, ShapePropError},
+	base_ops::{OpSpecification, OpInstance},
+	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::NodeID,
+	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 };
-
 use indexmap::IndexSet;
+use std::any::Any;
+
+struct NoOp {
+
+}
+
+impl OpSpecification for NoOp {
+	type InstanceType = NoOpInstance;
+
+	fn type_name(&self) -> &'static str {
+		"NoOp"
+	}
+
+	fn inputs(&self) -> IndexSet<Node> {
+		IndexSet::new()
+	}
+
+	fn outputs(&self) -> IndexSet<Node> {
+		IndexSet::new()
+	}
+
+	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
+	// 	Ok(DummyOp {
+	// 		inputs: self
+	// 			.inputs
+	// 			.iter()
+	// 			.map(|node| mapping.get(node).unwrap_or(node).clone())
+	// 			.collect(),
+	// 		outputs: self
+	// 			.outputs
+	// 			.iter()
+	// 			.map(|node| mapping.get(node).unwrap_or(node).clone())
+	// 			.collect(),
+	// 	})
+	// }
+
+	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
+		Ok(NoOpInstance {})
+	}
+}
 
 /// An OpInstance which does nothing
 #[derive(Clone, Debug)]
@@ -18,12 +57,9 @@ impl OpInstance for NoOpInstance {
 		"NoOp"
 	}
 
-	// fn clone_with_nodes_changed(
-	// 	&self,
-	// 	_mapping: IndexMap<NodeInner, NodeInner>,
-	// ) -> Result<Box<OpInstance>, CloneError> {
-	// 	Ok(Box::new(self.clone()))
-	// }
+	fn as_specification(&self, _graph: &Graph) -> Box<dyn Any> {
+		Box::new(NoOp {})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		IndexSet::new()

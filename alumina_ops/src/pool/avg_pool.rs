@@ -1,18 +1,17 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::Dimension;
-
 use smallvec::SmallVec;
 use std::cmp::min;
+use std::any::Any;
 
 pub fn avg_pool<I>(input: I, factors: &[usize]) -> Result<Node, OpBuildError>
 where
@@ -50,7 +49,6 @@ where
 #[must_use]
 #[derive(Clone, Debug)]
 pub struct AvgPool {
-	name: Option<String>,
 	input: Node,
 	output: Node,
 	factors: Vec<usize>,
@@ -65,7 +63,6 @@ impl AvgPool {
 		let input = input.into();
 		let output = output.into();
 		AvgPool {
-			name: None,
 			input,
 			output,
 			factors: factors.to_vec(),
@@ -73,7 +70,7 @@ impl AvgPool {
 	}
 }
 
-impl OpBuilder for AvgPool {
+impl OpSpecification for AvgPool {
 	type InstanceType = AvgPoolInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -130,6 +127,14 @@ pub struct AvgPoolInstance {
 impl OpInstance for AvgPoolInstance {
 	fn type_name(&self) -> &'static str {
 		"AvgPool"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(AvgPool {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			factors: self.factors.clone(),
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
@@ -243,7 +248,7 @@ impl AvgPoolBack {
 	}
 }
 
-impl OpBuilder for AvgPoolBack {
+impl OpSpecification for AvgPoolBack {
 	type InstanceType = AvgPoolBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -300,6 +305,14 @@ pub struct AvgPoolBackInstance {
 impl OpInstance for AvgPoolBackInstance {
 	fn type_name(&self) -> &'static str {
 		"AvgPoolBack"
+	}
+
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(AvgPoolBack {
+			input_grad: graph.node_from_id(self.input_grad),
+			output_grad: graph.node_from_id(self.output_grad),
+			factors: self.factors.clone(),
+		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {

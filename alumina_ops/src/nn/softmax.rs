@@ -1,15 +1,15 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
 use indexmap::{indexset, IndexSet};
-
 use ndarray::{Axis, Dimension, Zip};
+use std::any::Any;
 
 /// Calculates the combined Softmax norm of the input nodes.
 ///
@@ -62,7 +62,7 @@ impl Softmax {
 	}
 }
 
-impl OpBuilder for Softmax {
+impl OpSpecification for Softmax {
 	type InstanceType = SoftmaxInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -108,13 +108,13 @@ impl OpInstance for SoftmaxInstance {
 		"Softmax"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Softmax {
+			logits: graph.node_from_id(self.logits),
+			output: graph.node_from_id(self.output),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone()]
@@ -196,7 +196,7 @@ impl SoftmaxBack {
 	}
 }
 
-impl OpBuilder for SoftmaxBack {
+impl OpSpecification for SoftmaxBack {
 	type InstanceType = SoftmaxBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -244,13 +244,14 @@ impl OpInstance for SoftmaxBackInstance {
 		"SoftmaxBack"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(SoftmaxBack {
+			logits: graph.node_from_id(self.logits),
+			logits_grad: graph.node_from_id(self.logits_grad),
+			output_grad: graph.node_from_id(self.output_grad),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.logits.clone(), self.output_grad.clone()]

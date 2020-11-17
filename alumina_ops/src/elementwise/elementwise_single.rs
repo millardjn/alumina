@@ -12,11 +12,11 @@
 //! See the Scale Op for a simple example of how this is used.
 
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
@@ -25,6 +25,7 @@ use indexmap::{indexset, IndexSet};
 use ndarray::{Dimension, Zip};
 use rayon::prelude::*;
 use std::fmt;
+use std::any::Any;
 
 pub trait NullaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn calc(&self) -> f32;
@@ -57,7 +58,7 @@ impl<F: NullaryFunc> NullaryElementwise<F> {
 	}
 }
 
-impl<F: NullaryFunc> OpBuilder for NullaryElementwise<F> {
+impl<F: NullaryFunc> OpSpecification for NullaryElementwise<F> {
 	type InstanceType = NullaryElementwiseInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -103,13 +104,12 @@ impl<F: NullaryFunc> OpInstance for NullaryElementwiseInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(NullaryElementwise {
+			output: graph.node_from_id(self.output),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]
@@ -172,7 +172,7 @@ impl<F: UnaryFunc> UnaryElementwise<F> {
 	}
 }
 
-impl<F: UnaryFunc> OpBuilder for UnaryElementwise<F> {
+impl<F: UnaryFunc> OpSpecification for UnaryElementwise<F> {
 	type InstanceType = UnaryElementwiseInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -220,13 +220,13 @@ impl<F: UnaryFunc> OpInstance for UnaryElementwiseInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(UnaryElementwise {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]
@@ -327,7 +327,7 @@ impl<F: BinaryFunc> BinaryElementwise<F> {
 	}
 }
 
-impl<F: BinaryFunc> OpBuilder for BinaryElementwise<F> {
+impl<F: BinaryFunc> OpSpecification for BinaryElementwise<F> {
 	type InstanceType = BinaryElementwiseInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -377,13 +377,14 @@ impl<F: BinaryFunc> OpInstance for BinaryElementwiseInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(BinaryElementwise {
+			input1: graph.node_from_id(self.input1),
+			input2: graph.node_from_id(self.input2),
+			output: graph.node_from_id(self.output),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone()]
@@ -521,7 +522,7 @@ impl<F: TernaryFunc> TernaryElementwise<F> {
 	}
 }
 
-impl<F: TernaryFunc> OpBuilder for TernaryElementwise<F> {
+impl<F: TernaryFunc> OpSpecification for TernaryElementwise<F> {
 	type InstanceType = TernaryElementwiseInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -573,13 +574,15 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(TernaryElementwise {
+			input1: graph.node_from_id(self.input1),
+			input2: graph.node_from_id(self.input2),
+			input3: graph.node_from_id(self.input3),
+			output: graph.node_from_id(self.output),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input1.clone(), self.input2.clone(), self.input3.clone()]
@@ -761,7 +764,7 @@ impl<F: NaryFunc> NaryElementwise<F> {
 	}
 }
 
-impl<F: NaryFunc> OpBuilder for NaryElementwise<F> {
+impl<F: NaryFunc> OpSpecification for NaryElementwise<F> {
 	type InstanceType = NaryElementwiseInstance<F>;
 
 	fn type_name(&self) -> &'static str {
@@ -809,13 +812,13 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 		self.f.type_name()
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(NaryElementwise {
+			inputs: self.inputs.iter().map(|&i| graph.node_from_id(i)).collect(),
+			output: graph.node_from_id(self.output),
+			f: self.f.clone(),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()

@@ -1,18 +1,18 @@
 use std::iter::once;
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeID},
+	graph::{merge_node_graphs, Node, NodeID, Graph},
 	
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset,  IndexSet, IndexMap};
-
 use ndarray::{ArrayViewMutD, Dimension, Slice, Axis};
 use smallvec::SmallVec;
+use std::any::Any;
 
 /// Concatenates the list of input nodes along the chosen axis
 pub fn concat<I, T: IntoIterator<Item = I>>(inputs: T, axis: usize) -> Result<Node, OpBuildError>
@@ -85,7 +85,7 @@ impl Concat {
 	}
 }
 
-impl OpBuilder for Concat {
+impl OpSpecification for Concat {
 	type InstanceType = ConcatInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -131,13 +131,13 @@ impl OpInstance for ConcatInstance {
 		"Concat"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Concat {
+			inputs: self.inputs.iter().map(|&i| graph.node_from_id(i)).collect(),
+			output: graph.node_from_id(self.output),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.inputs.iter().cloned().collect()
@@ -228,7 +228,7 @@ impl ConcatBack {
 	}
 }
 
-impl OpBuilder for ConcatBack {
+impl OpSpecification for ConcatBack {
 	type InstanceType = ConcatBackInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -278,13 +278,13 @@ impl OpInstance for ConcatBackInstance {
 		"ConcatBack"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ExpandDimsInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ConcatBack {
+			input_and_grads: self.input_and_grads.iter().map(|&(i, g)| (graph.node_from_id(i), graph.node_from_id(g))).collect(),
+			output_grad: graph.node_from_id(self.output_grad),
+			axis: self.axis,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.input_and_grads.iter().map(|(i, _)|i.clone()).chain(once(self.output_grad.clone())).collect()

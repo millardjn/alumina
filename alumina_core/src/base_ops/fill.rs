@@ -1,14 +1,15 @@
 use crate::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexSet};
 use ndarray::Zip;
+use std::any::Any;
 
 /// Produces and output node with the given shape, and an op to fill it elementwise with the provided value.
 ///
@@ -45,7 +46,7 @@ impl Fill {
 	}
 }
 
-impl OpBuilder for Fill {
+impl OpSpecification for Fill {
 	type InstanceType = FillInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -91,13 +92,12 @@ impl OpInstance for FillInstance {
 		"Fill"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(AddInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(Fill {
+			output: graph.node_from_id(self.output),
+			value: self.value,
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![]

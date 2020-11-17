@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use indexmap::{indexset, IndexMap, IndexSet};
 
 use alumina::{
-	core::base_ops::{dummy::DummyOp, OpBuilder},
+	core::base_ops::{dummy::DummyOp, OpSpecification},
 	core::exec::{exec, ExecConfig},
 	core::grad::grad,
 	core::graph::{Node, NodeTag},

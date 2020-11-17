@@ -1,6 +1,6 @@
 use crate::elementwise::elementwise_single::{BinaryElementwise, BinaryFunc, UnaryElementwise, UnaryFunc};
 use alumina_core::{
-	base_ops::OpBuilder,
+	base_ops::OpSpecification,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
 	graph::{Node, NodeID},
@@ -149,7 +149,7 @@ impl BinaryFunc for RobustBackFunc {
 #[cfg(test)]
 mod tests {
 	use super::{Robust, RobustFunc};
-	use alumina_core::{base_ops::OpBuilder, graph::Node};
+	use alumina_core::{base_ops::OpSpecification, graph::Node};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 
 	use rand::thread_rng;

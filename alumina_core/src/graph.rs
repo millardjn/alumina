@@ -995,7 +995,7 @@ impl Graph {
 	/// This locks the underlying graph. If the graph is already locked then GraphInner should be used to avoid deadlocks.
 	/// # Panics
 	/// Panics if the NodeInner is not a member of this graph.
-	pub fn node_from_inner(&self, inner: NodeID) -> Node {
+	pub fn node_from_id(&self, inner: NodeID) -> Node {
 		self.with_root_inner_mut(|graph, graph_inner| {
 			graph_inner.node_from_inner(graph, inner)
 		})
@@ -1007,7 +1007,7 @@ impl Graph {
 	/// This locks the underlying graph. If the graph is already locked then GraphInner should be used to avoid deadlocks.
 	/// # Panics
 	/// Panics if the OpInner is not a member of this graph.
-	pub fn op_from_inner(&self, inner: OpID) -> Op {
+	pub fn op_from_id(&self, inner: OpID) -> Op {
 		self.with_root_inner_mut(|graph, graph_inner| {
 			graph_inner.op_from_inner(graph, inner)
 		})

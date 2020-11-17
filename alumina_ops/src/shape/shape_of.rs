@@ -1,14 +1,14 @@
 use alumina_core::{
-	base_ops::{OpBuilder, OpInstance},
+	base_ops::{OpSpecification, OpInstance},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID},
+	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 };
-
 use indexmap::{indexset, IndexSet};
 use ndarray::Dimension;
+use std::any::Any;
 
 /// Returns the integer location of the maximum for each lane in the provided axis.
 ///
@@ -48,7 +48,7 @@ impl ShapeOf {
 	}
 }
 
-impl OpBuilder for ShapeOf {
+impl OpSpecification for ShapeOf {
 	type InstanceType = ShapeOfInstance;
 
 	fn type_name(&self) -> &'static str {
@@ -94,13 +94,12 @@ impl OpInstance for ShapeOfInstance {
 		"ShapeOf"
 	}
 
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<NodeInner, NodeInner>) -> Result<Box<OpInstance>,
-	// CloneError> { 	Ok(Box::new(ShapeOfInstance {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes.clone(),
-	// 	}))
-	// }
+	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
+		Box::new(ShapeOf {
+			input: graph.node_from_id(self.input),
+			output: graph.node_from_id(self.output),
+		})
+	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		indexset![self.input.clone()]

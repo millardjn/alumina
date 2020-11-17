@@ -1,6 +1,6 @@
 use crate::elementwise::elementwise_single::{BinaryElementwise, BinaryFunc, TernaryElementwise, TernaryFunc};
 use alumina_core::{
-	base_ops::OpBuilder,
+	base_ops::OpSpecification,
 	errors::{GradientError, OpBuildError},
 	grad::GradientContext,
 	graph::{merge_graphs, Node, NodeID},
