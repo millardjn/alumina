@@ -8,7 +8,9 @@ keywords = ["Neural", "Network", "Machine", "Deep", "Learning"]
 license = "MIT"
 
 
-#[features]
+[features]
+default = ["download_mnist"]
+download_mnist = ["reqwest", "flate2"]
 #default = ["mnist"]
 #mnist = ["byteorder"]
 #images = ["image"]
@@ -43,6 +45,10 @@ unchecked-index = "0.2.2"
 matrixmultiply_mt = "0.1.6"
 
 #matrixmultiply_mt = {path = "D:/Repositories/matrixmultiply_mt"}
+
+# Used to download datasets
+reqwest = {version = "0.8.8", optional = true}
+flate2 = {version = "1.0.2", optional = true, features = ["rust_backend"], default-features = false}
 
 #[dev-dependencies]
 #bytevec = "0.2.0"

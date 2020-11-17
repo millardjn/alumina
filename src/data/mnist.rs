@@ -1,7 +1,7 @@
 use ndarray::{ArrayD, IxDyn};
 use std::fs::File;
-use std::path::Path;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use data::{ConcatComponents, DataSet};
 use byteorder::{BigEndian, ByteOrder};
 
@@ -166,4 +166,124 @@ fn read_label_file(mut file: File) -> Vec<u8> {
 	}
 	
 	v1
+}
+
+#[cfg(feature = "download_mnist")]
+pub fn download() -> Result<PathBuf, String> {
+	Ok(mnist_download::download_and_extract_all()?)
+}
+
+#[cfg(feature = "download_mnist")]
+mod mnist_download {
+	extern crate flate2;
+	extern crate reqwest;
+
+	use std::io::{Read, Write};
+	use std::path::{Path, PathBuf};
+	use std::{fs, io};
+
+	const MNIST_BASE_URL: &str = "http://yann.lecun.com/exdb/mnist";
+
+	const MNIST_ARCHIVE_TRAIN_IMAGES: &str = "train-images-idx3-ubyte.gz";
+	const MNIST_ARCHIVE_TRAIN_LABELS: &str = "train-labels-idx1-ubyte.gz";
+	const MNIST_ARCHIVE_TEST_IMAGES: &str = "t10k-images-idx3-ubyte.gz";
+	const MNIST_ARCHIVE_TEST_LABELS: &str = "t10k-labels-idx1-ubyte.gz";
+
+	const ARCHIVES_TO_DOWNLOAD: &[&str] = &[
+		MNIST_ARCHIVE_TRAIN_IMAGES,
+		MNIST_ARCHIVE_TRAIN_LABELS,
+		MNIST_ARCHIVE_TEST_IMAGES,
+		MNIST_ARCHIVE_TEST_LABELS,
+	];
+
+	pub(super) fn download_and_extract_all() -> Result<PathBuf, String> {
+		let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+		let download_dir = crate_dir.join("target").join("mnist");
+		if !download_dir.exists() {
+			println!(
+				"Download directory {} does not exists. Creating....",
+				download_dir.display()
+			);
+			fs::create_dir(&download_dir).expect("Failed to create directory");
+		}
+		for archive in ARCHIVES_TO_DOWNLOAD {
+			println!("Attempting to download and extract {}...", archive);
+			download(&archive, &download_dir)?;
+			extract(&archive, &download_dir)?;
+		}
+
+		Ok(download_dir)
+	}
+
+	fn download(archive: &str, download_dir: &Path) -> Result<(), String> {
+		let url = format!("{}/{}", MNIST_BASE_URL, archive);
+
+		let file_name = download_dir.join(&archive);
+
+		if file_name.exists() {
+			println!(
+				"  File {:?} already exists, skipping downloading.",
+				file_name
+			);
+		} else {
+			println!("  Downloading {} to {:?}...", url, download_dir);
+
+			let f = fs::File::create(&file_name)
+				.or_else(|e| Err(format!("Failed to create file {:?}: {:?}", file_name, e)))?;
+
+			let mut writer = io::BufWriter::new(f);
+
+			let mut response = reqwest::get(&url)
+				.or_else(|e| Err(format!("Failed to download {:?}: {:?}", url, e)))?;
+
+			let _ = io::copy(&mut response, &mut writer).or_else(|e| {
+				Err(format!(
+					"Failed to to write to file {:?}: {:?}",
+					file_name, e
+				))
+			})?;
+
+			println!("  Downloading or {} to {:?} done!", archive, download_dir);
+		}
+
+		Ok(())
+	}
+
+	fn extract(archive_name: &str, download_dir: &Path) -> Result<(), String> {
+		let archive = download_dir.join(&archive_name);
+		let extract_to = download_dir.join(&archive_name.replace(".gz", ""));
+		if extract_to.exists() {
+			println!(
+				"  Extracted file {:?} already exists, skipping extraction.",
+				extract_to
+			);
+		} else {
+			println!("Extracting archive {:?} to {:?}...", archive, extract_to);
+			let file_in = fs::File::open(&archive)
+				.or_else(|e| Err(format!("Failed to open archive {:?}: {:?}", archive, e)))?;
+			let file_in = io::BufReader::new(file_in);
+
+			let file_out = fs::File::create(&extract_to).or_else(|e| {
+				Err(format!(
+					"  Failed to create extracted file {:?}: {:?}",
+					archive, e
+				))
+			})?;
+			let mut file_out = io::BufWriter::new(file_out);
+
+			let mut gz = flate2::bufread::GzDecoder::new(file_in);
+			let mut v: Vec<u8> = Vec::with_capacity(10 * 1024 * 1024);
+			gz.read_to_end(&mut v)
+				.or_else(|e| Err(format!("Failed to extract archive {:?}: {:?}", archive, e)))?;
+
+			file_out.write_all(&v).or_else(|e| {
+				Err(format!(
+					"Failed to write extracted data to {:?}: {:?}",
+					archive, e
+				))
+			})?;
+		}
+
+		Ok(())
+	}
 }
