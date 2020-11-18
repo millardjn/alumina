@@ -73,7 +73,7 @@ pub trait OpSpecification: Any + Sized {
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<Node>;
 
-	//fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Self; //, CloneError>;
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self; //, CloneError>;
 
 	/// Construct the instance of this op
 	///

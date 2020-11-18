@@ -78,14 +78,12 @@ impl OpSpecification for L1 {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(L1Instance {
@@ -213,14 +211,12 @@ impl OpSpecification for L1Back {
 		self.input_and_grads.values().cloned().collect()
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output_grad: mapping.get(&self.output_grad).unwrap_or_else(|| &self.output_grad).clone(),
+			input_and_grads: self.input_and_grads.iter().map(|(i, g)| (mapping.get(i).unwrap_or(i).clone(), mapping.get(g).unwrap_or(g).clone())).collect(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(L1BackInstance {

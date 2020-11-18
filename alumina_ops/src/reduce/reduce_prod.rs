@@ -12,7 +12,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{Dimension, Zip};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -105,14 +105,14 @@ impl OpSpecification for ReduceProd {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(ReduceProd {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or( &self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			axes: self.axes.clone(),
+			keep_dims: self.keep_dims,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ReduceProdInstance {

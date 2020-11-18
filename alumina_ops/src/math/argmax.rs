@@ -8,7 +8,7 @@ use alumina_core::{
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{Axis, Dimension, Zip};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -74,14 +74,13 @@ impl OpSpecification for ArgMax {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(ArgMax {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ArgMaxInstance {

@@ -9,7 +9,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::Dimension;
 use matrixmultiply_mt;
 use std::any::Any;
@@ -267,6 +267,22 @@ impl OpSpecification for MatMul {
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.matrix_c.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+
+			matrix_a: mapping.get(&self.matrix_a).unwrap_or(&self.matrix_a).clone(),
+			matrix_b: mapping.get(&self.matrix_b).unwrap_or(&self.matrix_b).clone(),
+			matrix_c: mapping.get(&self.matrix_c).unwrap_or(&self.matrix_c).clone(),
+			a_trans: self.a_trans,
+			b_trans: self.b_trans,
+			c_trans: self.c_trans,
+			m: self.m,
+			n: self.n,
+			k: self.k,
+			alpha: self.alpha,
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {

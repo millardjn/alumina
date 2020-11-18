@@ -26,7 +26,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 
 use matrixmultiply_mt;
 use ndarray::Dimension;
@@ -111,6 +111,14 @@ impl OpSpecification for Linterp {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
+	}
+	
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			factors: self.factors.clone()
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
@@ -422,14 +430,13 @@ impl OpSpecification for LinterpBack {
 		indexset![self.input_grad.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(ReduceSum {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			factors: self.factors.clone()
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		if self.factors.iter().any(|&f| f == 0) {

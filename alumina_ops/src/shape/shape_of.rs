@@ -6,7 +6,7 @@ use alumina_core::{
 	graph::{Node, NodeID, Graph},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::Dimension;
 use std::any::Any;
 
@@ -65,14 +65,12 @@ impl OpSpecification for ShapeOf {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(ShapeOf {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ShapeOfInstance {

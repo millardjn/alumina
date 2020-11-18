@@ -8,7 +8,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{ArrayViewMutD, Dimension, Zip};
 use std::iter::once;
 use std::any::Any;
@@ -220,6 +220,14 @@ impl OpSpecification for Spline {
 		indexset![self.output.clone()]
 	}
 
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			weights: mapping.get(&self.weights).unwrap_or(&self.weights).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+		}
+	}
+
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		if self
 			.weights
@@ -414,6 +422,16 @@ impl OpSpecification for SplineBack {
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.input_grad.clone(), self.weights_grad.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			weights: mapping.get(&self.weights).unwrap_or(&self.weights).clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
+			weights_grad: mapping.get(&self.weights_grad).unwrap_or(&self.weights_grad).clone(),
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {

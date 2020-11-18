@@ -7,7 +7,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::Dimension;
 use smallvec::SmallVec;
 use std::cmp::min;
@@ -83,6 +83,14 @@ impl OpSpecification for AvgPool {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
+	}
+	
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			factors: self.factors.clone(),
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
@@ -261,6 +269,14 @@ impl OpSpecification for AvgPoolBack {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.input_grad.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
+			factors: self.factors.clone()
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {

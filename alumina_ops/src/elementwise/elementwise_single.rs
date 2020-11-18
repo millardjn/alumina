@@ -20,7 +20,7 @@ use alumina_core::{
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 
 use ndarray::{Dimension, Zip};
 use rayon::prelude::*;
@@ -75,14 +75,12 @@ impl<F: NullaryFunc> OpSpecification for NullaryElementwise<F> {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseInstance {
@@ -189,14 +187,13 @@ impl<F: UnaryFunc> OpSpecification for UnaryElementwise<F> {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			input: mapping.get(&self.output).unwrap_or(&self.input).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseInstance {
@@ -344,14 +341,14 @@ impl<F: BinaryFunc> OpSpecification for BinaryElementwise<F> {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			input1: mapping.get(&self.output).unwrap_or(&self.input1).clone(),
+			input2: mapping.get(&self.output).unwrap_or(&self.input2).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseInstance {
@@ -539,14 +536,15 @@ impl<F: TernaryFunc> OpSpecification for TernaryElementwise<F> {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output: mapping.get(&self.output).unwrap_or( &self.output).clone(),
+			input1: mapping.get(&self.output).unwrap_or( &self.input1).clone(),
+			input2: mapping.get(&self.output).unwrap_or( &self.input2).clone(),
+			input3: mapping.get(&self.output).unwrap_or( &self.input3).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(TernaryElementwiseInstance {
@@ -781,14 +779,13 @@ impl<F: NaryFunc> OpSpecification for NaryElementwise<F> {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseInstance {

@@ -7,7 +7,7 @@ use alumina_core::{
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{Axis, Dimension, Zip};
 use std::any::Any;
 
@@ -77,14 +77,13 @@ impl OpSpecification for Softmax {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			logits: mapping.get(&self.logits).unwrap_or(&self.logits).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxInstance {
@@ -211,14 +210,14 @@ impl OpSpecification for SoftmaxBack {
 		indexset![self.logits_grad.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			logits: mapping.get(&self.logits).unwrap_or(&self.logits).clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			logits_grad: mapping.get(&self.logits_grad).unwrap_or(&self.logits_grad).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxBackInstance {

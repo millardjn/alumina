@@ -7,7 +7,7 @@ use alumina_core::{
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{Axis, Dimension, Zip};
 use std::any::Any;
 
@@ -98,14 +98,14 @@ impl OpSpecification for SoftmaxCrossEntropy {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			logits: mapping.get(&self.logits).unwrap_or(&self.logits).clone(),
+			labels: mapping.get(&self.labels).unwrap_or(&self.labels).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			axis: self.axis
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyInstance {
@@ -219,10 +219,10 @@ impl OpInstance for SoftmaxCrossEntropyInstance {
 #[derive(Clone, Debug)]
 pub struct SoftmaxCrossEntropyBack {
 	logits: Node,
-	logits_grad: Node,
 	labels: Node,
-	labels_grad: Node,
 	output_grad: Node,
+	logits_grad: Node,
+	labels_grad: Node,
 	axis: usize,
 }
 
@@ -283,14 +283,16 @@ impl OpSpecification for SoftmaxCrossEntropyBack {
 		indexset![self.logits_grad.clone(), self.labels_grad.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			logits: mapping.get(&self.logits).unwrap_or(&self.logits).clone(),
+			labels: mapping.get(&self.labels).unwrap_or(&self.labels).clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			logits_grad: mapping.get(&self.logits_grad).unwrap_or(&self.logits_grad).clone(),
+			labels_grad: mapping.get(&self.labels_grad).unwrap_or(&self.labels_grad).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyBackInstance {

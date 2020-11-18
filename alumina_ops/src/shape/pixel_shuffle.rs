@@ -7,7 +7,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::Dimension;
 use std::{cmp::min, iter::once, any::Any};
 
@@ -146,6 +146,14 @@ impl OpSpecification for Collapse {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
+	}
+	
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			factors: self.factors.clone()
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
@@ -350,6 +358,14 @@ impl OpSpecification for Expand {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			factors: self.factors.clone()
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {

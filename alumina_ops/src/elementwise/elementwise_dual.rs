@@ -20,7 +20,7 @@ use alumina_core::{
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{Dimension, Zip};
 use rayon::prelude::*;
 use std::fmt;
@@ -80,14 +80,13 @@ impl<F: NullaryDualFunc> OpSpecification for NullaryElementwiseDual<F> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output1: mapping.get(&self.output1).unwrap_or(&self.output1).clone(),
+			output2: mapping.get(&self.output2).unwrap_or(&self.output2).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseDualInstance {
@@ -223,15 +222,14 @@ impl<F: UnaryDualFunc> OpSpecification for UnaryElementwiseDual<F> {
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
-
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output1: mapping.get(&self.output1).unwrap_or(&self.output1).clone(),
+			output2: mapping.get(&self.output2).unwrap_or(&self.output2).clone(),
+			input: mapping.get(&self.output2).unwrap_or(&self.input).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseDualInstance {
@@ -433,14 +431,15 @@ impl<F: BinaryDualFunc> OpSpecification for BinaryElementwiseDual<F> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output1: mapping.get(&self.output1).unwrap_or(&self.output1).clone(),
+			output2: mapping.get(&self.output2).unwrap_or(&self.output2).clone(),
+			input1: mapping.get(&self.output1).unwrap_or(&self.input1).clone(),
+			input2: mapping.get(&self.output2).unwrap_or(&self.input2).clone(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseDualInstance {
@@ -762,14 +761,14 @@ impl<F: NaryDualFunc> OpSpecification for NaryElementwiseDual<F> {
 		indexset![self.output1.clone(), self.output2.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			output1: mapping.get(&self.output1).unwrap_or(&self.output1).clone(),
+			output2: mapping.get(&self.output2).unwrap_or(&self.output2).clone(),
+			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			f: self.f.clone(),
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseDualInstance {

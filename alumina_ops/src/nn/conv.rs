@@ -8,7 +8,7 @@ use alumina_core::{
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexset, IndexSet, IndexMap};
 use ndarray::{ArrayD, Dimension, IxDyn};
 use threadpool::ThreadPool;
 use threadpool_scope::scope_with;
@@ -327,6 +327,16 @@ impl OpSpecification for Conv {
 
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			padding: self.padding.clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			filter: mapping.get(&self.filter).unwrap_or(&self.filter).clone(),
+			lowering_memory: self.lowering_memory,
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
@@ -704,6 +714,19 @@ impl OpSpecification for ConvBack {
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.input_grad.clone(), self.filter_grad.clone()]
+	}
+
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			padding: self.padding.clone(),
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
+			filter: mapping.get(&self.filter).unwrap_or(&self.filter).clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
+			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
+			filter_grad: mapping.get(&self.filter_grad).unwrap_or(&self.filter_grad).clone(),
+
+			lowering_memory: self.lowering_memory,
+		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {

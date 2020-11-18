@@ -100,14 +100,13 @@ impl OpSpecification for Concat {
 		indexset![self.output.clone()]
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i).clone()).collect(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ConcatInstance {
@@ -243,14 +242,13 @@ impl OpSpecification for ConcatBack {
 		self.input_and_grads.iter().map(|(_, g)|g.clone()).collect()
 	}
 
-	// Create a new OpInstance with nodes switched out
-	// fn clone_with_nodes_changed(&self, mapping: IndexMap<Node, Node>) -> Result<Self, CloneError> {
-	// 	Ok(Add {
-	// 		input: mapping.get(&self.input).unwrap_or_else(|| &self.input).clone(),
-	// 		output: mapping.get(&self.output).unwrap_or_else(|| &self.output).clone(),
-	// 		//extra_axes: self.extra_axes,
-	// 	})
-	// }
+	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
+		Self {
+			input_and_grads: self.input_and_grads.iter().map(|(i, g)| (mapping.get(i).unwrap_or_else(|| i).clone(), mapping.get(g).unwrap_or_else(|| g).clone())).collect(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or_else(|| &self.output_grad).clone(),
+			axis: self.axis,
+		}
+	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ConcatBackInstance {
