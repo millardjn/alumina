@@ -51,6 +51,7 @@ use std::{
 	hash::{Hash, Hasher},
 	ops::Deref,
 	sync::{Arc, atomic::AtomicU64, atomic::Ordering},
+	collections::BTreeMap,
 };
 
 // TODO write explanation for all the ways of creating a Node
@@ -398,6 +399,18 @@ impl PartialEq for Node {
 
 impl Eq for Node {}
 
+impl PartialOrd for Node {
+	fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
+		self.id.partial_cmp(&other.id)
+	}
+}
+
+impl Ord for Node {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.id.cmp(&other.id)
+	}
+}
+
 impl Hash for Node {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.id.hash(state)
@@ -509,6 +522,18 @@ impl PartialEq for NodeID {
 }
 
 impl Eq for NodeID {}
+
+impl PartialOrd for NodeID {
+	fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
+		self.id.partial_cmp(&other.id)
+	}
+}
+
+impl Ord for NodeID {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.id.cmp(&other.id)
+	}
+}
 
 impl Hash for NodeID {
 	fn hash<H: Hasher>(&self, state: &mut H) {
@@ -738,6 +763,18 @@ impl PartialEq for Op {
 
 impl Eq for Op {}
 
+impl PartialOrd for Op {
+	fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
+		self.id.partial_cmp(&other.id)
+	}
+}
+
+impl Ord for Op {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.id.cmp(&other.id)
+	}
+}
+
 impl Hash for Op {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.id.hash(state)
@@ -814,6 +851,18 @@ impl Eq for OpID {}
 impl Hash for OpID {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.id().hash(state)
+	}
+}
+
+impl PartialOrd for OpID {
+	fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
+		self.id.partial_cmp(&other.id)
+	}
+}
+
+impl Ord for OpID {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.id.cmp(&other.id)
 	}
 }
 
@@ -1144,23 +1193,23 @@ impl Graph {
 		})
 	}
 
-	pub fn node_index(&self, node: NodeID) -> usize {
-		self.with_root_inner_mut(|_graph, inner| {
-			inner.nodes.get_full(&node).unwrap().0
-		})
-	}
+	// pub fn node_index(&self, node: NodeID) -> usize {
+	// 	self.with_root_inner_mut(|_graph, inner| {
+	// 		inner.nodes.get_full(&node).unwrap().0
+	// 	})
+	// }
 
-	/// Returns the index of the op
-	///
-	/// Ops are indicies are in order of addition to the `Graph`
-	/// Graph merges produce
-	/// # Panics
-	/// Panics if the OpInner is not a member of the Graph
-	pub fn op_index(&self, node: OpID) -> usize {
-		self.with_root_inner_mut(|_graph, inner| {
-			inner.ops.get_full(&node).unwrap().0
-		})
-	}
+	// /// Returns the index of the op
+	// ///
+	// /// Ops are indicies are in order of addition to the `Graph`
+	// /// Graph merges produce
+	// /// # Panics
+	// /// Panics if the OpInner is not a member of the Graph
+	// pub fn op_index(&self, node: OpID) -> usize {
+	// 	self.with_root_inner_mut(|_graph, inner| {
+	// 		inner.ops.get_full(&node).unwrap().0
+	// 	})
+	// }
 
 	/// Merges `g2` into self.
 	pub fn merge(&self, g2: &Graph) {
@@ -1172,11 +1221,11 @@ impl Graph {
 
 					let g1_inner: &mut GraphInner = gl1.inner_mut().unwrap();
 
-					for (node, node_data) in g2_inner.nodes.drain(..) {
+					for (node, node_data) in g2_inner.nodes.into_iter() {
 						g1_inner.add_node(node, node_data)
 					}
 
-					for (op, op_data) in g2_inner.ops.drain(..) {
+					for (op, op_data) in g2_inner.ops.into_iter() {
 						g1_inner.add_op(op, op_data)
 					}
 				},
@@ -1356,8 +1405,8 @@ impl GraphLink {
 /// computations
 #[derive(Default)]
 struct GraphInner {
-	nodes: IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>,
-	ops: IndexMap<OpID, Arc<Mutex<OpInnerData>>>,
+	nodes: BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+	ops: BTreeMap<OpID, Arc<Mutex<OpInnerData>>>,
 
 	// De-normalised data only
 	// NodeInner and OpInner contain the primary record
@@ -1508,6 +1557,31 @@ impl GraphInner {
 		}
 	}
 
+	// /// Create a `Node` from a `NodeID`
+	// ///
+	// /// # Panics
+	// /// Panics if the `NodeID` is not a member of this graph.
+	// /// Panics if the if any `Node`s still exists for this `NodeID`.
+	// fn remove_node(&mut self, node_id: NodeID) -> NodeInnerData {
+	// 	check that no relations remain (no ops reference this node)
+
+	// 	let data =  match self.nodes.remove(&node_id) {
+	// 		Some(x) => x,
+	// 		None => panic!("NodeID (id:{}) is not a part of this Graph.", node_id.id())
+	// 	};
+
+	// 	self.relations.inner.node_parents.get(node_id);
+	// 	self.relations.inner.node_children.get(node_id);
+
+
+	// 	self.associations.clear();
+		
+	// 	match Arc::try_unwrap(data) {
+	// 		Ok(x) => x.into_inner(),
+	// 		Err(_) => panic!("NodeID (id:{}) could not be removed from the graph as Node handles still exist", node_id.id())
+	// 	}
+	// }
+
 	/// Add an existing `Op` to the graph
 	///
 	/// # Panics
@@ -1565,7 +1639,18 @@ impl GraphInner {
 		}
 	}
 
-	
+	// fn remove_op(&mut self, op_id: OpID) -> OpInnerData {
+	// 	fix relations
+	// 	let data =  match self.ops.remove(&op_id) {
+	// 		Some(x) => x,
+	// 		None => panic!("OpID (id:{}) is not a part of this Graph.", op_id.id())
+	// 	};
+		
+	// 	match Arc::try_unwrap(data) {
+	// 		Ok(x) => x.into_inner(),
+	// 		Err(_) => panic!("OpID (id:{}) could not be removed from the graph as Node handles still exist", op_id.id())
+	// 	}
+	// }
 
 	fn unique_node_name(&mut self, new_name_root: &str) -> String {
 		if self.nodes_named(&new_name_root).is_empty() {
@@ -1641,7 +1726,7 @@ struct Relations {
 }
 
 impl Relations {
-	fn get_or_instantiate_relations(&mut self, nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut RelationsInner {
+	fn get_or_instantiate_relations(&mut self, nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut RelationsInner {
 		if self.inner.is_none() {
 			self.inner = Some(RelationsInner::from_graph(nodes, ops))
 		}
@@ -1664,7 +1749,7 @@ struct RelationsInner {
 }
 
 impl RelationsInner {
-	fn from_graph(nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+	fn from_graph(nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
 		let mut relations = RelationsInner { ..Default::default() };
 
 		for node in nodes.keys() {
@@ -1720,7 +1805,7 @@ struct Associations {
 }
 
 impl Associations {
-	fn get_or_instantiate_association(&mut self, nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut AssociationsInner {
+	fn get_or_instantiate_association(&mut self, nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut AssociationsInner {
 		if self.inner.is_none() {
 			self.inner = Some(AssociationsInner::from_graph(nodes, ops))
 		}
@@ -1802,7 +1887,7 @@ struct AssociationsInner {
 
 
 impl AssociationsInner {
-	fn from_graph(nodes: &IndexMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &IndexMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+	fn from_graph(nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
 		let mut associations = Self { ..Default::default() };
 
 		for (node, data) in nodes {

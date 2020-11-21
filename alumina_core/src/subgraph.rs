@@ -5,7 +5,6 @@
 use indexmap::{IndexMap, IndexSet};
 use std::{
 	borrow::Borrow,
-	cmp::{Ord, Ordering},
 	collections::{BinaryHeap, VecDeque},
 	fmt::{Debug, Display, Formatter},
 	hash::{Hash, Hasher},
@@ -16,46 +15,6 @@ use crate::{
 	graph::{Graph, Node, Op},
 	util::display::{IterDebug, IterDisplay},
 };
-
-/// Numbers the item (Node or Op) with position in the graph, allowing sorting of subgraphs to graph order.
-struct Numbered<T> {
-	i: usize,
-	item: T,
-}
-impl<T> Ord for Numbered<T> {
-	fn cmp(&self, other: &Self) -> Ordering {
-		Ord::cmp(&self.i, &other.i)
-	}
-}
-impl<T> PartialOrd for Numbered<T> {
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		Some(self.cmp(other))
-	}
-}
-impl<T> PartialEq for Numbered<T> {
-	fn eq(&self, other: &Self) -> bool {
-		self.i == other.i
-	}
-}
-impl<T> Eq for Numbered<T> {}
-
-impl From<Node> for Numbered<Node> {
-	fn from(node: Node) -> Self {
-		let index = node
-			.graph()
-			.node_index(node.id());
-		Numbered { i: index, item: node }
-	}
-}
-
-impl From<Op> for Numbered<Op> {
-	fn from(op: Op) -> Self {
-		let index = op
-			.graph()
-			.op_index(op.id());
-		Numbered { i: index, item: op }
-	}
-}
 
 /// A collection of `Node`s and `Op`s which may come from a single or multiple `Graph`s.
 ///
@@ -99,15 +58,14 @@ impl SubGraph {
 	///
 	/// In the case of multiple graphs, items are only strictly ordered with respect to items of the same `Graph`.
 	pub fn graph_order(&self) -> SubGraph {
-		let mut node_index: Vec<Numbered<Node>> = self.nodes.iter().cloned().map(Into::into).collect();
-		let mut op_index: Vec<Numbered<Op>> = self.ops.iter().cloned().map(Into::into).collect();
-
+		let mut node_index: IndexSet<Node> = self.nodes.iter().cloned().collect();
+		let mut op_index: IndexSet<Op>= self.ops.iter().cloned().collect();
 		node_index.sort();
 		op_index.sort();
 
 		SubGraph {
-			nodes: node_index.into_iter().map(|e| e.item).collect(),
-			ops: op_index.into_iter().map(|e| e.item).collect(),
+			nodes: node_index,
+			ops: op_index,
 		}
 	}
 
@@ -120,11 +78,11 @@ impl SubGraph {
 	pub fn execution_order(&self) -> Result<SubGraph, CyclicGraphError> {
 		let (mut node_remaining, mut op_remaining) = self.input_counts();
 
-		let mut op_queue: BinaryHeap<Numbered<Op>> = op_remaining
+		let mut op_queue: BinaryHeap<Op> = op_remaining
 			.iter()
 			.filter_map(|(op, i)| if *i == 0 { Some((*op).clone().into()) } else { None })
 			.collect();
-		let mut node_queue: BinaryHeap<Numbered<Node>> = node_remaining
+		let mut node_queue: BinaryHeap<Node> = node_remaining
 			.iter()
 			.filter_map(|(node, i)| if *i == 0 { Some((*node).clone().into()) } else { None })
 			.collect();
@@ -136,7 +94,7 @@ impl SubGraph {
 			let mut did_something = false;
 
 			// Process as many nodes as possible
-			while let Some(Numbered { item: node, .. }) = node_queue.pop() {
+			while let Some(node) = node_queue.pop() {
 				if node_order.contains(&node) {
 					panic!("should only be added by the last parent op?")
 				}
@@ -155,7 +113,7 @@ impl SubGraph {
 			}
 
 			// Only process a single op before reattempting more nodes
-			if let Some(Numbered { item: op, .. }) = op_queue.pop() {
+			if let Some(op) = op_queue.pop() {
 				if op_order.contains(&op) {
 					panic!("should only be added by the last parent node?")
 				}
