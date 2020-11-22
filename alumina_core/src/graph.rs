@@ -123,6 +123,17 @@ pub struct Node {
 }
 
 impl Node {
+	/// Remove this `Node` from its `Graph`
+	///
+	/// # Panics
+	/// Panics if any other `Node`s ists for this.
+	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
+	pub fn remove(self) -> NodeInnerData {
+		let Node {graph, id, data} = self;
+		drop(data);
+		graph.remove_node(id)
+	}
+
 	/// Create a node with no associated value.
 	///
 	/// This node belongs to its own graph until joined by operations.
@@ -177,7 +188,8 @@ impl Node {
 		let new_name = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.associate_node_name(self.id.clone(), &new_name, Some(&data.name));
+			inner.associations.unassociate_node_name(self.id, &data.name);
+			inner.associations.associate_node_name(self.id, &new_name);
 			data.name = new_name;
 		});
 
@@ -193,7 +205,8 @@ impl Node {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let new_name = inner.unique_node_name(new_name_root);
 			let mut data = self.data.lock();
-			inner.associations.associate_node_name(self.id.clone(), &new_name, Some(&data.name));
+			inner.associations.unassociate_node_name(self.id, &data.name);
+			inner.associations.associate_node_name(self.id, &new_name);
 			data.name = new_name;
 		});
 
@@ -232,7 +245,7 @@ impl Node {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.clear(); // TODO we should just remove this node from the tag group
+			inner.associations.unassociate_node_tag(self.id, &tag);
 			data.tags.swap_remove(&tag);
 		});
 
@@ -631,13 +644,24 @@ pub struct Op {
 }
 
 impl Op {
+	/// Remove this `Op` from its `Graph`
+	///
+	/// # Panics
+	/// Panics if any other `Op`s still exists for this.
+	pub fn remove(self) -> OpInnerData {
+		let Op {graph, id, data, instance} = self;
+		drop(data);
+		drop(instance);
+		graph.remove_op(id)
+	}
 
 	/// Set the name of the Op, replaces existing name.
 	pub fn set_name<S: Into<String>>(&self, new_name: S) -> Self {
 		let new_name:String = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.associate_op_name(self.id.clone(), &new_name, Some(&data.name));
+			inner.associations.unassociate_op_name(self.id.clone(), &data.name);
+			inner.associations.associate_op_name(self.id.clone(), &new_name);
 			data.name = new_name;
 		});
 
@@ -650,7 +674,8 @@ impl Op {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let new_name = inner.unique_op_name(new_name_root);
 			let mut data = self.data.lock();
-			inner.associations.associate_op_name(self.id.clone(), &new_name, Some(&data.name));
+			inner.associations.unassociate_op_name(self.id.clone(), &data.name);
+			inner.associations.associate_op_name(self.id.clone(), &new_name);
 			data.name = new_name;
 		});
 
@@ -690,7 +715,7 @@ impl Op {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.clear(); //TODO we should probably just remove this one
+			inner.associations.unassociate_op_tag(self.id, &tag);
 			data.tags.swap_remove(&tag);
 		});
 
@@ -989,15 +1014,6 @@ impl Graph {
 
 	/// Create a new node within the Graph
 	pub fn new_node(&self, shape: NodeShape) -> Node {
-		// let node_inner = NodeInner {
-		// 	data: Arc::new(NodeInnerData {
-		// 		shape,
-		// 		name: "Unnamed_Node".to_string(),
-		// 		tags: IndexSet::new(),
-		// 		value: None,
-		// 		init: None,
-		// 	}),
-		// };
 		let node_inner = NodeID::new();
 		let node_data = NodeInnerData {
 			shape,
@@ -1035,6 +1051,29 @@ impl Graph {
 		self.with_root_inner_mut(|graph, inner| {
 			inner.add_op(op_inner.clone(), Arc::new(Mutex::new(op_data)));
 			inner.op_from_inner(graph, op_inner)
+		})
+	}
+
+	/// Remove from the graph the selected `NodeID`
+	///
+	/// # Panics
+	/// Panics if the `NodeID` is not a member of this graph.
+	/// Panics if any `Node`s still exists for this `NodeID`.
+	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
+	pub fn remove_node(&self, node_id: NodeID) -> NodeInnerData {
+		self.with_root_inner_mut(|_graph, graph_inner| {
+			graph_inner.remove_node(node_id)
+		})
+	}
+
+	/// Remove from the graph the selected `OpID`
+	///
+	/// # Panics
+	/// Panics if the `OpID` is not a member of this graph.
+	/// Panics if any `Op`s still exists for this `OpID`.
+	pub fn remove_op(&self, op_id: OpID) -> OpInnerData {
+		self.with_root_inner_mut(|_graph, graph_inner| {
+			graph_inner.remove_op(op_id)
 		})
 	}
 
@@ -1217,7 +1256,7 @@ impl Graph {
 			self.with_locked_roots(
 				g2,
 				|g1: &Graph, gl1: &mut GraphLink, _g2: &Graph, gl2: &mut GraphLink| {
-					let mut g2_inner = gl2.take_inner(g1).unwrap();
+					let g2_inner = gl2.take_inner(g1).unwrap();
 
 					let g1_inner: &mut GraphInner = gl1.inner_mut().unwrap();
 
@@ -1534,123 +1573,92 @@ impl GraphInner {
 	/// Add an existing node to the graph.
 	/// Updates membership in the graph and denormalised data for names and tags.
 	/// Does not add information for relationships to ops.
-	fn add_node(&mut self, node: NodeID, node_data: Arc<Mutex<NodeInnerData>>) {
-		assert!(!self.nodes.contains_key(&node), "Cannot add node that is already in graph: {}", node_data.lock().name);
-		let node_data = self.nodes.entry(node.clone()).or_insert(node_data);
-		//self.nodes.insert(node.clone(), node_data);
+	fn add_node(&mut self, node_id: NodeID, node_data: Arc<Mutex<NodeInnerData>>) {
+		assert!(!self.nodes.contains_key(&node_id), "Cannot add node that is already in graph: {}", node_data.lock().name);
+		let node_data = self.nodes.entry(node_id).or_insert(node_data);
 
-		//let node_name = node_data.name;//.lock().expect("Mutex lock error when getting Node name");
-		self.associations.associate_node_name(node.clone(), &node_data.lock().name, None);
+		self.relations.add_node(node_id);
 
-		// let node_tags = node_data
-		// 	.tags;
-			//.lock()
-			//.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Node: {}", node_name));
-
+		self.associations.associate_node_name(node_id, &node_data.lock().name);
+		
 		for tag in node_data.lock().tags.iter() {
-			self.associations.associate_node_tag(node.clone(), tag);
-		}
-
-		if let Some(ref mut relations) = self.relations.inner {
-			relations.node_parents.insert(node.clone(), IndexSet::new());
-			relations.node_children.insert(node.clone(), IndexSet::new());
+			self.associations.associate_node_tag(node_id, tag);
 		}
 	}
 
-	// /// Create a `Node` from a `NodeID`
-	// ///
-	// /// # Panics
-	// /// Panics if the `NodeID` is not a member of this graph.
-	// /// Panics if the if any `Node`s still exists for this `NodeID`.
-	// fn remove_node(&mut self, node_id: NodeID) -> NodeInnerData {
-	// 	check that no relations remain (no ops reference this node)
+	/// Remove from the graph the selected `NodeID`
+	///
+	/// # Panics
+	/// Panics if the `NodeID` is not a member of this graph.
+	/// Panics if any `Node`s still exists for this `NodeID`.
+	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
+	fn remove_node(&mut self, node_id: NodeID) -> NodeInnerData {
+		let node_data =  match self.nodes.remove(&node_id) {
+			Some(x) => x,
+			None => panic!("NodeID (id:{}) is not a part of this Graph.", node_id.id())
+		};
 
-	// 	let data =  match self.nodes.remove(&node_id) {
-	// 		Some(x) => x,
-	// 		None => panic!("NodeID (id:{}) is not a part of this Graph.", node_id.id())
-	// 	};
+		let node_data = match Arc::try_unwrap(node_data) {
+			Ok(x) => x.into_inner(),
+			Err(_) => panic!("NodeID (id:{}) could not be removed from the graph as Node handles still exist", node_id.id())
+		};
+		if cfg!(debug_assertions) {
+			// if debug, instantiate so that remove node can panic if parents or children still exist
+			let _ = self.relations.get_or_instantiate_relations(&self.nodes, &self.ops);
+		}
+		self.relations.remove_node(node_id);
 
-	// 	self.relations.inner.node_parents.get(node_id);
-	// 	self.relations.inner.node_children.get(node_id);
+		self.associations.unassociate_node_name(node_id, &node_data.name);
+		for tag in node_data.tags.iter() {
+			self.associations.unassociate_node_tag(node_id, tag);
+		}
 
-
-	// 	self.associations.clear();
-		
-	// 	match Arc::try_unwrap(data) {
-	// 		Ok(x) => x.into_inner(),
-	// 		Err(_) => panic!("NodeID (id:{}) could not be removed from the graph as Node handles still exist", node_id.id())
-	// 	}
-	// }
+		node_data
+	}
 
 	/// Add an existing `Op` to the graph
 	///
 	/// # Panics
 	/// May panic if input and output nodes haven't already been added.
-	fn add_op(&mut self, op: OpID, op_data: Arc<Mutex<OpInnerData>>) {
-		assert!(!self.ops.contains_key(&op), "Cannot add node that is already in graph: {}", op_data.lock().name);
-		let op_data = self.ops.entry(op.clone()).or_insert(op_data);
-		//self.ops.insert(op.clone());
+	fn add_op(&mut self, op_id: OpID, op_data: Arc<Mutex<OpInnerData>>) {
+		assert!(!self.ops.contains_key(&op_id), "Cannot add node that is already in graph: {}", op_data.lock().name);
+		let op_data = self.ops.entry(op_id).or_insert(op_data);
 
-		//let op_name = op.data.name;//.lock().expect("Mutex lock error when getting Op name");
-		self.associations.associate_op_name(op.clone(), &op_data.lock().name, None);
+		self.relations.add_op(op_id, op_data);
 
-		// let op_tags = op
-		// 	.data
-		// 	.tags
-		// 	.lock()
-		// 	.unwrap_or_else(|_| panic!("Mutex lock error when getting tags for Op: {}", op.name()));
+		self.associations.associate_op_name(op_id, &op_data.lock().name);
 
 		for tag in op_data.lock().tags.iter() {
-			self.associations.associate_op_tag(op.clone(), tag);
-		}
-
-		if let Some(ref mut relations) = self.relations.inner {
-			let inputs = op_data.lock().instance.inputs();
-			for node in &inputs {
-				relations
-					.node_children
-					.get_mut(node)
-					.unwrap_or_else(|| {
-						panic!(
-							"Bug in Op: {}, input Node (id:{}) has not been added as a member of the graph",
-							op_data.lock().name,
-							node.id()
-						)
-					})
-					.insert(op.clone());
-			}
-			relations.op_parents.insert(op.clone(), inputs);
-
-			let outputs = op_data.lock().instance.outputs();
-			for node in &outputs {
-				relations
-					.node_parents
-					.get_mut(node)
-					.unwrap_or_else(|| {
-						panic!(
-							"Bug in Op: {}, output Node (id:{}) has not been added as a member of the graph",
-							op_data.lock().name,
-							node.id()
-						)
-					})
-					.insert(op.clone());
-			}
-			relations.op_children.insert(op.clone(), outputs);
+			self.associations.associate_op_tag(op_id, tag);
 		}
 	}
 
-	// fn remove_op(&mut self, op_id: OpID) -> OpInnerData {
-	// 	fix relations
-	// 	let data =  match self.ops.remove(&op_id) {
-	// 		Some(x) => x,
-	// 		None => panic!("OpID (id:{}) is not a part of this Graph.", op_id.id())
-	// 	};
-		
-	// 	match Arc::try_unwrap(data) {
-	// 		Ok(x) => x.into_inner(),
-	// 		Err(_) => panic!("OpID (id:{}) could not be removed from the graph as Node handles still exist", op_id.id())
-	// 	}
-	// }
+	/// Remove from the graph the selected `OpID`
+	///
+	/// # Panics
+	/// Panics if the `OpID` is not a member of this graph.
+	/// Panics if any `Op`s still exists for this `OpID`.
+	fn remove_op(&mut self, op_id: OpID) -> OpInnerData {
+
+		let op_data =  match self.ops.remove(&op_id) {
+			Some(x) => x,
+			None => panic!("OpID (id:{}) is not a part of this Graph.", op_id.id())
+		};
+
+		let op_data = match Arc::try_unwrap(op_data) {
+			Ok(x) => x.into_inner(),
+			Err(_) => panic!("OpID (id:{}) could not be removed from the graph as Op handles still exist", op_id.id())
+		};
+
+		self.relations.remove_op(op_id, op_data.instance.inputs(), op_data.instance.outputs());
+
+		self.associations.unassociate_op_name(op_id, &op_data.name);
+		for tag in op_data.tags.iter() {
+			self.associations.unassociate_op_tag(op_id, tag);
+		}
+
+		op_data
+	}
 
 	fn unique_node_name(&mut self, new_name_root: &str) -> String {
 		if self.nodes_named(&new_name_root).is_empty() {
@@ -1733,8 +1741,90 @@ impl Relations {
 		self.inner.as_mut().unwrap()
 	}
 
-	fn clear(&mut self) {
-		self.inner = None
+
+	fn add_node(&mut self, node_id: NodeID){
+		if let Some(ref mut relations) = self.inner {
+			relations.node_parents.insert(node_id, IndexSet::new()).map(|_existing| panic!("Parent relations already existed Node (id:{}) was already a member of the graph", node_id.id()));
+			relations.node_children.insert(node_id, IndexSet::new()).map(|_existing| panic!("Child relations already existed Node (id:{}) was already a member of the graph", node_id.id()));
+		}
+	}
+
+	fn remove_node(&mut self, node_id: NodeID){
+		if let Some(ref mut relations) = self.inner {
+			relations.node_parents.swap_remove(&node_id).map(|v|assert!(v.is_empty(), "Node (id:{}) was removed while it still had remaining parents", node_id.id()));
+			relations.node_children.swap_remove(&node_id).map(|v|assert!(v.is_empty(), "Node (id:{}) was removed while it still had remaining children", node_id.id()));
+		}
+	}
+
+	fn add_op(&mut self, op_id: OpID, op_data: &Mutex<OpInnerData>){
+		if let Some(ref mut relations) = self.inner {
+			let instance = &op_data.lock().instance;
+			let parents = instance.inputs();
+			for node in &parents {
+				relations
+					.node_children
+					.get_mut(node)
+					.unwrap_or_else(|| {
+						panic!(
+							"Bug in Op (id:{}), input Node (id:{}) has not been added as a member of the graph",
+							op_id.id(),
+							node.id()
+						)
+					})
+					.insert(op_id);
+			}
+			relations.op_parents.insert(op_id, parents);
+			let children = instance.outputs();
+			for node in &children {
+				relations
+					.node_parents
+					.get_mut(node)
+					.unwrap_or_else(|| {
+						panic!(
+							"Bug in Op (id:{}), output Node (id:{}) has not been added as a member of the graph",
+							op_id.id(),
+							node.id()
+						)
+					})
+					.insert(op_id);
+			}
+			relations.op_children.insert(op_id, children);
+		}
+	}
+
+	fn remove_op(&mut self, op_id: OpID, parents: IndexSet<NodeID>, children: IndexSet<NodeID>){
+		if let Some(ref mut relations) = self.inner {
+
+			for node in &parents {
+				relations
+					.node_children
+					.get_mut(node)
+					.unwrap_or_else(|| {
+						panic!(
+							"Bug in Op (id:{}), input Node (id:{}) has not been added as a member of the graph",
+							op_id.id(),
+							node.id()
+						)
+					})
+					.swap_remove(&op_id);
+			}
+			relations.op_parents.swap_remove(&op_id);
+
+			for node in &children {
+				relations
+					.node_parents
+					.get_mut(node)
+					.unwrap_or_else(|| {
+						panic!(
+							"Bug in Op (id:{}), output Node (id:{}) has not been added as a member of the graph",
+							op_id.id(),
+							node.id()
+						)
+					})
+					.swap_remove(&op_id);
+			}
+			relations.op_children.swap_remove(&op_id);
+		}
 	}
 
 
@@ -1812,23 +1902,8 @@ impl Associations {
 		self.inner.as_mut().unwrap()
 	}
 
-	fn clear(&mut self) {
-		self.inner = None
-	}
-
-
-
-
-
-
-	fn associate_node_name(&mut self, node: NodeID, name: &str, old_name: Option<&str>) {
+	fn associate_node_name(&mut self, node: NodeID, name: &str) {
 		if let Some(ref mut assoc) = self.inner {
-			// remove from previous name group
-			if let Some(old_name) = old_name {
-				assoc.name_to_nodes.get_mut(old_name).map(|set| set.swap_remove(&node));
-			}
-
-			// add to new name group
 			assoc
 				.name_to_nodes
 				.entry(name.to_string())
@@ -1839,7 +1914,6 @@ impl Associations {
 
 	fn associate_node_tag(&mut self, node: NodeID, tag: &NodeTag) {
 		if let Some(ref mut assoc) = self.inner {
-			// add to new tag group
 			assoc
 				.tag_to_nodes
 				.entry(tag.clone())
@@ -1848,14 +1922,8 @@ impl Associations {
 		}
 	}
 
-	fn associate_op_name(&mut self, op: OpID, name: &str, old_name: Option<&str>) {
+	fn associate_op_name(&mut self, op: OpID, name: &str) {
 		if let Some(ref mut assoc) = self.inner {
-			// remove from previous name group
-			if let Some(old_name) = old_name {
-				assoc.name_to_ops.get_mut(old_name).map(|set| set.swap_remove(&op));
-			}
-
-			// add to new name group
 			assoc
 				.name_to_ops
 				.entry(name.to_string())
@@ -1872,7 +1940,31 @@ impl Associations {
 				.or_insert_with(IndexSet::new)
 				.insert(op);
 		}
-	}	
+	}
+
+	fn unassociate_node_name(&mut self, node: NodeID, name: &str) {
+		if let Some(ref mut assoc) = self.inner {
+			assoc.name_to_nodes.get_mut(name).map(|set| set.swap_remove(&node));
+		}
+	}
+
+	fn unassociate_node_tag(&mut self, node: NodeID, tag: &NodeTag) {
+		if let Some(ref mut assoc) = self.inner {
+			assoc.tag_to_nodes.get_mut(tag).map(|set| set.swap_remove(&node));
+		}
+	}
+
+	fn unassociate_op_name(&mut self, op: OpID, name: &str) {
+		if let Some(ref mut assoc) = self.inner {
+			assoc.name_to_ops.get_mut(name).map(|set| set.swap_remove(&op));
+		}
+	}
+
+	fn unassociate_op_tag(&mut self, op: OpID, tag: &OpTag) {
+		if let Some(ref mut assoc) = self.inner {
+			assoc.tag_to_ops.get_mut(tag).map(|set| set.swap_remove(&op));
+		}
+	}
 }
 
 /// denormalised for reverse lookups
