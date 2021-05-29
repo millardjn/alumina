@@ -839,6 +839,6 @@ mod tests {
 
 		let target: Vec<f32> = (0..output_size).map(|x| x as f32).collect();
 
-		assert!(output == target, format!("target{:?} \n output{:?}", target, output));
+		assert!(output == target, "target{:?} \n output{:?}", target, output);
 	}
 }

@@ -1504,7 +1504,7 @@ impl GraphInner {
 
 		let op = iter
 			.next()
-			.unwrap_or_else(|| panic!("No parent Op for Node: {}",));
+			.unwrap_or_else(|| panic!("No parent Op for Node: {}", node.id()));
 		assert!(
 			iter.next().is_none(),
 			"More than one parent Op for Node : {}",

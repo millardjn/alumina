@@ -849,7 +849,7 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 				output1: *mut f32,
 				output2: *mut f32,
 			}
-			unsafe impl Sync for Ptrs {};
+			unsafe impl Sync for Ptrs {}
 
 			let ptrs = Ptrs {
 				output1: output1.as_slice_mut().unwrap().as_mut_ptr(),
@@ -897,7 +897,7 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 				output1: *mut f32,
 				output2: *mut f32,
 			}
-			unsafe impl Sync for Ptrs {};
+			unsafe impl Sync for Ptrs {}
 
 			let ptrs = Ptrs {
 				inputs,

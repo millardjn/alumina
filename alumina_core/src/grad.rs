@@ -201,7 +201,7 @@ impl GradientContext {
 			node_to_grad: IndexMap::new(),
 		};
 
-		// context.grad_of(y.inner()).set_value(arr0(1.0));
+		
 		fill_into(1.0, context.grad_of(&y.id())).unwrap_or_else(|err| {
 			panic!(
 				"Alumina Bug: Error building fill op for gradient of output ({}).\n{:#?}",

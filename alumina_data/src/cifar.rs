@@ -26,7 +26,7 @@ impl Cifar10 {
 	pub fn training<P: AsRef<Path>>(folder_path: P) -> Self {
 		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 'data_batch_1.bin', ..., 'data_batch_5.bin'";
-		assert!(folder_path.is_dir(), err);
+		assert!(folder_path.is_dir(),"{}", err);
 		let training_file1 = File::open(folder_path.join("data_batch_1.bin").as_path()).expect(err);
 		let training_file2 = File::open(folder_path.join("data_batch_2.bin").as_path()).expect(err);
 		let training_file3 = File::open(folder_path.join("data_batch_3.bin").as_path()).expect(err);
@@ -44,7 +44,7 @@ impl Cifar10 {
 	pub fn testing<P: AsRef<Path>>(folder_path: P) -> Self {
 		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 'test_batch.bin'";
-		assert!(folder_path.is_dir(), err);
+		assert!(folder_path.is_dir(),"{}", err);
 		let test_file = File::open(folder_path.join("test_batch.bin").as_path()).expect(err);
 		Cifar10::new(vec![test_file])
 	}
@@ -129,7 +129,7 @@ impl Cifar100 {
 	pub fn training<P: AsRef<Path>>(folder_path: P) -> Self {
 		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 'train.bin'";
-		assert!(folder_path.is_dir(), err);
+		assert!(folder_path.is_dir(),"{}", err);
 		let training_file = File::open(folder_path.join("train.bin").as_path()).expect(err);
 		Cifar100::new(training_file)
 	}
@@ -137,7 +137,7 @@ impl Cifar100 {
 	pub fn testing<P: AsRef<Path>>(folder_path: P) -> Self {
 		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 'test.bin'";
-		assert!(folder_path.is_dir(), err);
+		assert!(folder_path.is_dir(),"{}", err);
 		let test_file = File::open(folder_path.join("test.bin").as_path()).expect(err);
 		Cifar100::new(test_file)
 	}

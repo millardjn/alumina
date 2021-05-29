@@ -852,7 +852,7 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 			struct Ptrs {
 				output: *mut f32,
 			}
-			unsafe impl Sync for Ptrs {};
+			unsafe impl Sync for Ptrs {}
 
 			let ptrs = Ptrs {
 				output: output.as_slice_mut().unwrap().as_mut_ptr(),
@@ -901,7 +901,7 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 					struct Ptrs {
 						inputs: Vec<*mut f32>,
 					}
-					unsafe impl Sync for Ptrs {};
+					unsafe impl Sync for Ptrs {}
 
 					let ptrs = Ptrs { inputs };
 
@@ -960,7 +960,7 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 				inputs: Vec<*mut f32>,
 				output: *mut f32,
 			}
-			unsafe impl Sync for Ptrs {};
+			unsafe impl Sync for Ptrs {}
 
 			let ptrs = Ptrs {
 				inputs,
