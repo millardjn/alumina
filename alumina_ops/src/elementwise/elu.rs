@@ -18,13 +18,13 @@ where
 		.graph()
 		.new_node(input.shape())
 		.set_name_unique(&format!("elu({})", input));
-	let _op = ELU::new_default(input, output.clone()).build()?;
+	let _op = Elu::new_default(input, output.clone()).build()?;
 	Ok(output)
 }
 
-pub type ELU = UnaryElementwise<ELUFunc>;
+pub type Elu = UnaryElementwise<ELUFunc>;
 
-pub type ELUBack = BinaryElementwise<ELUBackFunc>;
+pub type EluBack = BinaryElementwise<ELUBackFunc>;
 
 #[derive(Clone, Debug, Default)]
 pub struct ELUFunc {}
@@ -44,7 +44,7 @@ impl UnaryFunc for ELUFunc {
 	}
 
 	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
-		ELUBack::new_default(&ctx.node(input), &ctx.grad_of(output), &ctx.grad_of(input)).build()?;
+		EluBack::new_default(&ctx.node(input), &ctx.grad_of(output), &ctx.grad_of(input)).build()?;
 		Ok(())
 	}
 }
