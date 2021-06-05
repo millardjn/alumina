@@ -7,14 +7,13 @@ use alumina::{
 		nn::conv::Padding,
 		nn::spline::swan,
 		panicking::{
-			add, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
+			add, argmax, avg_pool, conv, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
 			softmax_cross_entropy, spline,
 		},
 	},
-	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser, GradientStepper,
-	},
+	opt::{adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser},
 };
+use alumina_core::graph::Graph;
 use failure::Error;
 use indexmap::IndexMap;
 use ndarray::{ArcArray, IxDyn};
@@ -60,18 +59,7 @@ fn main() -> Result<(), Error> {
 	let accuracy = equal(argmax(&logits, -1), argmax(&fine_labels, -1)).set_name("accuracy");
 
 	// 2. Print shapes
-	println!("\n Values:");
-	for node in accuracy
-		.graph()
-		.nodes()
-		.difference(&accuracy.graph().nodes_tagged(NodeTag::Parameter))
-	{
-		println!("{:>28}  {}", node.shape(), node);
-	}
-	println!("\n Parameters:");
-	for node in accuracy.graph().nodes_tagged(NodeTag::Parameter) {
-		println!("{:>28}  {}", node.shape(), node);
-	}
+	print_node_shapes(accuracy.graph());
 
 	// 3. Set up CIFAR10 training DataSet and DataStream
 	let data_set = Cifar100::training("D:/ML/CIFAR100").reorder_components(&[0, 2]);
@@ -87,7 +75,7 @@ fn main() -> Result<(), Error> {
 
 	opt.callback(max_steps(25 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
-	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
+	opt.callback(every_n_steps(250, move |_s: &mut Adam, _data| {
 		val(&mut empty());
 	}));
 	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data| {
@@ -126,7 +114,7 @@ fn validation<'a>(
 				values
 					.clone()
 					.into_iter()
-					.chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
+					.chain(<dyn DataStream>::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
 				&mut ExecConfig::default(),
 			)
@@ -136,5 +124,16 @@ fn validation<'a>(
 		let avg_accuracy = acc_sum / val_epoch as f32;
 		let avg_loss = loss_sum / val_epoch as f32;
 		println!("validation accuracy: {} loss: {}", avg_accuracy, avg_loss);
+	}
+}
+
+fn print_node_shapes(graph: &Graph) {
+	println!("\n Values:");
+	for node in graph.nodes().difference(&graph.nodes_tagged(NodeTag::Parameter)) {
+		println!("{:>28}  {}", node.shape(), node);
+	}
+	println!("\n Parameters:");
+	for node in graph.nodes_tagged(NodeTag::Parameter) {
+		println!("{:>28}  {}", node.shape(), node);
 	}
 }

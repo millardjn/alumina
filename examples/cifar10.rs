@@ -6,14 +6,13 @@ use alumina::{
 	ops::{
 		nn::conv::Padding,
 		panicking::{
-			add, add_n, affine, argmax, avg_pool, conv, elu, equal, hoyer_squared, ibias, l2, leaky_relu, linear,
-			reduce_mean, reduce_sum, scale, softmax_cross_entropy, spline,
+			add_n, argmax, avg_pool, conv, equal, ibias, l2, leaky_relu, linear, reduce_mean, reduce_sum, scale,
+			softmax_cross_entropy,
 		},
 	},
-	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser, GradientStepper,
-	},
+	opt::{adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser},
 };
+use alumina_core::graph::Graph;
 use failure::Error;
 use indexmap::IndexMap;
 use ndarray::{ArcArray, IxDyn};
@@ -24,19 +23,6 @@ fn main() -> Result<(), Error> {
 	// 1. Build a neural net graph - 82 @ 10 epochs
 	let input = Node::new(&[-1, 32, 32, 3]).set_name("input");
 	let labels = Node::new(&[-1, 10]).set_name("labels");
-
-	// let layer1 = elu(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[-1])).set_name("layer1");
-	// let layer2 = elu(ibias(conv(layer1, 32, &[3, 3], Padding::Valid), &[-1])).set_name("layer2");
-	// let layer3 = elu(ibias(conv(layer2, 32, &[3, 3], Padding::Valid), &[-1])).set_name("layer3");
-	// let layer4 = elu(ibias(conv(layer3, 32, &[3, 3], Padding::Valid), &[-1])).set_name("layer4");
-	// let pool1 = avg_pool(&layer4, &[1, 2, 2, 1]).set_name("pool1");
-	// let layer5 = elu(ibias(conv(pool1, 64, &[3, 3], Padding::Same), &[-1])).set_name("layer5");
-	// let layer6 = elu(ibias(conv(layer5, 64, &[3, 3], Padding::Same), &[-1])).set_name("layer6");
-	// let layer7 = elu(ibias(conv(layer6, 128, &[3, 3], Padding::Same), &[-1])).set_name("layer7");
-	// let pool2 = avg_pool(&layer7, &[1, 2, 2, 1]).set_name("pool2");
-	// let layer8 = elu(ibias(conv(pool2, 128, &[3, 3], Padding::Same), &[-1])).set_name("layer8");
-	// let layer9 = elu(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1])).set_name("layer9");
-	// let layer10 = elu(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1])).set_name("layer10");
 
 	let layer1 = leaky_relu(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer1");
 	let layer2 = leaky_relu(ibias(conv(layer1, 32, &[3, 3], Padding::Valid), &[-1]), 0.1).set_name("layer2");
@@ -50,21 +36,6 @@ fn main() -> Result<(), Error> {
 	let layer8 = leaky_relu(ibias(conv(pool2, 128, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer8");
 	let layer9 = leaky_relu(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer9");
 	let layer10 = leaky_relu(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1]), 0.1).set_name("layer10");
-
-	// let init = alumina::ops::nn::spline::custom(0.01, 1.0, 1.0);
-
-	// let layer1 = spline(ibias(conv(&input, 32, &[3, 3], Padding::Valid), &[-1]), &[1, 2], init.clone()).set_name("layer1");
-	// let layer2 = spline(ibias(conv(layer1, 32, &[3, 3], Padding::Valid), &[-1]), &[1, 2], init.clone()).set_name("layer2");
-	// let layer3 = spline(ibias(conv(layer2, 32, &[3, 3], Padding::Valid), &[-1]), &[1, 2], init.clone()).set_name("layer3");
-	// let layer4 = spline(ibias(conv(layer3, 64, &[3, 3], Padding::Valid), &[-1]), &[1, 2], init.clone()).set_name("layer4");
-	// let pool1 = avg_pool(&layer4, &[1, 2, 2, 1]).set_name("pool1");
-	// let layer5 = spline(ibias(conv(pool1, 64, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer5");
-	// let layer6 = spline(ibias(conv(layer5, 64, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer6");
-	// let layer7 = spline(ibias(conv(layer6, 128, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer7");
-	// let pool2 = avg_pool(&layer7, &[1, 2, 2, 1]).set_name("pool2");
-	// let layer8 = spline(ibias(conv(pool2, 128, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer8");
-	// let layer9 = spline(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer9");
-	// let layer10 = spline(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer10");
 
 	let logits = add_n(&[
 		linear(reduce_mean(layer4, &[1, 2], false), 10, msra(1.0)),
@@ -82,18 +53,7 @@ fn main() -> Result<(), Error> {
 	let accuracy = equal(argmax(&logits, -1), argmax(&labels, -1)).set_name("accuracy");
 
 	// 2. Print shapes
-	println!("\n Values:");
-	for node in accuracy
-		.graph()
-		.nodes()
-		.difference(&accuracy.graph().nodes_tagged(NodeTag::Parameter))
-	{
-		println!("{:>28}  {}", node.shape(), node);
-	}
-	println!("\n Parameters:");
-	for node in accuracy.graph().nodes_tagged(NodeTag::Parameter) {
-		println!("{:>28}  {}", node.shape(), node);
-	}
+	print_node_shapes(accuracy.graph());
 
 	// 3. Set up CIFAR10 training DataSet and DataStream
 	let data_set = Cifar10::training("D:/ML/CIFAR10");
@@ -180,5 +140,16 @@ fn validation<'a>(
 		let avg_accuracy = acc_sum / val_epoch as f32;
 		let avg_loss = loss_sum / val_epoch as f32;
 		println!("validation accuracy: {} loss: {}", avg_accuracy, avg_loss);
+	}
+}
+
+fn print_node_shapes(graph: &Graph) {
+	println!("\n Values:");
+	for node in graph.nodes().difference(&graph.nodes_tagged(NodeTag::Parameter)) {
+		println!("{:>28}  {}", node.shape(), node);
+	}
+	println!("\n Parameters:");
+	for node in graph.nodes_tagged(NodeTag::Parameter) {
+		println!("{:>28}  {}", node.shape(), node);
 	}
 }

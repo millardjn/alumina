@@ -4,7 +4,7 @@ use alumina::{
 	core::init::msra,
 	data::{mnist::Mnist, DataSet, DataStream},
 	ops::panicking::{add, affine, argmax, elu, equal, l2, linear, reduce_sum, scale, softmax_cross_entropy},
-	opt::{adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser, GradientStepper},
+	opt::{adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser},
 };
 use failure::Error;
 use indexmap::IndexMap;
@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
 	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data| {
 		s.rate(3.3e-4);
 	}));
-	opt.callback(every_n_steps(300, move |s: &mut Adam, _data| {
+	opt.callback(every_n_steps(300, move |_s: &mut Adam, _data| {
 		val(&mut empty());
 	}));
 

@@ -37,12 +37,12 @@ fn standard_op_name_inner(
 ) -> String {
 	new_name.push('(');
 
-	let input_names = inputs.iter().map(|node| node.name()).intersperse(",".to_string());
+	let input_names = Itertools::intersperse(inputs.iter().map(|node| node.name()), ",".to_string());
 	new_name.extend(input_names);
 
 	new_name.push_str("=>");
 
-	let output_names = outputs.iter().map(|node| node.name()).intersperse(",".to_string());
+	let output_names = Itertools::intersperse(outputs.iter().map(|node| node.name()), ",".to_string());
 	new_name.extend(output_names);
 
 	new_name.push(')');
