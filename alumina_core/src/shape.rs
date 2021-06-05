@@ -3,7 +3,7 @@ use crate::errors::{DimError, ShapeError};
 use ndarray::IxDyn;
 use smallvec::SmallVec;
 use std::{
-	cmp,
+	cmp::{self, Ordering},
 	fmt::{self, Debug, Display, Write},
 };
 
@@ -45,15 +45,13 @@ impl NodeAxis {
 	/// # Panics
 	/// Panics if lower > upper.
 	pub fn interval(lower: usize, upper: usize) -> NodeAxis {
-		if lower > upper {
-			panic!(
+		match lower.cmp(&upper) {
+			Ordering::Less => NodeAxis::Interval { lower, upper },
+			Ordering::Equal => NodeAxis::Known { val: lower },
+			Ordering::Greater => panic!(
 				"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
 				lower, upper
-			);
-		} else if upper == lower {
-			NodeAxis::Known { val: lower }
-		} else {
-			NodeAxis::Interval { lower, upper }
+			),
 		}
 	}
 
@@ -212,15 +210,15 @@ impl<'a> From<(&'a usize, &'a usize)> for NodeAxis {
 
 impl NodeAxis {
 	pub fn add(&self, other: &NodeAxis) -> NodeAxis {
-		let temp = match (self, other) {
+		match (self, other) {
 			(NodeAxis::Known { val: x }, NodeAxis::Known { val: y }) => NodeAxis::Known {
 				val: y.checked_add(*x).expect("NodeAxis add overflowed"),
 			},
 			(NodeAxis::Known { val: x }, NodeAxis::Interval { upper, lower })
-			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val: x }) => NodeAxis::Interval {
-				upper: upper.saturating_add(*x),
-				lower: lower.checked_add(*x).expect("NodeAxis add overflowed"),
-			},
+			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val: x }) => NodeAxis::interval(
+				lower.checked_add(*x).expect("NodeAxis add overflowed"),
+				upper.saturating_add(*x),
+			),
 			(
 				NodeAxis::Interval {
 					upper: upper1,
@@ -230,39 +228,23 @@ impl NodeAxis {
 					upper: upper2,
 					lower: lower2,
 				},
-			) => NodeAxis::Interval {
-				upper: upper1.saturating_add(*upper2),
-				lower: lower1.checked_add(*lower2).expect("NodeAxis add overflowed"),
-			},
-		};
-
-		match temp {
-			NodeAxis::Interval { upper, lower } => {
-				if lower == upper {
-					NodeAxis::known(lower)
-				} else if lower < upper {
-					NodeAxis::Interval { upper, lower }
-				} else {
-					panic!(
-						"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
-						lower, upper
-					);
-				}
-			}
-			temp => temp,
+			) => NodeAxis::interval(
+				lower1.checked_add(*lower2).expect("NodeAxis add overflowed"),
+				upper1.saturating_add(*upper2),
+			),
 		}
 	}
 
 	pub fn multiply(&self, other: &NodeAxis) -> NodeAxis {
-		let temp = match (self, other) {
+		match (self, other) {
 			(NodeAxis::Known { val: x }, NodeAxis::Known { val: y }) => NodeAxis::Known {
 				val: y.checked_mul(*x).expect("NodeAxis multiply overflowed"),
 			},
 			(NodeAxis::Known { val: x }, NodeAxis::Interval { upper, lower })
-			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val: x }) => NodeAxis::Interval {
-				upper: upper.saturating_mul(*x),
-				lower: lower.checked_mul(*x).expect("NodeAxis multiply overflowed"),
-			},
+			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val: x }) => NodeAxis::interval(
+				lower.checked_mul(*x).expect("NodeAxis multiply overflowed"),
+				upper.saturating_mul(*x),
+			),
 			(
 				NodeAxis::Interval {
 					upper: upper1,
@@ -272,26 +254,10 @@ impl NodeAxis {
 					upper: upper2,
 					lower: lower2,
 				},
-			) => NodeAxis::Interval {
-				upper: upper1.saturating_mul(*upper2),
-				lower: lower1.checked_mul(*lower2).expect("NodeAxis multiply overflowed"),
-			},
-		};
-
-		match temp {
-			NodeAxis::Interval { upper, lower } => {
-				if lower == upper {
-					NodeAxis::known(lower)
-				} else if lower < upper {
-					NodeAxis::Interval { upper, lower }
-				} else {
-					panic!(
-						"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
-						lower, upper
-					);
-				}
-			}
-			temp => temp,
+			) => NodeAxis::interval(
+				lower1.checked_mul(*lower2).expect("NodeAxis multiply overflowed"),
+				upper1.saturating_mul(*upper2),
+			),
 		}
 	}
 
@@ -337,21 +303,9 @@ impl NodeAxis {
 					lower: lower2,
 				},
 			) => {
-				let upper = cmp::min(upper1, upper2);
-				let lower = cmp::max(lower1, lower2);
-				if lower == upper {
-					Ok(NodeAxis::known(*lower))
-				} else if lower < upper {
-					Ok(NodeAxis::Interval {
-						upper: *upper,
-						lower: *lower,
-					})
-				} else {
-					panic!(
-						"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
-						lower, upper
-					);
-				}
+				let upper = *cmp::min(upper1, upper2);
+				let lower = *cmp::max(lower1, lower2);
+				Ok(NodeAxis::interval(lower, upper))
 			}
 		}
 	}
@@ -520,10 +474,7 @@ impl NodeShape {
 
 	/// Returns true if all NodeAxes have a Known size.
 	pub fn is_known(&self) -> bool {
-		self.dimensions.iter().all(|x| match x {
-			NodeAxis::Known { .. } => true,
-			_ => false,
-		})
+		self.dimensions.iter().all(|x| matches!(x, NodeAxis::Known { .. }))
 	}
 
 	pub fn ndim(&self) -> usize {

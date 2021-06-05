@@ -19,7 +19,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("offset({})", input));
 	let _op = Offset::new(input, output.clone(), OffsetFunc { offset }).build()?;
 	Ok(output)

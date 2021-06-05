@@ -19,7 +19,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("sqr({})", input));
 	let _op = Sqr::new_default(input, output.clone()).build()?;
 	Ok(output)

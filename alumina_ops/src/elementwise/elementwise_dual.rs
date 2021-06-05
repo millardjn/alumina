@@ -88,8 +88,8 @@ impl<F: NullaryDualFunc> OpSpecification for NullaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseDualInstance {
-			output1: self.output1.id().clone(),
-			output2: self.output2.id().clone(),
+			output1: self.output1.id(),
+			output2: self.output2.id(),
 			f: self.f,
 		})
 	}
@@ -121,7 +121,7 @@ impl<F: NullaryDualFunc> OpInstance for NullaryElementwiseDualInstance<F> {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output1.clone(), self.output2.clone()]
+		indexset![self.output1, self.output2]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -186,9 +186,9 @@ impl<F: UnaryDualFunc> UnaryElementwiseDual<F> {
 		let output1 = output1.into();
 		let output2 = output2.into();
 		UnaryElementwiseDual {
-			input,
 			output1,
 			output2,
+			input,
 			f,
 		}
 	}
@@ -231,9 +231,9 @@ impl<F: UnaryDualFunc> OpSpecification for UnaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseDualInstance {
-			input: self.input.id().clone(),
-			output1: self.output1.id().clone(),
-			output2: self.output2.id().clone(),
+			input: self.input.id(),
+			output1: self.output1.id(),
+			output2: self.output2.id(),
 			f: self.f,
 		})
 	}
@@ -263,11 +263,11 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output1.clone(), self.output2.clone()]
+		indexset![self.output1, self.output2]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -392,10 +392,10 @@ impl<F: BinaryDualFunc> BinaryElementwiseDual<F> {
 		let output1 = output1.into();
 		let output2 = output2.into();
 		BinaryElementwiseDual {
-			input1,
-			input2,
 			output1,
 			output2,
+			input1,
+			input2,
 			f,
 		}
 	}
@@ -441,10 +441,10 @@ impl<F: BinaryDualFunc> OpSpecification for BinaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseDualInstance {
-			input1: self.input1.id().clone(),
-			input2: self.input2.id().clone(),
-			output1: self.output1.id().clone(),
-			output2: self.output2.id().clone(),
+			input1: self.input1.id(),
+			input2: self.input2.id(),
+			output1: self.output1.id(),
+			output2: self.output2.id(),
 			f: self.f,
 		})
 	}
@@ -476,11 +476,11 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input1.clone(), self.input2.clone()]
+		indexset![self.input1, self.input2]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output1.clone(), self.output2.clone()]
+		indexset![self.output1, self.output2]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -724,9 +724,9 @@ impl<F: NaryDualFunc> NaryElementwiseDual<F> {
 			"Nary Ops can only be constructed with up to 64 inputs"
 		);
 		NaryElementwiseDual {
-			inputs,
 			output1,
 			output2,
+			inputs,
 			f,
 		}
 	}
@@ -775,9 +775,9 @@ impl<F: NaryDualFunc> OpSpecification for NaryElementwiseDual<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseDualInstance {
-			inputs: self.inputs.iter().map(|n| n.id().clone()).collect(),
-			output1: self.output1.id().clone(),
-			output2: self.output2.id().clone(),
+			inputs: self.inputs.iter().map(|n| n.id()).collect(),
+			output1: self.output1.id(),
+			output2: self.output2.id(),
 			f: self.f,
 		})
 	}
@@ -811,7 +811,7 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output1.clone(), self.output2.clone()]
+		indexset![self.output1, self.output2]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

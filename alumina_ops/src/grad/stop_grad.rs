@@ -17,7 +17,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("stop_grad({})", input));
 	let _op = StopGrad::new_default(input, output.clone()).build()?;
 	Ok(output)

@@ -28,7 +28,6 @@ use alumina_core::{
 };
 use indexmap::{indexset, IndexMap, IndexSet};
 
-use matrixmultiply_mt;
 use ndarray::Dimension;
 use smallvec::SmallVec;
 use std::{
@@ -142,11 +141,7 @@ impl OpSpecification for Linterp {
 			.into());
 		}
 
-		Ok(LinterpInstance::new(
-			self.input.id().clone(),
-			self.output.id().clone(),
-			self.factors,
-		))
+		Ok(LinterpInstance::new(self.input.id(), self.output.id(), self.factors))
 	}
 }
 
@@ -237,11 +232,11 @@ impl OpInstance for LinterpInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -459,8 +454,8 @@ impl OpSpecification for LinterpBack {
 			.into());
 		}
 		Ok(LinterpBackInstance::new(
-			self.input_grad.id().clone(),
-			self.output_grad.id().clone(),
+			self.input_grad.id(),
+			self.output_grad.id(),
 			self.factors,
 		))
 	}
@@ -507,12 +502,12 @@ impl OpInstance for LinterpBackInstance {
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output_grad.clone()]
+		indexset![self.output_grad]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input_grad.clone()]
+		indexset![self.input_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

@@ -80,11 +80,11 @@ impl SubGraph {
 
 		let mut op_queue: BinaryHeap<Op> = op_remaining
 			.iter()
-			.filter_map(|(op, i)| if *i == 0 { Some((*op).clone().into()) } else { None })
+			.filter_map(|(op, i)| if *i == 0 { Some((*op).clone()) } else { None })
 			.collect();
 		let mut node_queue: BinaryHeap<Node> = node_remaining
 			.iter()
-			.filter_map(|(node, i)| if *i == 0 { Some((*node).clone().into()) } else { None })
+			.filter_map(|(node, i)| if *i == 0 { Some((*node).clone()) } else { None })
 			.collect();
 
 		let mut node_order = IndexSet::with_capacity(self.nodes.len());
@@ -104,7 +104,7 @@ impl SubGraph {
 						*count -= 1;
 
 						if *count == 0 {
-							op_queue.push(child_op.into());
+							op_queue.push(child_op);
 						}
 					}
 				}
@@ -123,7 +123,7 @@ impl SubGraph {
 						*count -= 1;
 
 						if *count == 0 {
-							node_queue.push(child_node.into());
+							node_queue.push(child_node);
 						}
 					}
 				}

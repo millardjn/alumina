@@ -35,7 +35,7 @@ fn standard_op_name_inner(
 	inputs: IndexSet<Node>,
 	outputs: IndexSet<Node>,
 ) -> String {
-	new_name.push_str("(");
+	new_name.push('(');
 
 	let input_names = inputs.iter().map(|node| node.name()).intersperse(",".to_string());
 	new_name.extend(input_names);
@@ -45,7 +45,7 @@ fn standard_op_name_inner(
 	let output_names = outputs.iter().map(|node| node.name()).intersperse(",".to_string());
 	new_name.extend(output_names);
 
-	new_name.push_str(")");
+	new_name.push(')');
 
 	if graph.ops_named(&new_name).is_empty() {
 		return new_name;

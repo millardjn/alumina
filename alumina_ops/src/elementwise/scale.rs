@@ -16,7 +16,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("scale({})", input));
 	let _op = Scale::new(input, output.clone(), ScaleFunc { scale }).build()?;
 	Ok(output)

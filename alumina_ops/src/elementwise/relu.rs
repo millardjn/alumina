@@ -16,7 +16,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("relu({})", input));
 	let _op = Relu::new_default(input, output.clone()).build()?;
 	Ok(output)

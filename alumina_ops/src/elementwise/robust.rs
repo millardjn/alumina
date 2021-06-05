@@ -37,7 +37,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("robust({})", input));
 	let _op = Robust::new(input, output.clone(), RobustFunc { scale, power }).build()?;
 	Ok(output)
@@ -116,17 +116,17 @@ impl BinaryFunc for RobustBackFunc {
 		let grad = input2;
 		#[allow(clippy::float_cmp)] // comparing to a user value not a computed value, stfu clippy
 		{
-			if a == 0.0 {
-				grad * 2.0 * x / (x * x + 2.0 * c * c)
+			grad * if a == 0.0 {
+				2.0 * x / (x * x + 2.0 * c * c)
 			} else if a == ::std::f32::NEG_INFINITY {
-				grad * x / (c * c) * (-0.5 * (x / c) * (x / c)).exp()
+				x / (c * c) * (-0.5 * (x / c) * (x / c)).exp()
 			} else if a == 1.0 {
-				grad * x / ((c * c) * ((x / c) * (x / c) + 1.0).sqrt())
+				x / ((c * c) * ((x / c) * (x / c) + 1.0).sqrt())
 			} else if a == 2.0 {
-				grad * x / (c * c)
+				x / (c * c)
 			} else {
 				let za = 1.0f32.max(2.0 - a);
-				grad * x / (c * c) * ((x / c) * (x / c) / za + 1.0).powf(0.5 * a - 1.0)
+				x / (c * c) * ((x / c) * (x / c) / za + 1.0).powf(0.5 * a - 1.0)
 			}
 		}
 	}

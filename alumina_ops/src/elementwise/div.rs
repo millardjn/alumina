@@ -23,7 +23,7 @@ where
 	merge_graphs(&[input1.graph(), input2.graph()]);
 	let output = input1
 		.graph()
-		.new_node(input1.shape().clone())
+		.new_node(input1.shape())
 		.set_name_unique(&format!("div({},{})", input1, input2));
 	let _op = Div::new_default(input1, input2, output.clone())
 		.build()

@@ -21,7 +21,7 @@ where
 	let logits = logits.into();
 	let axis = wrap_dim(axis, logits.shape().len());
 
-	let output = logits.graph().new_node(logits.shape().clone());
+	let output = logits.graph().new_node(logits.shape());
 
 	Softmax::new(logits, output.clone(), axis).build()?;
 
@@ -54,11 +54,7 @@ impl Softmax {
 			axis,
 			logits.shape().len()
 		);
-		Softmax {
-			logits: logits.clone(),
-			output: output.clone(),
-			axis,
-		}
+		Softmax { logits, output, axis }
 	}
 }
 
@@ -87,8 +83,8 @@ impl OpSpecification for Softmax {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxInstance {
-			logits: self.logits.id().clone(),
-			output: self.output.id().clone(),
+			logits: self.logits.id(),
+			output: self.output.id(),
 			axis: self.axis,
 		})
 	}
@@ -116,11 +112,11 @@ impl OpInstance for SoftmaxInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits.clone()]
+		indexset![self.logits]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -221,9 +217,9 @@ impl OpSpecification for SoftmaxBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxBackInstance {
-			logits: self.logits.id().clone(),
-			logits_grad: self.logits_grad.id().clone(),
-			output_grad: self.output_grad.id().clone(),
+			logits: self.logits.id(),
+			logits_grad: self.logits_grad.id(),
+			output_grad: self.output_grad.id(),
 			axis: self.axis,
 		})
 	}
@@ -253,11 +249,11 @@ impl OpInstance for SoftmaxBackInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits.clone(), self.output_grad.clone()]
+		indexset![self.logits, self.output_grad]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits_grad.clone()]
+		indexset![self.logits_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

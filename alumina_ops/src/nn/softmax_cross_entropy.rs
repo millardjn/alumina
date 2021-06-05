@@ -75,9 +75,9 @@ impl SoftmaxCrossEntropy {
 			logits.shape().len()
 		);
 		SoftmaxCrossEntropy {
-			logits: logits.clone(),
-			labels: labels.clone(),
-			output: output.clone(),
+			logits,
+			labels,
+			output,
 			axis,
 		}
 	}
@@ -109,9 +109,9 @@ impl OpSpecification for SoftmaxCrossEntropy {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyInstance {
-			logits: self.logits.id().clone(),
-			labels: self.labels.id().clone(),
-			output: self.output.id().clone(),
+			logits: self.logits.id(),
+			labels: self.labels.id(),
+			output: self.output.id(),
 			axis: self.axis,
 		})
 	}
@@ -141,11 +141,11 @@ impl OpInstance for SoftmaxCrossEntropyInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits.clone(), self.labels.clone()]
+		indexset![self.logits, self.labels]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -259,10 +259,10 @@ impl SoftmaxCrossEntropyBack {
 		);
 		SoftmaxCrossEntropyBack {
 			logits,
-			logits_grad,
 			labels,
-			labels_grad,
 			output_grad,
+			logits_grad,
+			labels_grad,
 			axis,
 		}
 	}
@@ -296,11 +296,11 @@ impl OpSpecification for SoftmaxCrossEntropyBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(SoftmaxCrossEntropyBackInstance {
-			logits: self.logits.id().clone(),
-			logits_grad: self.logits_grad.id().clone(),
-			labels: self.labels.id().clone(),
-			labels_grad: self.labels_grad.id().clone(),
-			output_grad: self.output_grad.id().clone(),
+			logits: self.logits.id(),
+			logits_grad: self.logits_grad.id(),
+			labels: self.labels.id(),
+			labels_grad: self.labels_grad.id(),
+			output_grad: self.output_grad.id(),
 			axis: self.axis,
 		})
 	}
@@ -334,11 +334,11 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits.clone(), self.labels.clone(), self.output_grad.clone()]
+		indexset![self.logits, self.labels, self.output_grad]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.logits_grad.clone(), self.labels_grad.clone()]
+		indexset![self.logits_grad, self.labels_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

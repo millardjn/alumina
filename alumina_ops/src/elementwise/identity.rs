@@ -21,7 +21,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("identity({})", input));
 	let _op = Identity::new_default(input, output.clone()).build()?;
 	Ok(output)
@@ -38,7 +38,7 @@ where
 	let graph = merge_graphs(&[input1.graph(), input2.graph()]);
 
 	let output = graph
-		.new_node(input1.shape().clone())
+		.new_node(input1.shape())
 		.set_name_unique(&format!("add({},{})", input1, input2));
 	let _op = Identity::new_default(input1, output.clone()).build()?;
 	let _op = Identity::new_default(input2, output.clone()).build()?;
@@ -63,13 +63,13 @@ where
 		let mut output_name = "add_n(".to_string();
 		for (i, input) in inputs.iter().enumerate() {
 			if i > 0 {
-				output_name.push_str(",");
+				output_name.push(',');
 			}
 			output_name.push_str(&input.name());
 		}
-		output_name.push_str(")");
+		output_name.push(')');
 
-		let output = graph.new_node(inputs[0].shape().clone()).set_name_unique(&output_name);
+		let output = graph.new_node(inputs[0].shape()).set_name_unique(&output_name);
 
 		for input in inputs {
 			let _op = Identity::new_default(input, output.clone()).build()?;

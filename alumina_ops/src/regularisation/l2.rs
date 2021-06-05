@@ -95,7 +95,7 @@ impl OpSpecification for L2 {
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(L2Instance {
 			inputs: self.inputs.iter().map(Node::id).collect(),
-			output: self.output.id().clone(),
+			output: self.output.id(),
 		})
 	}
 }
@@ -124,7 +124,7 @@ impl OpInstance for L2Instance {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -220,10 +220,7 @@ impl OpSpecification for L2Back {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			output_grad: mapping
-				.get(&self.output_grad)
-				.unwrap_or_else(|| &self.output_grad)
-				.clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
 			input_and_grads: self
 				.input_and_grads
 				.iter()
@@ -234,12 +231,8 @@ impl OpSpecification for L2Back {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(L2BackInstance {
-			input_and_grads: self
-				.input_and_grads
-				.iter()
-				.map(|(n1, n2)| (n1.id().clone(), n2.id().clone()))
-				.collect(),
-			output_grad: self.output_grad.id().clone(),
+			input_and_grads: self.input_and_grads.iter().map(|(n1, n2)| (n1.id(), n2.id())).collect(),
+			output_grad: self.output_grad.id(),
 		})
 	}
 }
@@ -269,7 +262,7 @@ impl OpInstance for L2BackInstance {
 
 	fn inputs(&self) -> IndexSet<NodeID> {
 		let mut inputs: IndexSet<NodeID> = self.input_and_grads.keys().cloned().collect();
-		inputs.insert(self.output_grad.clone());
+		inputs.insert(self.output_grad);
 		inputs
 	}
 

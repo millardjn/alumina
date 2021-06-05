@@ -139,8 +139,8 @@ impl OpSpecification for ReduceSum {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ReduceSumInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			axes: self.axes.clone(),
 			keep_dims: self.keep_dims,
 		})
@@ -171,11 +171,11 @@ impl OpInstance for ReduceSumInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

@@ -1,6 +1,6 @@
 use alumina::{
 	core::exec::{exec, ExecConfig},
-	core::graph::{Node, NodeTag},
+	core::graph::{Graph, Node, NodeTag},
 	core::init::msra,
 	data::{mnist::Mnist, DataSet, DataStream},
 	ops::panicking::{add, affine, argmax, elu, equal, l2, linear, reduce_sum, scale, softmax_cross_entropy},
@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
 	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data| {
 		s.rate(3.3e-4);
 	}));
-	opt.callback(every_n_steps(300, move |s: &mut Adam, data| {
+	opt.callback(every_n_steps(300, move |s: &mut Adam, _data| {
 		val(&mut empty());
 	}));
 
@@ -83,7 +83,7 @@ fn validation<'a>(
 				values
 					.clone()
 					.into_iter()
-					.chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
+					.chain(<dyn DataStream>::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
 				&mut ExecConfig::default(),
 			)
@@ -96,13 +96,9 @@ fn validation<'a>(
 	}
 }
 
-
-fn print_node_shapes(graph: &Graph){
+fn print_node_shapes(graph: &Graph) {
 	println!("\n Values:");
-	for node in graph
-		.nodes()
-		.difference(&graph.nodes_tagged(NodeTag::Parameter))
-	{
+	for node in graph.nodes().difference(&graph.nodes_tagged(NodeTag::Parameter)) {
 		println!("{:>28}  {}", node.shape(), node);
 	}
 	println!("\n Parameters:");

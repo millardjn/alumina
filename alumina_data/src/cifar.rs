@@ -20,7 +20,7 @@ impl Cifar10 {
 			labels.append(&mut next_labels);
 			images.append(&mut next_images);
 		}
-		Cifar10 { labels, images }
+		Cifar10 { images, labels }
 	}
 
 	pub fn training<P: AsRef<Path>>(folder_path: P) -> Self {
@@ -120,9 +120,9 @@ impl Cifar100 {
 	pub fn new(file: File) -> Self {
 		let (coarse_labels, fine_labels, images) = read_cifar100_file(file);
 		Cifar100 {
+			images,
 			coarse_labels,
 			fine_labels,
-			images,
 		}
 	}
 

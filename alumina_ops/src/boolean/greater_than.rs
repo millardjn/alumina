@@ -22,7 +22,7 @@ where
 
 	let output = input1
 		.graph()
-		.new_node(input1.shape().clone())
+		.new_node(input1.shape())
 		.set_name_unique(&format!("greater_than({},{})", input1, input2));
 	let _op = GreaterThan::new_default(input1, input2, output.clone())
 		.build()

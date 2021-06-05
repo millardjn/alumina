@@ -76,8 +76,8 @@ impl OpSpecification for DummyOp {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(DummyOpInstance {
-			inputs: self.inputs.iter().map(|node| node.id().clone()).collect(),
-			outputs: self.outputs.iter().map(|node| node.id().clone()).collect(),
+			inputs: self.inputs.iter().map(|node| node.id()).collect(),
+			outputs: self.outputs.iter().map(|node| node.id()).collect(),
 		})
 	}
 }

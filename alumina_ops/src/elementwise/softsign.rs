@@ -22,7 +22,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("softsign({})", input));
 	let _op = Softsign::new_default(input, output.clone()).build()?;
 	Ok(output)
@@ -45,7 +45,7 @@ impl UnaryFunc for SoftsignFunc {
 
 	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
 		let abs = abs(ctx.node(input))?;
-		let abs_p1 = offset(abs.clone(), 1.0)?;
+		let abs_p1 = offset(abs, 1.0)?;
 		let sqr_abs_p1 = sqr(abs_p1)?;
 
 		let _op = Div::new_default(ctx.grad_of(output), sqr_abs_p1, ctx.grad_of(input)).build()?;

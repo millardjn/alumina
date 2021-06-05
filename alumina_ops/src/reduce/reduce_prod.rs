@@ -116,8 +116,8 @@ impl OpSpecification for ReduceProd {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ReduceProdInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			axes: self.axes.clone(),
 			keep_dims: self.keep_dims,
 		})
@@ -148,11 +148,11 @@ impl OpInstance for ReduceProdInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

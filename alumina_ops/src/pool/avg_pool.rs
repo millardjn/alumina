@@ -118,9 +118,9 @@ impl OpSpecification for AvgPool {
 
 		// TODO check for shape problems early
 		Ok(AvgPoolInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
-			factors: self.factors.clone(),
+			input: self.input.id(),
+			output: self.output.id(),
+			factors: self.factors,
 		})
 	}
 }
@@ -146,11 +146,11 @@ impl OpInstance for AvgPoolInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -206,7 +206,6 @@ impl OpInstance for AvgPoolInstance {
 			.zip(&output_shape)
 			.rev()
 			.skip_while(|&(i, o)| i == o)
-			.map(|(_i, o)| o)
 			.count();
 		let n = output_shape[..outer_dims].iter().product();
 		let ind_stride = output.len() / n;
@@ -304,9 +303,9 @@ impl OpSpecification for AvgPoolBack {
 
 		// TODO check for shape problems early
 		Ok(AvgPoolBackInstance {
-			output_grad: self.output_grad.id().clone(),
-			input_grad: self.input_grad.id().clone(),
-			factors: self.factors.clone(),
+			output_grad: self.output_grad.id(),
+			input_grad: self.input_grad.id(),
+			factors: self.factors,
 		})
 	}
 }
@@ -332,11 +331,11 @@ impl OpInstance for AvgPoolBackInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output_grad.clone()]
+		indexset![self.output_grad]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input_grad.clone()]
+		indexset![self.input_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -394,7 +393,6 @@ impl OpInstance for AvgPoolBackInstance {
 			.zip(output_shape)
 			.rev()
 			.skip_while(|&(i, o)| i == o)
-			.map(|(_i, o)| o)
 			.count();
 		let n = output_shape[..outer_dims].iter().product();
 		let ind_stride = output_grad.len() / n;

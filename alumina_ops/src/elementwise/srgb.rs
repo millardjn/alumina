@@ -16,7 +16,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("srgb_to_linear({})", input));
 	let _op = SrgbToLinear::new_default(input, output.clone()).build()?;
 	Ok(output)
@@ -32,7 +32,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("linear_to_srgb({})", input));
 	let _op = SrgbToLinear::new_default(input, output.clone()).build()?;
 	Ok(output)
@@ -48,7 +48,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("srgb_to_linear({})", input));
 	let _op = SrgbToLinearSlow::new_default(input, output.clone()).build()?;
 	Ok(output)
@@ -64,7 +64,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("linear_to_srgb({})", input));
 	let _op = SrgbToLinearSlow::new_default(input, output.clone()).build()?;
 	Ok(output)

@@ -84,7 +84,7 @@ impl<F: NullaryFunc> OpSpecification for NullaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NullaryElementwiseInstance {
-			output: self.output.id().clone(),
+			output: self.output.id(),
 			f: self.f,
 		})
 	}
@@ -114,7 +114,7 @@ impl<F: NullaryFunc> OpInstance for NullaryElementwiseInstance<F> {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -157,7 +157,7 @@ impl<F: UnaryFunc> UnaryElementwise<F> {
 	{
 		let input = input.into();
 		let output = output.into();
-		UnaryElementwise { input, output, f }
+		UnaryElementwise { output, input, f }
 	}
 
 	pub fn new_default<I, O>(input: I, output: O) -> Self
@@ -197,8 +197,8 @@ impl<F: UnaryFunc> OpSpecification for UnaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(UnaryElementwiseInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			f: self.f,
 		})
 	}
@@ -226,11 +226,11 @@ impl<F: UnaryFunc> OpInstance for UnaryElementwiseInstance<F> {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -306,9 +306,9 @@ impl<F: BinaryFunc> BinaryElementwise<F> {
 		let input2 = input2.into();
 		let output = output.into();
 		BinaryElementwise {
+			output,
 			input1,
 			input2,
-			output,
 			f,
 		}
 	}
@@ -352,9 +352,9 @@ impl<F: BinaryFunc> OpSpecification for BinaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BinaryElementwiseInstance {
-			input1: self.input1.id().clone(),
-			input2: self.input2.id().clone(),
-			output: self.output.id().clone(),
+			input1: self.input1.id(),
+			input2: self.input2.id(),
+			output: self.output.id(),
 			f: self.f,
 		})
 	}
@@ -384,11 +384,11 @@ impl<F: BinaryFunc> OpInstance for BinaryElementwiseInstance<F> {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input1.clone(), self.input2.clone()]
+		indexset![self.input1, self.input2]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -499,10 +499,10 @@ impl<F: TernaryFunc> TernaryElementwise<F> {
 		let output = output.into();
 
 		TernaryElementwise {
+			output,
 			input1,
 			input2,
 			input3,
-			output,
 			f,
 		}
 	}
@@ -548,10 +548,10 @@ impl<F: TernaryFunc> OpSpecification for TernaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(TernaryElementwiseInstance {
-			input1: self.input1.id().clone(),
-			input2: self.input2.id().clone(),
-			input3: self.input3.id().clone(),
-			output: self.output.id().clone(),
+			input1: self.input1.id(),
+			input2: self.input2.id(),
+			input3: self.input3.id(),
+			output: self.output.id(),
 			f: self.f,
 		})
 	}
@@ -583,11 +583,11 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input1.clone(), self.input2.clone(), self.input3.clone()]
+		indexset![self.input1, self.input2, self.input3]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -749,7 +749,7 @@ impl<F: NaryFunc> NaryElementwise<F> {
 			inputs.len() <= 64,
 			"Nary Ops can only be constructed with up to 64 inputs"
 		);
-		NaryElementwise { inputs, output, f }
+		NaryElementwise { output, inputs, f }
 	}
 
 	pub fn new_default<I, T: IntoIterator<Item = I>, O>(inputs: T, output: O) -> Self
@@ -794,8 +794,8 @@ impl<F: NaryFunc> OpSpecification for NaryElementwise<F> {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(NaryElementwiseInstance {
-			inputs: self.inputs.iter().map(|n| n.id().clone()).collect(),
-			output: self.output.id().clone(),
+			inputs: self.inputs.iter().map(|n| n.id()).collect(),
+			output: self.output.id(),
 			f: self.f,
 		})
 	}
@@ -827,7 +827,7 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

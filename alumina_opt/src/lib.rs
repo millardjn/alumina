@@ -101,7 +101,7 @@ pub trait GradientStepper {
 				(
 					n.borrow().clone(),
 					n.borrow().value().unwrap_or_else(|| {
-						let mut shape = n.borrow().shape().clone();
+						let mut shape = n.borrow().shape();
 						shape.collapse_dimensions_to_minimum();
 						ArcArray::zeros(shape.to_data_shape().unwrap())
 					}),
@@ -483,7 +483,7 @@ where
 				&self.inner,
 				&mut self.grad_step,
 				&mut self.callbacks,
-				perf_records.as_mut().map(|x| &mut **x),
+				perf_records.as_deref_mut(),
 				//self.perf_records.as_mut().map(|i| *i).unwrap_or(&mut x),
 				self.inner.inputs.iter().zip(data_stream.next()).collect(),
 				self.calc_loss,

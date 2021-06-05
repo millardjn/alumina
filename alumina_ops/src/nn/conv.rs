@@ -10,9 +10,9 @@ use alumina_core::{
 };
 use indexmap::{indexset, IndexMap, IndexSet};
 use lazy_static::lazy_static;
-use matrixmultiply_mt;
+
 use ndarray::{ArrayD, Dimension, IxDyn};
-use num_cpus;
+
 use smallvec::SmallVec;
 use threadpool::ThreadPool;
 use threadpool_scope::scope_with;
@@ -235,9 +235,7 @@ where
 		.add_tag(NodeTag::Parameter)
 		.set_name_unique(&format!("conv({})_weights", input));
 
-	let op = Conv::new(input, filter.clone(), output.clone())
-		.padding(padding)
-		.build()?;
+	let op = Conv::new(input, filter.clone(), output).padding(padding).build()?;
 
 	Ok(ConvData { conv: op, filter })
 }
@@ -369,9 +367,9 @@ impl OpSpecification for Conv {
 		Ok(ConvInstance {
 			padding: self.padding,
 
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
-			filter: self.filter.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
+			filter: self.filter.id(),
 
 			lowering_memory: self.lowering_memory,
 		})
@@ -403,11 +401,11 @@ impl OpInstance for ConvInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone(), self.filter.clone()]
+		indexset![self.input, self.filter]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -765,12 +763,12 @@ impl OpSpecification for ConvBack {
 		Ok(ConvBackInstance {
 			padding: self.padding,
 
-			input: self.input.id().clone(),
-			filter: self.filter.id().clone(),
-			output_grad: self.output_grad.id().clone(),
+			input: self.input.id(),
+			filter: self.filter.id(),
+			output_grad: self.output_grad.id(),
 
-			input_grad: self.input_grad.id().clone(),
-			filter_grad: self.filter_grad.id().clone(),
+			input_grad: self.input_grad.id(),
+			filter_grad: self.filter_grad.id(),
 
 			lowering_memory: self.lowering_memory,
 		})
@@ -808,11 +806,11 @@ impl OpInstance for ConvBackInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone(), self.filter.clone(), self.output_grad.clone()]
+		indexset![self.input, self.filter, self.output_grad]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input_grad.clone(), self.filter_grad.clone()]
+		indexset![self.input_grad, self.filter_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -1117,32 +1115,25 @@ impl OpInstance for ConvBackInstance {
 							let output_offset = block_num * block_size;
 
 							unsafe {
-								let output = output.p.offset(output_offset as isize);
+								let output = output.p.add(output_offset);
 
 								// add all blocks into first
 								debug_assert!((&*ifg_ptr).as_ref().unwrap().is_standard_layout());
 								debug_assert!((&*ifg_ptr).as_ref().unwrap().len() % (block_size) == 0);
-								let inverted_grad_sum = (&mut *ifg_ptr)
-									.as_mut()
-									.unwrap()
-									.as_mut_ptr()
-									.offset(input_offset as isize);
+								let inverted_grad_sum =
+									(&mut *ifg_ptr).as_mut().unwrap().as_mut_ptr().add(input_offset);
 								for i in 1..n_threads {
-									let inverted_grad_i = (&mut *ifg_ptr.offset(i as isize))
-										.as_mut()
-										.unwrap()
-										.as_mut_ptr()
-										.offset(input_offset as isize);
-									debug_assert!((*ifg_ptr.offset(i as isize)).as_ref().unwrap().is_standard_layout());
+									let inverted_grad_i =
+										(&mut *ifg_ptr.add(i)).as_mut().unwrap().as_mut_ptr().add(input_offset);
+									debug_assert!((*ifg_ptr.add(i)).as_ref().unwrap().is_standard_layout());
 									for j in 0..block_size {
-										*inverted_grad_sum.offset(j as isize) += *inverted_grad_i.offset(j as isize);
+										*inverted_grad_sum.add(j) += *inverted_grad_i.add(j);
 									}
 								}
 
 								for c2 in 0..ch2 {
 									for c1 in 0..ch1 {
-										*output.offset((c1 + c2 * ch1) as isize) =
-											*inverted_grad_sum.offset((c2 + c1 * ch2) as isize);
+										*output.add(c1 + c2 * ch1) = *inverted_grad_sum.add(c2 + c1 * ch2);
 									}
 								}
 							}

@@ -21,10 +21,7 @@ pub fn shapes(
 ) -> Result<IndexMap<Node, IxDyn>, ShapesError> {
 	let mut inner_map = shapes_inner(
 		execution_subgraph,
-		&inputs
-			.into_iter()
-			.map(|(node, shape)| (node.id().clone(), shape))
-			.collect(),
+		&inputs.into_iter().map(|(node, shape)| (node.id(), shape)).collect(),
 		use_node_values,
 	)?;
 
@@ -71,8 +68,8 @@ pub fn shapes_inner(
 }
 
 /// for each node, merge the input shape with the base node shape, and optionally merge to shape of the node value.
-fn input_update<'a>(
-	execution_subgraph: &'a SubGraph,
+fn input_update(
+	execution_subgraph: &SubGraph,
 	inputs: &IndexMap<NodeID, IxDyn>,
 	use_node_values: bool,
 ) -> (IndexMap<Node, ShapeError>, IndexMap<NodeID, NodeShape>) {
@@ -148,7 +145,7 @@ impl ShapeCacheKey {
 	fn new(subgraph: &SubGraph, inputs: &IndexMap<NodeID, IxDyn>, use_node_values: bool) -> Self {
 		let mut key = ShapeCacheKey {
 			subgraph_nodes: subgraph.nodes.iter().map(|node| node.id()).collect(),
-			subgraph_ops: subgraph.ops.iter().map(|op| op.id().into()).collect(),
+			subgraph_ops: subgraph.ops.iter().map(|op| op.id()).collect(),
 			input_shapes: if use_node_values {
 				inputs
 					.iter()
@@ -165,7 +162,7 @@ impl ShapeCacheKey {
 				inputs.iter().map(|(node, shape)| (*node, shape.clone())).collect()
 			},
 		};
-		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
+		key.subgraph_nodes.sort_unstable_by_key(|a| a.id());
 		key.input_shapes.sort_unstable_by(|a, b| a.0.id().cmp(&b.0.id()));
 		key
 	}

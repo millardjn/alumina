@@ -465,7 +465,7 @@ impl ExecutionContext {
 			x @ &mut DataState::Unallocated { .. } => {
 				// upgrade to writable
 
-				let data = ArcArray::<f32, IxDyn>::zeros(self.shape_map[node].slice()).clone();
+				let data = ArcArray::<f32, IxDyn>::zeros(self.shape_map[node].slice());
 
 				let mut new_value = DataState::Writable {
 					writers_remaining: x.writers_remaining(),
@@ -710,7 +710,7 @@ impl ExecutionContext {
 			let value_map = &mut *self.value_map.get();
 			let borrows = &mut *self.borrows.get();
 
-			borrows.insert(node.clone(), true);
+			borrows.insert(*node, true);
 
 			let mut data = DataState::Deallocated;
 			::std::mem::swap(&mut data, &mut value_map[node]);
@@ -884,14 +884,14 @@ where
 
 	let mut inputs: IndexMap<NodeID, ArcArray<f32, IxDyn>> = inputs
 		.into_iter()
-		.map(|(node, data)| (node.borrow().id().clone(), data))
+		.map(|(node, data)| (node.borrow().id(), data))
 		.collect();
 
 	// put values into inputs now to avoid possible race condition if a value gets removed partway through the execution
 	if config.use_node_values {
 		for node in &subgraph.nodes {
 			if let Some(val) = node.value() {
-				inputs.entry(node.id().clone()).or_insert_with(|| val);
+				inputs.entry(node.id()).or_insert_with(|| val);
 			}
 		}
 	}
@@ -900,7 +900,7 @@ where
 		subgraph,
 		&inputs
 			.iter()
-			.map(|(node, value)| (node.clone(), IxDyn(value.shape())))
+			.map(|(&node, value)| (node, IxDyn(value.shape())))
 			.collect(),
 		false,
 	)
@@ -1011,13 +1011,13 @@ where
 
 		// Generate a key which has a unique result
 		let mut key = InputOutputCountCacheKey {
-			subgraph_nodes: subgraph.nodes.iter().map(|node| node.id().into()).collect(),
+			subgraph_nodes: subgraph.nodes.iter().map(|node| node.id()).collect(),
 			subgraph_ops: subgraph.ops.iter().map(|op| op.id()).collect(),
-			outputs: outputs.iter().map(|node| node.borrow().id().into()).collect(),
+			outputs: outputs.iter().map(|node| node.borrow().id()).collect(),
 		};
-		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
-		key.subgraph_ops.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
-		key.outputs.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
+		key.subgraph_nodes.sort_unstable_by_key(|a| a.id());
+		key.subgraph_ops.sort_unstable_by_key(|a| a.id());
+		key.outputs.sort_unstable_by_key(|a| a.id());
 
 		// Get a copy of counts from the cache, or insert a new one for this subgraph
 		let (writers_remaining, readers_remaining) = cache.get(&key).cloned().unwrap_or_else(|| {
@@ -1025,13 +1025,13 @@ where
 				.input_counts()
 				.0
 				.into_iter()
-				.map(|(node, count)| (node.id().clone(), count))
+				.map(|(node, count)| (node.id(), count))
 				.collect();
 			let mut readers_remaining: IndexMap<NodeID, usize> = subgraph
 				.output_counts()
 				.0
 				.into_iter()
-				.map(|(node, count)| (node.id().clone(), count))
+				.map(|(node, count)| (node.id(), count))
 				.collect();
 
 			// Increase remaining readers to avoid deallocation

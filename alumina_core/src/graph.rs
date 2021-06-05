@@ -27,9 +27,9 @@
 //! assert_eq!(hash(fixed_2d_node.graph()), hash(variable_2d_node.graph()));
 //!
 //! # fn hash<T: Hash>(val: T) -> u64 {
-//! # 	let mut hasher = SipHasher::new();
-//! # 	val.hash(&mut hasher);
-//! # 	return hasher.finish()
+//! #     let mut hasher = SipHasher::new();
+//! #     val.hash(&mut hasher);
+//! #     return hasher.finish()
 //! # }
 //! ```
 
@@ -55,54 +55,54 @@ use std::{
 };
 
 // TODO write explanation for all the ways of creating a Node
-pub trait ToNodeValue {
-	fn to_value(self) -> ArcArray<f32, IxDyn>;
+pub trait IntoNodeValue {
+	fn into_value(self) -> ArcArray<f32, IxDyn>;
 }
 
-impl ToNodeValue for f32 {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl IntoNodeValue for f32 {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		arr0(self).into_shared().into_dyn()
 	}
 }
 
-impl ToNodeValue for &[f32] {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl IntoNodeValue for &[f32] {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		arr1(self).into_shared().into_dyn()
 	}
 }
 
-impl ToNodeValue for Vec<f32> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl IntoNodeValue for Vec<f32> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		ArcArray::from(self).into_dyn()
 	}
 }
 
-impl<D: Dimension> ToNodeValue for ArrayBase<ViewRepr<&f32>, D> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl<D: Dimension> IntoNodeValue for ArrayBase<ViewRepr<&f32>, D> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		self.into_owned().into_shared().into_dyn()
 	}
 }
 
-impl<D: Dimension> ToNodeValue for ArrayBase<ViewRepr<&mut f32>, D> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl<D: Dimension> IntoNodeValue for ArrayBase<ViewRepr<&mut f32>, D> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		self.into_owned().into_shared().into_dyn()
 	}
 }
 
-impl<D: Dimension> ToNodeValue for ArrayBase<OwnedRepr<f32>, D> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl<D: Dimension> IntoNodeValue for ArrayBase<OwnedRepr<f32>, D> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		self.into_shared().into_dyn()
 	}
 }
 
-impl<D: Dimension> ToNodeValue for ArrayBase<OwnedArcRepr<f32>, D> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl<D: Dimension> IntoNodeValue for ArrayBase<OwnedArcRepr<f32>, D> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		self.into_dyn()
 	}
 }
 
-impl<S: Data<Elem = f32>, D: Dimension> ToNodeValue for &ArrayBase<S, D> {
-	fn to_value(self) -> ArcArray<f32, IxDyn> {
+impl<S: Data<Elem = f32>, D: Dimension> IntoNodeValue for &ArrayBase<S, D> {
+	fn into_value(self) -> ArcArray<f32, IxDyn> {
 		self.to_owned().into_shared().into_dyn()
 	}
 }
@@ -162,8 +162,8 @@ impl Node {
 	/// let value_node1 = Node::from_value(arr0(5.0));
 	/// let value_node2 = Node::from_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 	/// ```
-	pub fn from_value<V: ToNodeValue>(value: V) -> Self {
-		let value = value.to_value();
+	pub fn from_value<V: IntoNodeValue>(value: V) -> Self {
+		let value = value.into_value();
 		Node::new(value.shape()).set_value(value)
 	}
 
@@ -218,7 +218,7 @@ impl Node {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.associate_node_tag(self.id.clone(), &tag);
+			inner.associations.associate_node_tag(self.id, &tag);
 			data.tags.insert(tag);
 		});
 
@@ -230,7 +230,7 @@ impl Node {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
 			for tag in tags {
-				inner.associations.associate_node_tag(self.id.clone(), &tag);
+				inner.associations.associate_node_tag(self.id, &tag);
 				data.tags.insert(tag);
 			}
 		});
@@ -265,9 +265,9 @@ impl Node {
 	/// let value_node1 = Node::new(&[0; 0]).set_value(arr0(5.0));
 	/// let value_node2 = Node::new(&[2, 3]).set_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 	/// ```
-	pub fn set_value<V: ToNodeValue>(&self, new_value: V) -> Self {
+	pub fn set_value<V: IntoNodeValue>(&self, new_value: V) -> Self {
 		let mut data = self.data.lock();
-		data.value = Some(new_value.to_value());
+		data.value = Some(new_value.into_value());
 
 		self.clone()
 	}
@@ -305,7 +305,7 @@ impl Node {
 			inner
 				.node_parents(self.id)
 				.iter()
-				.map(|op_inner| inner.op_from_inner(graph, op_inner.clone())) // TODO check efficiency impact of repeat graph locking
+				.map(|&op_inner| inner.op_from_inner(graph, op_inner)) // TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -328,7 +328,7 @@ impl Node {
 			inner
 				.node_children(self.id)
 				.iter()
-				.map(move |op_inner| inner.op_from_inner(graph, op_inner.clone()))// TODO check efficiency impact of repeat graph locking
+				.map(move |&op_inner| inner.op_from_inner(graph, op_inner))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -474,16 +474,16 @@ impl From<&&&Node> for Node {
 	}
 }
 
-impl<V: ToNodeValue> From<V> for Node {
+impl<V: IntoNodeValue> From<V> for Node {
 	fn from(v: V) -> Node {
-		let v = v.to_value();
+		let v = v.into_value();
 		Node::new(v.shape()).set_value(v)
 	}
 }
 
-impl<V: ToNodeValue, S: Into<String>> From<(V, S)> for Node {
+impl<V: IntoNodeValue, S: Into<String>> From<(V, S)> for Node {
 	fn from((v, s): (V, S)) -> Node {
-		let v = v.to_value();
+		let v = v.into_value();
 		Node::new(v.shape()).set_value(v).set_name(s)
 	}
 }
@@ -515,6 +515,8 @@ impl NodeID {
 		self.id
 	}
 
+	/// Generate a new, unique NodeID  
+	#[allow(clippy::new_without_default)] // Default is misleading because each new is unique
 	pub fn new() -> Self {
 		Self {
 			id: NEXT_NODE_ID.fetch_add(1, Ordering::Relaxed),
@@ -668,8 +670,8 @@ impl Op {
 		let new_name: String = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.unassociate_op_name(self.id.clone(), &data.name);
-			inner.associations.associate_op_name(self.id.clone(), &new_name);
+			inner.associations.unassociate_op_name(self.id, &data.name);
+			inner.associations.associate_op_name(self.id, &new_name);
 			data.name = new_name;
 		});
 
@@ -682,8 +684,8 @@ impl Op {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let new_name = inner.unique_op_name(new_name_root);
 			let mut data = self.data.lock();
-			inner.associations.unassociate_op_name(self.id.clone(), &data.name);
-			inner.associations.associate_op_name(self.id.clone(), &new_name);
+			inner.associations.unassociate_op_name(self.id, &data.name);
+			inner.associations.associate_op_name(self.id, &new_name);
 			data.name = new_name;
 		});
 
@@ -695,7 +697,7 @@ impl Op {
 		let tag = tag.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			inner.associations.associate_op_tag(self.id.clone(), &tag);
+			inner.associations.associate_op_tag(self.id, &tag);
 			data.tags.insert(tag);
 		});
 
@@ -708,7 +710,7 @@ impl Op {
 			let mut data = self.data.lock();
 
 			for tag in tags {
-				inner.associations.associate_op_tag(self.id.clone(), &tag);
+				inner.associations.associate_op_tag(self.id, &tag);
 				data.tags.insert(tag);
 			}
 		});
@@ -736,7 +738,7 @@ impl Op {
 			inner
 				.op_parents(&self.id)
 				.iter()
-				.map(|node_inner| inner.node_from_inner(graph, node_inner.clone()))// TODO check efficiency impact of repeat graph locking
+				.map(|&node_inner| inner.node_from_inner(graph, node_inner))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -747,7 +749,7 @@ impl Op {
 			inner
 				.op_children(&self.id)
 				.iter()
-				.map(|node_inner| inner.node_from_inner(graph, node_inner.clone()))// TODO check efficiency impact of repeat graph locking
+				.map(|&node_inner| inner.node_from_inner(graph, node_inner))// TODO check efficiency impact of repeat graph locking
 				.collect()
 		})
 	}
@@ -858,6 +860,8 @@ impl OpID {
 		self.id
 	}
 
+	/// Generate a new, unique OpID  
+	#[allow(clippy::new_without_default)] // Default is misleading because each new is unique
 	pub fn new() -> Self {
 		Self {
 			id: NEXT_OP_ID.fetch_add(1, Ordering::Relaxed),
@@ -1048,22 +1052,19 @@ impl Graph {
 		};
 
 		self.with_root_inner_mut(|graph, inner| {
-			inner.add_node(node_inner.clone(), Arc::new(Mutex::new(node_data)));
+			inner.add_node(node_inner, Arc::new(Mutex::new(node_data)));
 			inner.node_from_inner(graph, node_inner)
 		})
 	}
 
 	/// Create a new `Op` within the Graph
 	pub fn new_op(&self, instance: Arc<dyn OpInstance>) -> Op {
-		#[allow(clippy::block_in_if_condition_stmt)]
-		{
-			debug_assert!(
-				self.with_root_inner_mut(|_, inner|{
-					instance.inputs().iter().chain(&instance.outputs()).all(|node| inner.nodes.contains_key(node))
-				}),
-				"New OpInstance lists input or output nodes that are not part of this Graph. Prior to constructing an OpInstance, Graphs must be merged."
-			);
-		}
+		debug_assert!(
+			self.with_root_inner_mut(|_, inner|{
+				instance.inputs().iter().chain(&instance.outputs()).all(|node| inner.nodes.contains_key(node))
+			}),
+			"New OpInstance lists input or output nodes that are not part of this Graph. Prior to constructing an OpInstance, Graphs must be merged."
+		);
 
 		let op_inner = OpID::new();
 		let op_data = OpInnerData {
@@ -1073,7 +1074,7 @@ impl Graph {
 		};
 
 		self.with_root_inner_mut(|graph, inner| {
-			inner.add_op(op_inner.clone(), Arc::new(Mutex::new(op_data)));
+			inner.add_op(op_inner, Arc::new(Mutex::new(op_data)));
 			inner.op_from_inner(graph, op_inner)
 		})
 	}
@@ -1327,40 +1328,44 @@ impl Graph {
 		F: FnOnce(&Graph, &mut GraphLink, &Graph, &mut GraphLink) -> T,
 		G: FnOnce(&Graph, &mut GraphLink) -> T,
 	{
-		// Get the current graph roots. Because we cant assume other threads arent merging graphs and these dont lock,
+		// Clone to get the current graph roots. Because we cant assume other threads arent merging graphs and these dont lock,
 		// they might not still be the roots.
 		let mut g1 = self.clone();
 		let mut g2 = g2.clone();
 
 		loop {
 			// Lock graph with lower memory address first to avoid dining philosophers problem.
-			if g1.link_addr() < g2.link_addr() {
-				let mut g1_link = g1.link.lock();
-				if let gl1 @ &mut GraphLink::Root(_) = &mut *g1_link {
-					let mut g2_link = g2.link.lock();
-					if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
-						return different_root(&g1, gl1, &g2, gl2);
-					}
-				}
-			} else if g1.link_addr() > g2.link_addr() {
-				let mut g2_link = g2.link.lock();
-				if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
+			match g1.link_addr().cmp(&g2.link_addr()) {
+				std::cmp::Ordering::Less => {
 					let mut g1_link = g1.link.lock();
 					if let gl1 @ &mut GraphLink::Root(_) = &mut *g1_link {
-						return different_root(&g1, gl1, &g2, gl2);
+						let mut g2_link = g2.link.lock();
+						if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
+							return different_root(&g1, gl1, &g2, gl2);
+						}
 					}
 				}
-			} else {
-				let mut g1_link = g1.link.lock();
-				match &mut *g1_link {
-					x @ &mut GraphLink::Root(_) => return same_root(&g1, x),
-					&mut GraphLink::MergedInto(_) => continue,
+				std::cmp::Ordering::Equal => {
+					let mut g1_link = g1.link.lock();
+					match &mut *g1_link {
+						x @ &mut GraphLink::Root(_) => return same_root(&g1, x),
+						&mut GraphLink::MergedInto(_) => continue,
+					}
+				}
+				std::cmp::Ordering::Greater => {
+					let mut g2_link = g2.link.lock();
+					if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
+						let mut g1_link = g1.link.lock();
+						if let gl1 @ &mut GraphLink::Root(_) = &mut *g1_link {
+							return different_root(&g1, gl1, &g2, gl2);
+						}
+					}
 				}
 			}
 
-			// Cloning acquires a root reference, unless we would block
-			// If it doesnt, then we are already going to block when we lock
-			// it will get closer in future iterations
+			// If locking g1 and g2 suceeded and they were both roots, then we already have returned.
+			// Cloning acquires a root reference, so we clone to reattempt locking the root.
+			// Under concurrent modification these may not longer point to root once locking is attemped so iteration is required.
 			g1 = g1.clone();
 			g2 = g2.clone();
 		}
@@ -1519,7 +1524,7 @@ impl GraphInner {
 			"More than one parent Op for Node : {}",
 			self.nodes.get(&node).unwrap().lock().name
 		);
-		op.clone()
+		*op
 	}
 
 	fn nodes_tagged(&mut self, tag: &NodeTag) -> IndexSet<NodeID> {
@@ -1542,7 +1547,7 @@ impl GraphInner {
 			.next()
 			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
 		assert!(iter.next().is_none(), "More than one Node named: {}", name);
-		node.clone()
+		*node
 	}
 
 	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
@@ -1577,7 +1582,7 @@ impl GraphInner {
 			.next()
 			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
 		assert!(iter.next().is_none(), "More than one Op named: {}", name);
-		op.clone()
+		*op
 	}
 
 	/// Add an existing node to the graph.
@@ -1695,7 +1700,7 @@ impl GraphInner {
 				return next_node_name;
 			}
 		}
-		return new_name_root.to_string();
+		new_name_root.to_string()
 	}
 
 	fn unique_op_name(&mut self, new_name_root: &str) -> String {
@@ -1709,7 +1714,7 @@ impl GraphInner {
 				return next_op_name;
 			}
 		}
-		return new_name_root.to_string();
+		new_name_root.to_string()
 	}
 }
 
@@ -1771,43 +1776,38 @@ impl Relations {
 
 	fn add_node(&mut self, node_id: NodeID) {
 		if let Some(ref mut relations) = self.inner {
-			relations
-				.node_parents
-				.insert(node_id, IndexSet::new())
-				.map(|_existing| {
-					panic!(
-						"Parent relations already existed Node (id:{}) was already a member of the graph",
-						node_id.id()
-					)
-				});
-			relations
-				.node_children
-				.insert(node_id, IndexSet::new())
-				.map(|_existing| {
-					panic!(
-						"Child relations already existed Node (id:{}) was already a member of the graph",
-						node_id.id()
-					)
-				});
+			if relations.node_parents.insert(node_id, IndexSet::new()).is_some() {
+				panic!(
+					"Parent relations already existed Node (id:{}) was already a member of the graph",
+					node_id.id()
+				)
+			}
+
+			if relations.node_children.insert(node_id, IndexSet::new()).is_some() {
+				panic!(
+					"Child relations already existed Node (id:{}) was already a member of the graph",
+					node_id.id()
+				)
+			};
 		}
 	}
 
 	fn remove_node(&mut self, node_id: NodeID) {
 		if let Some(ref mut relations) = self.inner {
-			relations.node_parents.swap_remove(&node_id).map(|v| {
+			if let Some(v) = relations.node_parents.swap_remove(&node_id) {
 				assert!(
 					v.is_empty(),
 					"Node (id:{}) was removed while it still had remaining parents",
 					node_id.id()
 				)
-			});
-			relations.node_children.swap_remove(&node_id).map(|v| {
+			};
+			if let Some(v) = relations.node_children.swap_remove(&node_id) {
 				assert!(
 					v.is_empty(),
 					"Node (id:{}) was removed while it still had remaining children",
 					node_id.id()
 				)
-			});
+			};
 		}
 	}
 
@@ -1897,46 +1897,42 @@ impl RelationsInner {
 	) -> Self {
 		let mut relations = RelationsInner { ..Default::default() };
 
-		for node in nodes.keys() {
-			relations.node_parents.insert(node.clone(), IndexSet::new());
-			relations.node_children.insert(node.clone(), IndexSet::new());
+		for &node in nodes.keys() {
+			relations.node_parents.insert(node, IndexSet::new());
+			relations.node_children.insert(node, IndexSet::new());
 		}
 
-		for (op, op_data) in ops {
+		for (&op, op_data) in ops {
 			let inputs = op_data.lock().instance.inputs();
 			for node in &inputs {
-				relations.node_children.get_mut(node).unwrap().insert(op.clone());
+				relations.node_children.get_mut(node).unwrap().insert(op);
 			}
-			relations.op_parents.insert(op.clone(), inputs);
+			relations.op_parents.insert(op, inputs);
 
 			let outputs = op_data.lock().instance.outputs();
 			for node in &outputs {
-				relations.node_parents.get_mut(node).unwrap().insert(op.clone());
+				relations.node_parents.get_mut(node).unwrap().insert(op);
 			}
-			relations.op_children.insert(op.clone(), outputs);
+			relations.op_children.insert(op, outputs);
 		}
 
 		relations
 	}
 
 	fn node_children(&mut self, node: NodeID) -> IndexSet<OpID> {
-		self.node_children
-			.get(&node)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.node_children.get(&node).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
 	fn node_parents(&mut self, node: NodeID) -> IndexSet<OpID> {
-		self.node_parents
-			.get(&node)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.node_parents.get(&node).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
 	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.op_children.get(op).map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.op_children.get(op).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
 	fn op_parents(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.op_parents.get(op).map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.op_parents.get(op).map_or_else(IndexSet::new, |r| r.clone())
 	}
 }
 
@@ -2038,37 +2034,37 @@ impl AssociationsInner {
 	) -> Self {
 		let mut associations = Self { ..Default::default() };
 
-		for (node, data) in nodes {
+		for (&node, data) in nodes {
 			let NodeInnerData { ref name, ref tags, .. } = &*data.lock();
 			associations
 				.name_to_nodes
 				.entry(name.clone())
 				.or_insert_with(IndexSet::new)
-				.insert(node.clone());
+				.insert(node);
 
 			for tag in tags {
 				associations
 					.tag_to_nodes
 					.entry(tag.clone())
 					.or_insert_with(IndexSet::new)
-					.insert(node.clone());
+					.insert(node);
 			}
 		}
 
-		for (op, data) in ops {
+		for (&op, data) in ops {
 			let OpInnerData { ref name, ref tags, .. } = &*data.lock();
 			associations
 				.name_to_ops
 				.entry(name.clone())
 				.or_insert_with(IndexSet::new)
-				.insert(op.clone());
+				.insert(op);
 
 			for tag in tags {
 				associations
 					.tag_to_ops
 					.entry(tag.clone())
 					.or_insert_with(IndexSet::new)
-					.insert(op.clone());
+					.insert(op);
 			}
 		}
 
@@ -2076,25 +2072,19 @@ impl AssociationsInner {
 	}
 
 	fn nodes_tagged(&mut self, tag: &NodeTag) -> IndexSet<NodeID> {
-		self.tag_to_nodes
-			.get(tag)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.tag_to_nodes.get(tag).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
 	fn nodes_named(&mut self, name: &str) -> IndexSet<NodeID> {
-		self.name_to_nodes
-			.get(name)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.name_to_nodes.get(name).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
-	fn ops_tagged<'a>(&'a mut self, tag: &OpTag) -> IndexSet<OpID> {
-		self.tag_to_ops.get(tag).map_or_else(|| IndexSet::new(), |r| r.clone())
+	fn ops_tagged(&mut self, tag: &OpTag) -> IndexSet<OpID> {
+		self.tag_to_ops.get(tag).map_or_else(IndexSet::new, |r| r.clone())
 	}
 
 	fn ops_named(&mut self, name: &str) -> IndexSet<OpID> {
-		self.name_to_ops
-			.get(name)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.name_to_ops.get(name).map_or_else(IndexSet::new, |r| r.clone())
 	}
 }
 

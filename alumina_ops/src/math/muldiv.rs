@@ -23,7 +23,7 @@ where
 	I: Into<Node>,
 {
 	let input = input.into();
-	let output = input.graph().new_node(input.shape().clone());
+	let output = input.graph().new_node(input.shape());
 
 	MulDiv::new(input, output.clone()).build()?;
 
@@ -87,8 +87,8 @@ impl OpSpecification for MulDiv {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MulDivInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			epsilon: self.epsilon,
 		})
 	}
@@ -115,11 +115,11 @@ impl OpInstance for MulDivInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -169,8 +169,9 @@ impl OpInstance for MulDivInstance {
 						*ui::get_unchecked_mut(output, i * 4 + 1) += a * d + b * c;
 
 						// complex division
-						*ui::get_unchecked_mut(output, i * 4 + 2) += (a * c + b * d) / (epsilon + c * c + d * d);
-						*ui::get_unchecked_mut(output, i * 4 + 3) += (b * c - a * d) / (epsilon + c * c + d * d);
+						let denom = c * c + d * d;
+						*ui::get_unchecked_mut(output, i * 4 + 2) += (a * c + b * d) / (epsilon + denom);
+						*ui::get_unchecked_mut(output, i * 4 + 3) += (b * c - a * d) / (epsilon + denom);
 					}
 
 					for i in 0..remainder {
@@ -245,9 +246,9 @@ impl OpSpecification for MulDivBack {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MulDivBackInstance {
-			input: self.input.id().clone(),
-			input_grad: self.input_grad.id().clone(),
-			output_grad: self.output_grad.id().clone(),
+			input: self.input.id(),
+			input_grad: self.input_grad.id(),
+			output_grad: self.output_grad.id(),
 			epsilon: self.epsilon,
 		})
 	}
@@ -276,11 +277,11 @@ impl OpInstance for MulDivBackInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone(), self.output_grad.clone()]
+		indexset![self.input, self.output_grad]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input_grad.clone()]
+		indexset![self.input_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

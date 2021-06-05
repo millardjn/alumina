@@ -62,8 +62,8 @@ impl ShapeConstraint {
 		let output = output.into();
 		ShapeConstraint {
 			rules: Rules::Individual(vec![]),
-			input: input.clone(),
-			output: output.clone(),
+			input,
+			output,
 		}
 	}
 
@@ -137,8 +137,8 @@ impl OpSpecification for ShapeConstraint {
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ShapeConstraintInstance {
 			rules: self.rules,
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 		})
 	}
 }
@@ -164,11 +164,11 @@ impl OpInstance for ShapeConstraintInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, _context: &mut GradientContext) -> Result<(), GradientError> {

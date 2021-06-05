@@ -74,8 +74,8 @@ impl OpSpecification for ShapeOf {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ShapeOfInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 		})
 	}
 }
@@ -100,11 +100,11 @@ impl OpInstance for ShapeOfInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

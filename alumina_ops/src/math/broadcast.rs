@@ -31,7 +31,7 @@ where
 	let graph = merge_graphs(&[shape_input.graph(), value_input.graph()]);
 
 	let broadcast = graph
-		.new_node(shape_input.shape().clone())
+		.new_node(shape_input.shape())
 		.set_name_unique(&format!("broadcast({},{})", shape_input, value_input));
 
 	let _op = same_shape(shape_input, broadcast.clone())?;
@@ -64,7 +64,7 @@ where
 	let graph = merge_graphs(&[input1.graph(), input2.graph()]);
 
 	let broadcast = graph
-		.new_node(input1.shape().clone())
+		.new_node(input1.shape())
 		.set_name_unique(&format!("broadcast({},{})", input1, input2));
 	let _op = same_shape(input1.clone(), broadcast.clone())?;
 	let _op = Broadcast::new(input2, broadcast.clone()).build()?;
@@ -84,7 +84,7 @@ where
 	let graph = merge_graphs(&[input1.graph(), input2.graph()]);
 
 	let broadcast = graph
-		.new_node(input2.shape().clone())
+		.new_node(input2.shape())
 		.set_name_unique(&format!("broadcast({},{})", input2, input1));
 	let _op = same_shape(input2.clone(), broadcast.clone())?;
 	let _op = Broadcast::new(input1, broadcast.clone()).build()?;
@@ -204,8 +204,8 @@ impl OpSpecification for Broadcast {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(BroadcastInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 		})
 	}
 }
@@ -230,11 +230,11 @@ impl OpInstance for BroadcastInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

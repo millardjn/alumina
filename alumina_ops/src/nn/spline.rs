@@ -97,7 +97,7 @@ where
 
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("spline({})", input));
 
 	let _op = Spline::new(input, weights, output.clone()).build()?;
@@ -118,7 +118,7 @@ where
 
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("spline({})", input));
 
 	let _op = Spline::new(input, weights, output.clone()).build()?;
@@ -158,7 +158,7 @@ where
 		.add_tag(NodeTag::Parameter)
 		.set_name_unique(&format!("spline({})_weights", input));
 
-	let op = Spline::new(input, weights, output.clone()).build()?;
+	let op = Spline::new(input, weights, output).build()?;
 
 	Ok(op)
 }
@@ -174,7 +174,7 @@ where
 	let input = input.into();
 	let weights = weights.into();
 	let output = output.into();
-	Spline::new(input, weights, output.clone()).build()
+	Spline::new(input, weights, output).build()
 }
 
 /// `Spline` A smooth continuous function consisting of linear components jointed by a central cubic region.
@@ -254,9 +254,9 @@ impl OpSpecification for Spline {
 		}
 
 		Ok(SplineInstance {
-			input: self.input.id().clone(),
-			weights: self.weights.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			weights: self.weights.id(),
+			output: self.output.id(),
 		})
 	}
 }
@@ -283,12 +283,12 @@ impl OpInstance for SplineInstance {
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone(), self.weights.clone()]
+		indexset![self.input, self.weights]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -478,11 +478,11 @@ impl OpSpecification for SplineBack {
 		}
 
 		Ok(SplineBackInstance {
-			input: self.input.id().clone(),
-			weights: self.weights.id().clone(),
-			output_grad: self.output_grad.id().clone(),
-			input_grad: self.input_grad.id().clone(),
-			weights_grad: self.weights_grad.id().clone(),
+			input: self.input.id(),
+			weights: self.weights.id(),
+			output_grad: self.output_grad.id(),
+			input_grad: self.input_grad.id(),
+			weights_grad: self.weights_grad.id(),
 		})
 	}
 }
@@ -513,12 +513,12 @@ impl OpInstance for SplineBackInstance {
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone(), self.weights.clone(), self.output_grad.clone()]
+		indexset![self.input, self.weights, self.output_grad]
 	}
 
 	/// Returns a list of `Node`s this `Op` may need to write to when executed
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input_grad.clone(), self.weights_grad.clone()]
+		indexset![self.input_grad, self.weights_grad]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -568,11 +568,9 @@ impl OpInstance for SplineBackInstance {
 		let weights2 = weights_iter.next().unwrap();
 
 		debug_assert_eq!(
-			input_shape,
-			&output_shape[..],
+			input_shape, output_shape,
 			"input shape: {:?} did not match output shape: {:?}",
-			input_shape,
-			output_shape
+			input_shape, output_shape
 		);
 		debug_assert_eq!(
 			weights_outer_shape[0], 3,

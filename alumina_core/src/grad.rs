@@ -237,7 +237,7 @@ impl GradientContext {
 		});
 
 		node_to_grad
-			.entry(inner.clone())
+			.entry(*inner)
 			.or_insert_with(|| {
 				node.graph()
 					.new_node(node.shape())

@@ -72,7 +72,7 @@ impl OpSpecification for Fill {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(FillInstance {
-			output: self.output.id().clone(),
+			output: self.output.id(),
 			value: self.value,
 		})
 	}
@@ -102,7 +102,7 @@ impl OpInstance for FillInstance {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

@@ -55,7 +55,7 @@ where
 {
 	let input = input.into();
 
-	let mut extra_axes: SmallVec<[usize; 4]> = extra_axes.into_iter().cloned().collect();
+	let mut extra_axes: SmallVec<[usize; 4]> = extra_axes.iter().cloned().collect();
 	extra_axes.sort_unstable();
 	extra_axes.dedup();
 
@@ -176,8 +176,8 @@ impl OpSpecification for ExpandDims {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ExpandDimsInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			extra_axes: self.extra_axes,
 		})
 	}
@@ -225,11 +225,11 @@ impl OpInstance for ExpandDimsInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

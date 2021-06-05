@@ -16,7 +16,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("logistic({})", input));
 	let _op = Logistic::new_default(input, output.clone())
 		.build()

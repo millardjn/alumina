@@ -16,7 +16,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("leaky_relu({})", input));
 	let _op = LeakyRelu::new(input, output.clone(), LeakyReluFunc { alpha }).build()?;
 	Ok(output)

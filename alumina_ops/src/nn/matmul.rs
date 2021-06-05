@@ -10,7 +10,7 @@ use alumina_core::{
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexMap, IndexSet};
-use matrixmultiply_mt;
+
 use ndarray::Dimension;
 use std::any::Any;
 
@@ -132,7 +132,7 @@ where
 		.new_node([-1, output_channels as isize].iter().into())
 		.set_name_unique(&format!("affine({})", input));
 
-	let _op = MatMul::new(input, weights.clone(), output.clone())
+	let _op = MatMul::new(input, weights, output.clone())
 		.k(Some(k))
 		.n(Some(n))
 		.build()?;
@@ -286,9 +286,9 @@ impl OpSpecification for MatMul {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(MatMulInstance {
-			matrix_a: self.matrix_a.id().clone(),
-			matrix_b: self.matrix_b.id().clone(),
-			matrix_c: self.matrix_c.id().clone(),
+			matrix_a: self.matrix_a.id(),
+			matrix_b: self.matrix_b.id(),
+			matrix_c: self.matrix_c.id(),
 			a_trans: self.a_trans,
 			b_trans: self.b_trans,
 			c_trans: self.c_trans,
@@ -335,11 +335,11 @@ impl OpInstance for MatMulInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.matrix_a.clone(), self.matrix_b.clone()]
+		indexset![self.matrix_a, self.matrix_b]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.matrix_c.clone()]
+		indexset![self.matrix_c]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -385,7 +385,7 @@ impl OpInstance for MatMulInstance {
 
 		let a_shape = ctx.input_shape(&self.matrix_a);
 		let b_shape = ctx.input_shape(&self.matrix_b);
-		let mut c_shape = ctx.output_shape(&self.matrix_c).clone();
+		let mut c_shape = ctx.output_shape(&self.matrix_c);
 
 		let (m, n, _k) = if c_shape.is_known() {
 			let c_shape = c_shape.to_data_shape().unwrap();

@@ -130,8 +130,8 @@ impl OpSpecification for PermuteAxes {
 		}
 
 		Ok(PermuteAxesInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			permutation: self.permutation,
 		})
 	}
@@ -159,11 +159,11 @@ impl OpInstance for PermuteAxesInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

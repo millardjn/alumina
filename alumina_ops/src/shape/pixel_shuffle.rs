@@ -170,11 +170,7 @@ impl OpSpecification for Collapse {
 			return Err(format!("All factors ({:?}) must be greater than zero.", self.factors).into());
 		}
 
-		Ok(CollapseInstance::new(
-			self.input.id().clone(),
-			self.output.id().clone(),
-			self.factors,
-		))
+		Ok(CollapseInstance::new(self.input.id(), self.output.id(), self.factors))
 	}
 }
 
@@ -212,11 +208,11 @@ impl OpInstance for CollapseInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -388,11 +384,7 @@ impl OpSpecification for Expand {
 			"collapse factors must be the same length as input shape length minus 1"
 		);
 
-		Ok(ExpandInstance::new(
-			self.input.id().clone(),
-			self.output.id().clone(),
-			self.factors,
-		))
+		Ok(ExpandInstance::new(self.input.id(), self.output.id(), self.factors))
 	}
 }
 
@@ -430,11 +422,11 @@ impl OpInstance for ExpandInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

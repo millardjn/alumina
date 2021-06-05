@@ -21,7 +21,7 @@ where
 	let inputs: SmallVec<[Node; 16]> = inputs.into_iter().map(Into::into).collect();
 	merge_node_graphs(&inputs);
 
-	let out_shape = if inputs.len() == 0 {
+	let out_shape = if inputs.is_empty() {
 		NodeShape::from(vec![0; axis])
 	} else {
 		let dims = inputs[0].shape().len();
@@ -116,7 +116,7 @@ impl OpSpecification for Concat {
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ConcatInstance {
 			inputs: self.inputs.iter().map(Node::id).collect(),
-			output: self.output.id().clone(),
+			output: self.output.id(),
 			axis: self.axis,
 		})
 	}
@@ -148,7 +148,7 @@ impl OpInstance for ConcatInstance {
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -163,7 +163,7 @@ impl OpInstance for ConcatInstance {
 	}
 
 	fn propagate_shapes(&self, ctx: &mut ShapePropContext) -> Result<(), ShapePropError> {
-		if self.inputs.len() == 0 {
+		if self.inputs.is_empty() {
 			ctx.merge_output_shape(&self.output, &NodeShape::from(vec![0; self.axis]))
 		} else {
 			let input_shapes: Vec<_> = self.inputs.iter().map(|input| ctx.input_shape(input).clone()).collect();
@@ -256,29 +256,17 @@ impl OpSpecification for ConcatBack {
 			input_and_grads: self
 				.input_and_grads
 				.iter()
-				.map(|(i, g)| {
-					(
-						mapping.get(i).unwrap_or_else(|| i).clone(),
-						mapping.get(g).unwrap_or_else(|| g).clone(),
-					)
-				})
+				.map(|(i, g)| (mapping.get(i).unwrap_or(i).clone(), mapping.get(g).unwrap_or(g).clone()))
 				.collect(),
-			output_grad: mapping
-				.get(&self.output_grad)
-				.unwrap_or_else(|| &self.output_grad)
-				.clone(),
+			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
 			axis: self.axis,
 		}
 	}
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(ConcatBackInstance {
-			input_and_grads: self
-				.input_and_grads
-				.iter()
-				.map(|(i, g)| (i.id().clone(), g.id().clone()))
-				.collect(),
-			output_grad: self.output_grad.id().clone(),
+			input_and_grads: self.input_and_grads.iter().map(|(i, g)| (i.id(), g.id())).collect(),
+			output_grad: self.output_grad.id(),
 			axis: self.axis,
 		})
 	}
@@ -312,13 +300,13 @@ impl OpInstance for ConcatBackInstance {
 	fn inputs(&self) -> IndexSet<NodeID> {
 		self.input_and_grads
 			.iter()
-			.map(|(i, _)| i.clone())
-			.chain(once(self.output_grad.clone()))
+			.map(|(i, _)| *i)
+			.chain(once(self.output_grad))
 			.collect()
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		self.input_and_grads.iter().map(|(_, g)| g.clone()).collect()
+		self.input_and_grads.iter().map(|(_, g)| *g).collect()
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {

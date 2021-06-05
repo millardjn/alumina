@@ -88,7 +88,7 @@ where
 		.set_name_unique(&format!("remove_dims({})", input));
 
 	let _op = RemoveDims {
-		input: input.clone(),
+		input,
 		output: output.clone(),
 		axes,
 	}
@@ -183,8 +183,8 @@ impl OpSpecification for RemoveDims {
 
 	fn build_instance(self) -> Result<Self::InstanceType, OpBuildError> {
 		Ok(RemoveDimsInstance {
-			input: self.input.id().clone(),
-			output: self.output.id().clone(),
+			input: self.input.id(),
+			output: self.output.id(),
 			axes: self.axes,
 		})
 	}
@@ -212,11 +212,11 @@ impl OpInstance for RemoveDimsInstance {
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		indexset![self.input.clone()]
+		indexset![self.input]
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		indexset![self.output.clone()]
+		indexset![self.output]
 	}
 
 	fn gradient(&self, ctx: &mut GradientContext) -> Result<(), GradientError> {

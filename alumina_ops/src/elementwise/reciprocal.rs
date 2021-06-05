@@ -20,7 +20,7 @@ where
 	let input = input.into();
 	let output = input
 		.graph()
-		.new_node(input.shape().clone())
+		.new_node(input.shape())
 		.set_name_unique(&format!("reciprocal({})", input));
 	let _op = Reciprocal::new_default(input, output.clone()).build()?;
 	Ok(output)
