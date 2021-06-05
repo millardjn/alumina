@@ -4,21 +4,21 @@ use crate::{
 	reduce::reduce_sum::{reduce_sum, ReduceSum},
 };
 use alumina_core::{
-	base_ops::{shape_constraint::same_shape, OpSpecification, OpInstance},
+	base_ops::{shape_constraint::same_shape, OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
+	graph::{merge_graphs, Graph, Node, NodeID, NodeTag, Op},
 	init::duplicate,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
-use ndarray::{Zip, ArrayViewD, ArrayViewMutD, Dimension};
+use indexmap::{indexset, IndexMap, IndexSet};
+use ndarray::{ArrayViewD, ArrayViewMutD, Dimension, Zip};
 use smallvec::SmallVec;
-use std::iter::repeat;
 use std::any::Any;
+use std::iter::repeat;
 
 /// broadcast the values of value_input to the shape of shape_input and return the result
 pub fn broadcast<I1, I2>(shape_input: I1, value_input: I2) -> Result<Node, OpBuildError>
@@ -241,8 +241,8 @@ impl OpInstance for BroadcastInstance {
 		let leading_ones = ctx.node(&self.output).shape().len() - ctx.node(&self.input).shape().len();
 
 		if leading_ones == 0 {
-			let broadcast_axes: SmallVec<[isize; 8]> = ctx.node(&self
-				.input)
+			let broadcast_axes: SmallVec<[isize; 8]> = ctx
+				.node(&self.input)
 				.shape()
 				.into_iter()
 				.enumerate()
@@ -261,8 +261,8 @@ impl OpInstance for BroadcastInstance {
 					.build()?;
 			}
 		} else {
-			let broadcast_axes: SmallVec<[isize; 8]> = ctx.node(&self
-				.input)
+			let broadcast_axes: SmallVec<[isize; 8]> = ctx
+				.node(&self.input)
 				.shape()
 				.into_iter()
 				.enumerate()
@@ -304,11 +304,9 @@ impl OpInstance for BroadcastInstance {
 			let input: ArrayViewD<f32> = ctx.get_input(&self.input);
 			let output: ArrayViewMutD<f32> = ctx.get_output(&self.output);
 
-
 			Zip::from(output).and_broadcast(input).par_apply(|output, input| {
 				*output += input;
 			});
-
 
 			// let input_broadcast = input.broadcast(output.shape()).ok_or_else(|| {
 			// 	format!(

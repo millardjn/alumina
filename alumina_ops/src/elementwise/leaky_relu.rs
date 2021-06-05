@@ -18,7 +18,7 @@ where
 		.graph()
 		.new_node(input.shape().clone())
 		.set_name_unique(&format!("leaky_relu({})", input));
-	let _op = LeakyRelu::new(input, output.clone(), LeakyReluFunc{alpha}).build()?;
+	let _op = LeakyRelu::new(input, output.clone(), LeakyReluFunc { alpha }).build()?;
 	Ok(output)
 }
 
@@ -28,14 +28,12 @@ pub type LeakyReluBack = BinaryElementwise<LeakyReluBackFunc>;
 
 #[derive(Clone, Debug)]
 pub struct LeakyReluFunc {
-	alpha: f32
+	alpha: f32,
 }
 
 impl Default for LeakyReluFunc {
 	fn default() -> Self {
-		Self {
-			alpha: 0.1,
-		}
+		Self { alpha: 0.1 }
 	}
 }
 
@@ -49,10 +47,10 @@ impl UnaryFunc for LeakyReluFunc {
 		// 	alpha * input
 		// }
 
-		let half_grad_change_at_zero = (1.0-self.alpha)*0.5;
+		let half_grad_change_at_zero = (1.0 - self.alpha) * 0.5;
 
-
-		input.abs()*half_grad_change_at_zero + input*(1.0 - half_grad_change_at_zero)  // TODO does this vectorize?
+		input.abs() * half_grad_change_at_zero + input * (1.0 - half_grad_change_at_zero)
+		// TODO does this vectorize?
 	}
 
 	fn type_name(&self) -> &'static str {
@@ -60,7 +58,13 @@ impl UnaryFunc for LeakyReluFunc {
 	}
 
 	fn grad(&self, ctx: &mut GradientContext, input: &NodeID, output: &NodeID) -> Result<(), GradientError> {
-		LeakyReluBack::new(ctx.node(input), ctx.grad_of(output), ctx.grad_of(input), LeakyReluBackFunc{alpha: self.alpha}).build()?;
+		LeakyReluBack::new(
+			ctx.node(input),
+			ctx.grad_of(output),
+			ctx.grad_of(input),
+			LeakyReluBackFunc { alpha: self.alpha },
+		)
+		.build()?;
 		Ok(())
 	}
 }
@@ -69,14 +73,12 @@ impl UnaryFunc for LeakyReluFunc {
 /// input2 = grad of output of leaky_relu
 #[derive(Clone, Debug)]
 pub struct LeakyReluBackFunc {
-	alpha: f32
+	alpha: f32,
 }
 
 impl Default for LeakyReluBackFunc {
 	fn default() -> Self {
-		Self {
-			alpha: 0.1,
-		}
+		Self { alpha: 0.1 }
 	}
 }
 
@@ -84,7 +86,7 @@ impl BinaryFunc for LeakyReluBackFunc {
 	#[inline]
 	fn calc(&self, input1: f32, input2: f32) -> f32 {
 		let sign = input1.signum();
-		input2 * ((1.0 + self.alpha) + sign*(1.0 - self.alpha))*0.5// x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
+		input2 * ((1.0 + self.alpha) + sign * (1.0 - self.alpha)) * 0.5 // x.signum().max(0.0); <- this should be better but doesnt compile to maxps,
 	}
 
 	fn type_name(&self) -> &'static str {

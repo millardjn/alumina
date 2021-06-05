@@ -119,7 +119,8 @@ where
 			fill_into(0.0, grad).unwrap_or_else(|err| {
 				panic!(
 					"Alumina Bug: Error building fill op for gradient of ({}).\n{:#?}",
-					nodes.get(node_inner).unwrap(), err
+					nodes.get(node_inner).unwrap(),
+					err
 				)
 			});
 			// grad.set_value(arr0(0.0));
@@ -128,7 +129,8 @@ where
 			same_shape(nodes.get(node_inner).unwrap(), grad).unwrap_or_else(|err| {
 				panic!(
 					"Alumina Bug: Error building shape constraint for gradient of ({}).\n{:#?}",
-					nodes.get(node_inner).unwrap(), err
+					nodes.get(node_inner).unwrap(),
+					err
 				)
 			});
 		}
@@ -201,12 +203,10 @@ impl GradientContext {
 			node_to_grad: IndexMap::new(),
 		};
 
-		
 		fill_into(1.0, context.grad_of(&y.id())).unwrap_or_else(|err| {
 			panic!(
 				"Alumina Bug: Error building fill op for gradient of output ({}).\n{:#?}",
-				y,
-				err
+				y, err
 			)
 		});
 
@@ -232,9 +232,7 @@ impl GradientContext {
 			panic!(
 				"Op Bug: Node (id:{}) was accessed but is not part of {}",
 				inner.id(),
-				IterDisplay {
-					inner: nodes.clone()
-				}
+				IterDisplay { inner: nodes.clone() }
 			)
 		});
 

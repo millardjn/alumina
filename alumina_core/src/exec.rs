@@ -9,14 +9,13 @@ use crate::{
 use indexmap::{IndexMap, IndexSet};
 use lru::LruCache;
 use ndarray::{ArcArray, ArrayD, ArrayViewD, ArrayViewMutD, Dimension, IxDyn};
+use std::time::Instant;
 use std::{
 	borrow::Borrow,
 	cell::{RefCell, UnsafeCell},
 	hash::Hash,
 };
-use std::time::{Instant};
-use sysinfo::{ProcessorExt, SystemExt, RefreshKind};
-
+use sysinfo::{ProcessorExt, RefreshKind, SystemExt};
 
 enum DataState<T> {
 	Unallocated {
@@ -295,7 +294,7 @@ impl ExecutionContext {
 	/// # Panics
 	///  * Panics if the node requested is not an input of the `Op`.
 	pub fn get_input<'b>(&'b self, node: &NodeID) -> ArrayViewD<'b, f32> {
-		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(||{
+		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(|| {
 			panic!(
 				"Op Bug: Op ({}) requested node (id:{}) as an input during execution, but does not list it as an input.",
 				self.current_op(),
@@ -324,7 +323,7 @@ impl ExecutionContext {
 	/// # Panics
 	///  * Panics if the node requested is not an input of the `Op`.
 	pub fn get_input_standard<'b>(&'b self, node: &NodeID) -> ArrayViewD<'b, f32> {
-		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(||{
+		let (_, node) = self.current_inputs.get_full(node).unwrap_or_else(|| {
 			panic!(
 				"Op Bug: Op ({}) requested node (id:{}) as an input during execution, but does not list it as an input.",
 				self.current_op(),
@@ -364,7 +363,7 @@ impl ExecutionContext {
 	///  * Panics if the node has already been mutable borrowed by the `Op`.
 	///  * Panics if the node requested is not an output of the `Op`.
 	pub fn get_output<'b>(&'b self, node: &NodeID) -> ArrayViewMutD<'b, f32> {
-		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(||{
+		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(|| {
 			panic!(
 				"Op Bug: Op ({}) requested node (id:{}) as an output during execution, but does not list it as an output.",
 				self.current_op(),
@@ -397,7 +396,7 @@ impl ExecutionContext {
 	/// Get a mutable view of an output. Must check `is_required_output()` if Op has more than one output which is
 	/// guaranteed to be in contiguous standard layout ( C order).
 	pub fn get_output_standard<'b>(&'b self, node: &NodeID) -> ArrayViewMutD<'b, f32> {
-		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(||{
+		let (_, node) = self.current_outputs.get_full(node).unwrap_or_else(|| {
 			panic!(
 				"Op Bug: Op ({}) requested node (id:{}) as an output during execution, but does not list it as an output.",
 				self.current_op(),
@@ -503,7 +502,7 @@ impl ExecutionContext {
 		match &mut value_map[node] {
 			&mut DataState::Unallocated { .. } => {
 				panic!("Alumina Bug: Attempting to directly allocate node as readable indicates that an InsufficientInputs error should have been thrown: node {}", node)
-			},
+			}
 			x @ &mut DataState::Writable { .. } => {
 				// upgrade to readable
 
@@ -534,11 +533,11 @@ impl ExecutionContext {
 				} else {
 					unreachable!()
 				}
-			},
+			}
 			&mut DataState::Readable { ref data, .. } => data.view(),
 			&mut DataState::Deallocated => {
 				panic!("Alumina Bug: valid input has been deallocated prematurely: {}", node)
-			},
+			}
 
 			&mut DataState::Input { ref data, .. } => data.view(),
 
@@ -574,7 +573,7 @@ impl ExecutionContext {
 				} else {
 					unreachable!()
 				}
-			},
+			}
 		}
 	}
 
@@ -839,7 +838,7 @@ impl<'a> Default for ExecConfig<'a> {
 
 /// Execution with a custom subgraph
 ///
-/// Ops are executed in the order contained in the subgraph, if this order is not topological 
+/// Ops are executed in the order contained in the subgraph, if this order is not topological
 /// then a `SubGraphNotExecutable` Error is returned (i.e. Any Op that reads from a node must come after all Ops that write to that node).
 ///
 /// The order of nodes in the result map is the same as the outputs argument with duplicates skipped.
@@ -856,9 +855,9 @@ where
 {
 	let inputs: IndexMap<_, _> = inputs.into_iter().collect();
 	let outputs: IndexSet<Node> = outputs.into_iter().map(Into::into).collect();
-	
+
 	let mut system = sysinfo::System::new_with_specifics(RefreshKind::new().with_cpu());
-	
+
 	let new_subgraph;
 	let subgraph = if let Some(subgraph) = config.subgraph.as_ref() {
 		subgraph
@@ -903,7 +902,7 @@ where
 			.iter()
 			.map(|(node, value)| (node.clone(), IxDyn(value.shape())))
 			.collect(),
-		false
+		false,
 	)
 	.map_err(|e| ExecError::Shape { error: e })?;
 
@@ -936,7 +935,6 @@ where
 		})
 		.collect();
 
-
 	// let mut perf_map = OP_PERF_DATA.lock().unwrap();
 
 	// Fold over ops executing those that arent skipped. No permanent references handed out
@@ -949,7 +947,7 @@ where
 
 				if !skip {
 					//assert!(config.perf_records.as_mut().and_then(|pr|pr.get_mut(op)).is_some());
-					if let Some(record) = &mut config.perf_records.as_mut().and_then(|pr|pr.get_mut(op)) {
+					if let Some(record) = &mut config.perf_records.as_mut().and_then(|pr| pr.get_mut(op)) {
 						system.refresh_cpu();
 						//let _ = system.get_processors().iter().map(|p|p.get_cpu_usage()).sum::<f32>();
 						//let _ = system.get_global_processor_info().get_cpu_usage() as f32;
@@ -960,7 +958,9 @@ where
 						})?;
 						system.refresh_cpu();
 						record.invocation_count += 1;
-						record.cumulative_usage +=  system.get_processors().iter().map(|p|p.get_cpu_usage()).sum::<f32>()/system.get_processors().len() as f32;//system.get_global_processor_info().get_cpu_usage() as f32;
+						record.cumulative_usage +=
+							system.get_processors().iter().map(|p| p.get_cpu_usage()).sum::<f32>()
+								/ system.get_processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
 						record.cumulative_time += start.elapsed().as_micros() as f32;
 					} else {
 						op.instance().execute(&ctx).map_err(|e| ExecError::Op {
@@ -983,8 +983,6 @@ where
 
 	form_output_map(outputs, value_map.into_inner(), shape_map)
 }
-
-
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 struct InputOutputCountCacheKey {

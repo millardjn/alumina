@@ -2,8 +2,8 @@ use crate::{
 	boolean::equal,
 	build_or_pretty_panic,
 	elementwise::{
-		abs, ceil, cos, div, elu, exp, floor, identity, ln, logistic, max, min, mul, negative, reciprocal, relu,
-		robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh, leaky_relu,
+		abs, ceil, cos, div, elu, exp, floor, identity, leaky_relu, ln, logistic, max, min, mul, negative, reciprocal,
+		relu, robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh,
 	},
 	grad::stop_grad,
 	manip::{expand_dims, permute_axes, remove_dims},
@@ -14,7 +14,7 @@ use crate::{
 	},
 	pool::avg_pool,
 	reduce::{reduce_prod, reduce_sum},
-	regularisation::{l1, l2, hoyer_squared},
+	regularisation::{hoyer_squared, l1, l2},
 	shape::{linterp, shape_of},
 };
 use alumina_core::{

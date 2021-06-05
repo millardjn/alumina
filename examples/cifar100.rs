@@ -12,15 +12,14 @@ use alumina::{
 		},
 	},
 	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser,
-		GradientStepper,
+		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser, GradientStepper,
 	},
 };
-use ndarray::{IxDyn, ArcArray};
 use failure::Error;
-use std::time::Instant;
-use std::iter::empty;
 use indexmap::IndexMap;
+use ndarray::{ArcArray, IxDyn};
+use std::iter::empty;
+use std::time::Instant;
 
 fn main() -> Result<(), Error> {
 	// 1. Build a neural net graph
@@ -84,19 +83,14 @@ fn main() -> Result<(), Error> {
 	let mut val = validation(&input, &fine_labels, &accuracy, &training_loss);
 
 	// 5. Set up optimiser to run for 5 epochs and check validations every 75 steps
-	let mut opt = GradientOptimiser::new(
-		&training_loss,
-		&[&input, &fine_labels],
-
-		Adam::new(3e-3, 0.9, 0.995),
-	);
+	let mut opt = GradientOptimiser::new(&training_loss, &[&input, &fine_labels], Adam::new(3e-3, 0.9, 0.995));
 
 	opt.callback(max_steps(25 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
 	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		val(&mut empty());
 	}));
-	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data|{
+	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data| {
 		s.rate(3.3e-4);
 	}));
 
@@ -113,7 +107,12 @@ fn main() -> Result<(), Error> {
 }
 
 /// Constructs and returns a closure suitable for use as a step callback which checks accuracy and loss on the validation set
-fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &'a Node) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
+fn validation<'a>(
+	input: &'a Node,
+	labels: &'a Node,
+	accuracy: &'a Node,
+	loss: &'a Node,
+) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
 	let val_data_set = Cifar100::testing("D:/ML/CIFAR100").reorder_components(&[0, 2]);
 	let val_epoch = val_data_set.length();
 	let val_batch = val_epoch;
@@ -124,7 +123,10 @@ fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &
 		let values: IndexMap<_, _> = values.into_iter().collect();
 		let (acc_sum, loss_sum) = (0..val_epoch / val_batch).fold((0.0, 0.0), |(acc_sum, loss_sum), _| {
 			let outputs = exec(
-				values.clone().into_iter().chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
+				values
+					.clone()
+					.into_iter()
+					.chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
 				&mut ExecConfig::default(),
 			)

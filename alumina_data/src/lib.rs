@@ -5,7 +5,7 @@ pub mod mnist;
 pub use crate::crop::{Crop, Cropping};
 use alumina_core::graph::Node;
 use indexmap::IndexMap;
-use ndarray::{Axis, IxDyn, ArcArray};
+use ndarray::{ArcArray, Axis, IxDyn};
 use rand::{seq::SliceRandom, thread_rng, Rng, RngCore, SeedableRng};
 use rand_pcg::Pcg64Mcg;
 use smallvec::SmallVec;
@@ -87,7 +87,11 @@ pub trait DataSet {
 		MapAll::new(self, func, names)
 	}
 
-	fn map_one<F: FnMut(usize, ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>>(self, func: F, component: usize) -> MapOne<Self, F>
+	fn map_one<F: FnMut(usize, ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>>(
+		self,
+		func: F,
+		component: usize,
+	) -> MapOne<Self, F>
 	where
 		Self: Sized,
 	{
@@ -672,7 +676,11 @@ pub trait DataStream {
 		StreamMapAll::new(self, func)
 	}
 
-	fn map_one<F: FnMut(ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>>(self, func: F, component: usize) -> StreamMapOne<Self, F>
+	fn map_one<F: FnMut(ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>>(
+		self,
+		func: F,
+		component: usize,
+	) -> StreamMapOne<Self, F>
 	where
 		Self: Sized,
 	{
@@ -685,7 +693,10 @@ impl dyn DataStream {
 	///
 	/// # Panics
 	/// Panics if the length of `nodes` does not match the number of components in the DataStream (`self.next().len()`).
-	pub fn next_with<I: Into<Node>, T: IntoIterator<Item = I>>(&mut self, nodes: T) -> IndexMap<Node, ArcArray<f32, IxDyn>> {
+	pub fn next_with<I: Into<Node>, T: IntoIterator<Item = I>>(
+		&mut self,
+		nodes: T,
+	) -> IndexMap<Node, ArcArray<f32, IxDyn>> {
 		let next = self.next();
 		let len = next.len();
 
@@ -994,7 +1005,9 @@ impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> Vec<ArcArray<f32, IxD
 	}
 }
 
-impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> Vec<ArcArray<f32, IxDyn>>> DataStream for StreamMapAll<S, F> {
+impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> Vec<ArcArray<f32, IxDyn>>> DataStream
+	for StreamMapAll<S, F>
+{
 	fn next(&mut self) -> Vec<ArcArray<f32, IxDyn>> {
 		let data = self.stream.next();
 		(self.func)(data) // that is some weird syntax

@@ -1,19 +1,19 @@
 use crate::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Op, Graph},
+	graph::{Graph, Node, NodeID, Op},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::Dimension;
 use std::{
+	any::Any,
 	convert::Into,
 	fmt::{Debug, Formatter},
 	sync::Arc,
-	any::Any,
 };
 
 /// Applies a ShapeConstraint  which enforces propagation of the runtime input shape to the output shape at runtime.

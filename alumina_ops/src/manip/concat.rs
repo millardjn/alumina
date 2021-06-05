@@ -1,23 +1,22 @@
-use std::iter::once;
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeID, Graph},
-	
+	graph::{merge_node_graphs, Graph, Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset,  IndexSet, IndexMap};
-use ndarray::{ArrayViewMutD, Dimension, Slice, Axis};
+use indexmap::{indexset, IndexMap, IndexSet};
+use ndarray::{ArrayViewMutD, Axis, Dimension, Slice};
 use smallvec::SmallVec;
 use std::any::Any;
+use std::iter::once;
 
 /// Concatenates the list of input nodes along the chosen axis
 pub fn concat<I, T: IntoIterator<Item = I>>(inputs: T, axis: usize) -> Result<Node, OpBuildError>
 where
-    I: Into<Node>,
+	I: Into<Node>,
 {
 	let inputs: SmallVec<[Node; 16]> = inputs.into_iter().map(Into::into).collect();
 	merge_node_graphs(&inputs);
@@ -26,7 +25,7 @@ where
 		NodeShape::from(vec![0; axis])
 	} else {
 		let dims = inputs[0].shape().len();
-		assert!(inputs.iter().all(|i|i.shape().len() == dims));
+		assert!(inputs.iter().all(|i| i.shape().len() == dims));
 
 		let mut shape = NodeShape::from(vec![-1; dims]);
 		for i in &inputs {
@@ -34,15 +33,18 @@ where
 				if j == axis {
 					shape.slice_mut()[j] = shape.slice()[j].add(a);
 				} else {
-					shape.slice_mut()[j] = shape.slice()[j].merge(a).map_err(|e| format!("Could not concat due to incompatible axes at index {}: {}", j, e))?;
+					shape.slice_mut()[j] = shape.slice()[j]
+						.merge(a)
+						.map_err(|e| format!("Could not concat due to incompatible axes at index {}: {}", j, e))?;
 				}
-			} 
+			}
 		}
 		shape
 	};
 
 	let output = Node::new(out_shape).set_name_unique(&format!(
-		"concat({})", inputs.iter().map(|n|n.name()).collect::<Vec<_>>().join(",")
+		"concat({})",
+		inputs.iter().map(|n| n.name()).collect::<Vec<_>>().join(",")
 	));
 
 	let mut op = Concat::new(output.clone(), axis);
@@ -53,7 +55,6 @@ where
 
 	Ok(output)
 }
-
 
 pub struct Concat {
 	inputs: Vec<Node>,
@@ -102,7 +103,11 @@ impl OpSpecification for Concat {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i).clone()).collect(),
+			inputs: self
+				.inputs
+				.iter()
+				.map(|i| mapping.get(i).unwrap_or(i).clone())
+				.collect(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
 			axis: self.axis,
 		}
@@ -162,7 +167,7 @@ impl OpInstance for ConcatInstance {
 			ctx.merge_output_shape(&self.output, &NodeShape::from(vec![0; self.axis]))
 		} else {
 			let input_shapes: Vec<_> = self.inputs.iter().map(|input| ctx.input_shape(input).clone()).collect();
-			let axis_sum = input_shapes.iter().map(|shape|shape[self.axis]).sum();
+			let axis_sum = input_shapes.iter().map(|shape| shape[self.axis]).sum();
 			for mut shape in input_shapes {
 				shape[self.axis] = axis_sum;
 				ctx.merge_output_shape(&self.output, &shape.slice().into())?;
@@ -178,7 +183,10 @@ impl OpInstance for ConcatInstance {
 		for input in &self.inputs {
 			let values = ctx.get_input(input);
 			let axis_size = values.shape()[self.axis];
-			let mut output_slice = output.slice_axis_mut(Axis(self.axis), Slice::new(start as isize, Some((start + axis_size) as isize), 1));
+			let mut output_slice = output.slice_axis_mut(
+				Axis(self.axis),
+				Slice::new(start as isize, Some((start + axis_size) as isize), 1),
+			);
 			output_slice += &values;
 			start += axis_size;
 		}
@@ -186,9 +194,6 @@ impl OpInstance for ConcatInstance {
 		Ok(())
 	}
 }
-
-
-
 
 /// Optimised Backward pass for Concat Op.
 ///
@@ -235,17 +240,33 @@ impl OpSpecification for ConcatBack {
 	}
 
 	fn inputs(&self) -> IndexSet<Node> {
-		self.input_and_grads.iter().map(|(i, _)|i.clone()).chain(once(self.output_grad.clone())).collect()
+		self.input_and_grads
+			.iter()
+			.map(|(i, _)| i.clone())
+			.chain(once(self.output_grad.clone()))
+			.collect()
 	}
 
 	fn outputs(&self) -> IndexSet<Node> {
-		self.input_and_grads.iter().map(|(_, g)|g.clone()).collect()
+		self.input_and_grads.iter().map(|(_, g)| g.clone()).collect()
 	}
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			input_and_grads: self.input_and_grads.iter().map(|(i, g)| (mapping.get(i).unwrap_or_else(|| i).clone(), mapping.get(g).unwrap_or_else(|| g).clone())).collect(),
-			output_grad: mapping.get(&self.output_grad).unwrap_or_else(|| &self.output_grad).clone(),
+			input_and_grads: self
+				.input_and_grads
+				.iter()
+				.map(|(i, g)| {
+					(
+						mapping.get(i).unwrap_or_else(|| i).clone(),
+						mapping.get(g).unwrap_or_else(|| g).clone(),
+					)
+				})
+				.collect(),
+			output_grad: mapping
+				.get(&self.output_grad)
+				.unwrap_or_else(|| &self.output_grad)
+				.clone(),
 			axis: self.axis,
 		}
 	}
@@ -278,18 +299,26 @@ impl OpInstance for ConcatBackInstance {
 
 	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
 		Box::new(ConcatBack {
-			input_and_grads: self.input_and_grads.iter().map(|&(i, g)| (graph.node_from_id(i), graph.node_from_id(g))).collect(),
+			input_and_grads: self
+				.input_and_grads
+				.iter()
+				.map(|&(i, g)| (graph.node_from_id(i), graph.node_from_id(g)))
+				.collect(),
 			output_grad: graph.node_from_id(self.output_grad),
 			axis: self.axis,
 		})
 	}
 
 	fn inputs(&self) -> IndexSet<NodeID> {
-		self.input_and_grads.iter().map(|(i, _)|i.clone()).chain(once(self.output_grad.clone())).collect()
+		self.input_and_grads
+			.iter()
+			.map(|(i, _)| i.clone())
+			.chain(once(self.output_grad.clone()))
+			.collect()
 	}
 
 	fn outputs(&self) -> IndexSet<NodeID> {
-		self.input_and_grads.iter().map(|(_, g)|g.clone()).collect()
+		self.input_and_grads.iter().map(|(_, g)| g.clone()).collect()
 	}
 
 	fn gradient(&self, _ctx: &mut GradientContext) -> Result<(), GradientError> {
@@ -303,27 +332,26 @@ impl OpInstance for ConcatBackInstance {
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
 		let output_grad = ctx.get_input(&self.output_grad);
 
-	
 		let mut start = 0;
 		let mut grad_map = IndexMap::new(); // store output references in a map to avoid potentially calling get_output() twice for the same node
 		for (input, input_grad) in &self.input_and_grads {
 			if ctx.is_required_output(input_grad) {
-
 				let grad = grad_map.entry(input_grad).or_insert_with(|| ctx.get_output(input_grad));
 				let axis_size = grad.shape()[self.axis];
-				*grad += &output_grad.slice_axis(Axis(self.axis), Slice::new(start as isize, Some((start + axis_size) as isize), 1));
+				*grad += &output_grad.slice_axis(
+					Axis(self.axis),
+					Slice::new(start as isize, Some((start + axis_size) as isize), 1),
+				);
 				start += axis_size;
 			} else {
 				let axis_size = ctx.shape(input)[self.axis];
 				start += axis_size;
 			}
-			
 		}
 
 		Ok(())
 	}
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -336,107 +364,33 @@ mod tests {
 
 	#[test]
 	fn forward_test() {
-
 		let input1 = Node::new(&[2, -1, 3]).set_name("input1").set_value(arr3(&[
-			[
-				[6.0, 4.0, 0.0],
-				[7.0, 7.0, 7.0],
-				[2.0, 10.0, 3.0],
-				[1.0, 2.0, 5.0],
-			],
-			[
-				[1.0, 7.0, 4.0],
-				[1.0, 10.0, 1.0],
-				[0.0, 2.0, 9.0],
-				[5.0, 9.0, 0.0],
-			],
+			[[6.0, 4.0, 0.0], [7.0, 7.0, 7.0], [2.0, 10.0, 3.0], [1.0, 2.0, 5.0]],
+			[[1.0, 7.0, 4.0], [1.0, 10.0, 1.0], [0.0, 2.0, 9.0], [5.0, 9.0, 0.0]],
 		]));
 
-
 		let input2 = Node::new(&[2, 4, -1]).set_name("input2").set_value(arr3(&[
-			[
-				[4.0, 5.0, 5.0],
-				[3.0, 0.0, 2.0],
-				[8.0, 5.0, 8.0],
-				[0.0, 1.0, 3.0],
-			],
-			[
-				[9.0, 5.0, 5.0],
-				[5.0, 5.0, 3.0],
-				[2.0, 9.0, 5.0],
-				[1.0, 5.0, 3.0],
-			],
+			[[4.0, 5.0, 5.0], [3.0, 0.0, 2.0], [8.0, 5.0, 8.0], [0.0, 1.0, 3.0]],
+			[[9.0, 5.0, 5.0], [5.0, 5.0, 3.0], [2.0, 9.0, 5.0], [1.0, 5.0, 3.0]],
 		]));
 
 		let input3 = Node::new(&[2, 4, 3]).set_name("input3").set_value(arr3(&[
-			[
-				[8.0, 1.0, 9.0],
-				[7.0, 1.0, 0.0],
-				[0.0, 1.0, 2.0],
-				[2.0, 1.0, 10.0],
-			],
-			[
-				[2.0, 7.0, 3.0],
-				[0.0, 8.0, 10.0],
-				[9.0, 1.0, 5.0],
-				[6.0, 1.0, 4.0],
-			],
+			[[8.0, 1.0, 9.0], [7.0, 1.0, 0.0], [0.0, 1.0, 2.0], [2.0, 1.0, 10.0]],
+			[[2.0, 7.0, 3.0], [0.0, 8.0, 10.0], [9.0, 1.0, 5.0], [6.0, 1.0, 4.0]],
 		]));
-
 
 		let output1 = concat(vec![&input1, &input2, &input3, &input1], 0).unwrap();
 		let output2 = concat(vec![&input1, &input2, &input3, &input1], 1).unwrap();
 
-
 		let expected1 = arr3(&[
-			[
-				[6.0, 4.0, 0.0],
-				[7.0, 7.0, 7.0],
-				[2.0, 10.0, 3.0],
-				[1.0, 2.0, 5.0],
-			],
-			[
-				[1.0, 7.0, 4.0],
-				[1.0, 10.0, 1.0],
-				[0.0, 2.0, 9.0],
-				[5.0, 9.0, 0.0],
-			],
-			[
-				[4.0, 5.0, 5.0],
-				[3.0, 0.0, 2.0],
-				[8.0, 5.0, 8.0],
-				[0.0, 1.0, 3.0],
-			],
-			[
-				[9.0, 5.0, 5.0],
-				[5.0, 5.0, 3.0],
-				[2.0, 9.0, 5.0],
-				[1.0, 5.0, 3.0],
-			],
-			[
-				[8.0, 1.0, 9.0],
-				[7.0, 1.0, 0.0],
-				[0.0, 1.0, 2.0],
-				[2.0, 1.0, 10.0],
-			],
-			[
-				[2.0, 7.0, 3.0],
-				[0.0, 8.0, 10.0],
-				[9.0, 1.0, 5.0],
-				[6.0, 1.0, 4.0],
-			],
-			[
-				[6.0, 4.0, 0.0],
-				[7.0, 7.0, 7.0],
-				[2.0, 10.0, 3.0],
-				[1.0, 2.0, 5.0],
-			],
-			[
-				[1.0, 7.0, 4.0],
-				[1.0, 10.0, 1.0],
-				[0.0, 2.0, 9.0],
-				[5.0, 9.0, 0.0],
-			],
+			[[6.0, 4.0, 0.0], [7.0, 7.0, 7.0], [2.0, 10.0, 3.0], [1.0, 2.0, 5.0]],
+			[[1.0, 7.0, 4.0], [1.0, 10.0, 1.0], [0.0, 2.0, 9.0], [5.0, 9.0, 0.0]],
+			[[4.0, 5.0, 5.0], [3.0, 0.0, 2.0], [8.0, 5.0, 8.0], [0.0, 1.0, 3.0]],
+			[[9.0, 5.0, 5.0], [5.0, 5.0, 3.0], [2.0, 9.0, 5.0], [1.0, 5.0, 3.0]],
+			[[8.0, 1.0, 9.0], [7.0, 1.0, 0.0], [0.0, 1.0, 2.0], [2.0, 1.0, 10.0]],
+			[[2.0, 7.0, 3.0], [0.0, 8.0, 10.0], [9.0, 1.0, 5.0], [6.0, 1.0, 4.0]],
+			[[6.0, 4.0, 0.0], [7.0, 7.0, 7.0], [2.0, 10.0, 3.0], [1.0, 2.0, 5.0]],
+			[[1.0, 7.0, 4.0], [1.0, 10.0, 1.0], [0.0, 2.0, 9.0], [5.0, 9.0, 0.0]],
 		]);
 
 		let expected2 = arr3(&[

@@ -12,7 +12,7 @@ use crate::{
 	graph::{merge_node_graphs, Graph, Node, Op},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{IndexSet, IndexMap};
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use std::any::Any;
 use std::fmt;
@@ -47,7 +47,7 @@ fn standard_op_name_inner(
 
 	new_name.push_str(")");
 
-	if graph.ops_named(&new_name).is_empty(){
+	if graph.ops_named(&new_name).is_empty() {
 		return new_name;
 	}
 

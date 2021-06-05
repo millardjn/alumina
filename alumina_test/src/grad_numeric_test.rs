@@ -5,7 +5,7 @@ use alumina_core::{
 	util::display::IterDisplay,
 };
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
-use ndarray::{ArrayD, Dimension, Zip, ArcArray, IxDyn};
+use ndarray::{ArcArray, ArrayD, Dimension, IxDyn, Zip};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rand_distr::{Distribution, Normal};
 

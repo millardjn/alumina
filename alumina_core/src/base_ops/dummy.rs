@@ -1,12 +1,12 @@
 use crate::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{IndexSet, IndexMap};
+use indexmap::{IndexMap, IndexSet};
 use std::any::Any;
 
 #[derive(Default)]
@@ -56,18 +56,20 @@ impl OpSpecification for DummyOp {
 	fn outputs(&self) -> IndexSet<Node> {
 		self.outputs.clone()
 	}
-	
+
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		DummyOp {
 			inputs: self
 				.inputs
 				.iter()
-				.map(|node| mapping.get(node).unwrap_or(node)).cloned()
+				.map(|node| mapping.get(node).unwrap_or(node))
+				.cloned()
 				.collect(),
 			outputs: self
 				.outputs
 				.iter()
-				.map(|node| mapping.get(node).unwrap_or(node)).cloned()
+				.map(|node| mapping.get(node).unwrap_or(node))
+				.cloned()
 				.collect(),
 		}
 	}

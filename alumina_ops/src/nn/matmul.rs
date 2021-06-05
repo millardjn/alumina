@@ -1,17 +1,17 @@
 use crate::math::broadcast::Broadcast;
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
+	graph::{merge_graphs, Graph, Node, NodeID, NodeTag, Op},
 	init::{duplicate, Initialiser},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
-use ndarray::Dimension;
+use indexmap::{indexset, IndexMap, IndexSet};
 use matrixmultiply_mt;
+use ndarray::Dimension;
 use std::any::Any;
 
 fn get_inner_outer(shape: &NodeShape) -> (usize, NodeAxis) {
@@ -271,7 +271,6 @@ impl OpSpecification for MatMul {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-
 			matrix_a: mapping.get(&self.matrix_a).unwrap_or(&self.matrix_a).clone(),
 			matrix_b: mapping.get(&self.matrix_b).unwrap_or(&self.matrix_b).clone(),
 			matrix_c: mapping.get(&self.matrix_c).unwrap_or(&self.matrix_c).clone(),

@@ -50,7 +50,10 @@ pub fn shapes_inner(
 	if !input_errors.is_empty() {
 		return Err(ShapesError::InputCantMerge {
 			input_errors: Iter2Display { inner: input_errors },
-			partial: map.iter().map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone())).collect(),
+			partial: map
+				.iter()
+				.map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone()))
+				.collect(),
 		});
 	}
 
@@ -124,7 +127,10 @@ fn op_update<'a>(
 		.map_err(|e| ShapesError::ShapePropError {
 			op: op.clone(),
 			error: e,
-			partial: map.iter().map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone())).collect(),
+			partial: map
+				.iter()
+				.map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone()))
+				.collect(),
 		})?;
 	}
 
@@ -156,10 +162,7 @@ impl ShapeCacheKey {
 					)
 					.collect()
 			} else {
-				inputs
-					.iter()
-					.map(|(node, shape)| (*node, shape.clone()))
-					.collect()
+				inputs.iter().map(|(node, shape)| (*node, shape.clone())).collect()
 			},
 		};
 		key.subgraph_nodes.sort_unstable_by(|a, b| a.id().cmp(&b.id()));
@@ -279,7 +282,13 @@ impl<'a> ShapePropContext<'a> {
 			node.id()
 		);
 
-		self.map_completed.get(node).unwrap_or_else(||panic!("Op Bug: Op `{}` attempted to retrieve shape of Node (id:{}) but it is not part of the subgraph.", self.current_op().name(), node.id()))
+		self.map_completed.get(node).unwrap_or_else(|| {
+			panic!(
+				"Op Bug: Op `{}` attempted to retrieve shape of Node (id:{}) but it is not part of the subgraph.",
+				self.current_op().name(),
+				node.id()
+			)
+		})
 	}
 
 	/// If output shape is not part of the graph, this does nothing.
@@ -304,7 +313,11 @@ impl<'a> ShapePropContext<'a> {
 					op,
 					shape,
 					existing_shape,
-					subgraph.nodes.get(node).expect("all nodes in map must be in subgraph").name(),
+					subgraph
+						.nodes
+						.get(node)
+						.expect("all nodes in map must be in subgraph")
+						.name(),
 				)
 			})?;
 			*existing_shape = new_shape;
@@ -335,7 +348,11 @@ impl<'a> ShapePropContext<'a> {
 					op,
 					shape,
 					existing_shape,
-					subgraph.nodes.get(node).expect("all nodes in map must be in subgraph").name(),
+					subgraph
+						.nodes
+						.get(node)
+						.expect("all nodes in map must be in subgraph")
+						.name(),
 				)
 			})?;
 			*existing_shape = new_shape;
@@ -364,7 +381,6 @@ impl<'a> ShapePropContext<'a> {
 
 	fn set_next_op(&mut self, op: Op) -> Result<(), ShapesError> {
 		{
-			
 			self.current_inputs = op.parent_nodes();
 			self.current_outputs = op.child_nodes();
 		}

@@ -4,15 +4,15 @@ use crate::{
 	math::broadcast::broadcast,
 };
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Dimension, Zip};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -107,7 +107,7 @@ impl OpSpecification for ReduceProd {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			input: mapping.get(&self.input).unwrap_or( &self.input).clone(),
+			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
 			axes: self.axes.clone(),
 			keep_dims: self.keep_dims,

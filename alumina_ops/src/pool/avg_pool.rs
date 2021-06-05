@@ -1,17 +1,17 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::Dimension;
 use smallvec::SmallVec;
-use std::cmp::min;
 use std::any::Any;
+use std::cmp::min;
 
 pub fn avg_pool<I>(input: I, factors: &[usize]) -> Result<Node, OpBuildError>
 where
@@ -84,7 +84,7 @@ impl OpSpecification for AvgPool {
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
 	}
-	
+
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
 			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
@@ -275,7 +275,7 @@ impl OpSpecification for AvgPoolBack {
 		Self {
 			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
 			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		}
 	}
 

@@ -1,9 +1,6 @@
-use alumina_core::{
-	errors::OpBuildError,
-	graph::Node,
-};
+use crate::elementwise::{div::div, sqr::sqr};
 use crate::regularisation::{l1::l1, l2::l2};
-use crate::elementwise::{sqr::sqr, div::div};
+use alumina_core::{errors::OpBuildError, graph::Node};
 
 use smallvec::SmallVec;
 
@@ -22,9 +19,10 @@ where
 {
 	let inputs: SmallVec<[Node; 16]> = inputs.into_iter().map(Into::into).collect();
 
-    let hoyer_squared = div(sqr(l1(&inputs)?)?, l2(&inputs)?)?;
-    hoyer_squared.set_name_unique(&format!(
-		"hoyer_squared({})", inputs.iter().map(|n|n.name()).collect::<Vec<_>>().join(",")
+	let hoyer_squared = div(sqr(l1(&inputs)?)?, l2(&inputs)?)?;
+	hoyer_squared.set_name_unique(&format!(
+		"hoyer_squared({})",
+		inputs.iter().map(|n| n.name()).collect::<Vec<_>>().join(",")
 	));
 
 	Ok(hoyer_squared)

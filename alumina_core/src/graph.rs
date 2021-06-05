@@ -41,17 +41,17 @@ use crate::{
 	shape::NodeShape,
 	util::display::IterDebug,
 };
-use indexmap::{IndexMap, IndexSet, Equivalent};
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use ndarray::{arr0, arr1, ArcArray, ArrayBase, ArrayD, Data, Dimension, IxDyn, OwnedArcRepr, OwnedRepr, ViewRepr};
-use smallvec::SmallVec;
 use parking_lot::Mutex;
+use smallvec::SmallVec;
 use std::{
 	borrow::Borrow,
+	collections::BTreeMap,
 	fmt::{self, Debug, Display},
 	hash::{Hash, Hasher},
 	ops::Deref,
-	sync::{Arc, atomic::AtomicU64, atomic::Ordering},
-	collections::BTreeMap,
+	sync::{atomic::AtomicU64, atomic::Ordering, Arc},
 };
 
 // TODO write explanation for all the ways of creating a Node
@@ -129,7 +129,7 @@ impl Node {
 	/// Panics if any other `Node`s ists for this.
 	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
 	pub fn remove(self) -> NodeInnerData {
-		let Node {graph, id, data} = self;
+		let Node { graph, id, data } = self;
 		drop(data);
 		graph.remove_node(id)
 	}
@@ -316,11 +316,10 @@ impl Node {
 	///
 	/// Panics if number of input ops is not equal to 1.
 	pub fn parent_op(&self) -> Op {
-		self.graph
-			.with_root_inner_mut(|graph, inner| {
-				let parent = inner.node_parent(self.id);
-				inner.op_from_inner(graph, parent)
-			})
+		self.graph.with_root_inner_mut(|graph, inner| {
+			let parent = inner.node_parent(self.id);
+			inner.op_from_inner(graph, parent)
+		})
 	}
 
 	/// Returns the set of `Op`s that use this `Node` as an input.
@@ -385,7 +384,7 @@ impl Node {
 	/// Returns the shape of the value if one is set
 	pub fn value_shape(&self) -> Option<IxDyn> {
 		let data = self.data.lock();
-		data.value.as_ref().map(|v|IxDyn(v.shape()))
+		data.value.as_ref().map(|v| IxDyn(v.shape()))
 	}
 
 	pub fn has_value(&self) -> bool {
@@ -399,8 +398,12 @@ impl Node {
 	/// Panics if the node is not a fixed shape (all known axes).
 	pub fn init_array(&self) -> Option<ArrayD<f32>> {
 		let mut data = self.data.lock();
-		let NodeInnerData {ref shape, ref mut init, ..} = &mut *data;
-		init.as_mut().map(|i|i.array(shape.to_data_shape().unwrap()))
+		let NodeInnerData {
+			ref shape,
+			ref mut init,
+			..
+		} = &mut *data;
+		init.as_mut().map(|i| i.array(shape.to_data_shape().unwrap()))
 	}
 }
 
@@ -649,7 +652,12 @@ impl Op {
 	/// # Panics
 	/// Panics if any other `Op`s still exists for this.
 	pub fn remove(self) -> OpInnerData {
-		let Op {graph, id, data, instance} = self;
+		let Op {
+			graph,
+			id,
+			data,
+			instance,
+		} = self;
 		drop(data);
 		drop(instance);
 		graph.remove_op(id)
@@ -657,7 +665,7 @@ impl Op {
 
 	/// Set the name of the Op, replaces existing name.
 	pub fn set_name<S: Into<String>>(&self, new_name: S) -> Self {
-		let new_name:String = new_name.into();
+		let new_name: String = new_name.into();
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
 			inner.associations.unassociate_op_name(self.id.clone(), &data.name);
@@ -698,7 +706,7 @@ impl Op {
 	pub fn add_tags<I: IntoIterator<Item = OpTag>>(&self, tags: I) -> Self {
 		self.graph.with_root_inner_mut(|_, inner| {
 			let mut data = self.data.lock();
-			
+
 			for tag in tags {
 				inner.associations.associate_op_tag(self.id.clone(), &tag);
 				data.tags.insert(tag);
@@ -859,9 +867,7 @@ impl OpID {
 
 impl Clone for OpID {
 	fn clone(&self) -> Self {
-		OpID {
-			id: self.id,
-		}
+		OpID { id: self.id }
 	}
 }
 
@@ -982,8 +988,26 @@ impl Debug for Graph {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> ::std::fmt::Result {
 		self.with_root_inner_mut(|_graph, inner| {
 			fmt.debug_struct("Graph")
-				.field("nodes", &IterDebug { inner: inner.nodes.iter().map(|(_, data)| data.lock().name.clone()).collect::<Vec<_>>() })
-				.field("ops", &IterDebug { inner: inner.ops.iter().map(|(_, data)| data.lock().name.clone()).collect::<Vec<_>>() })
+				.field(
+					"nodes",
+					&IterDebug {
+						inner: inner
+							.nodes
+							.iter()
+							.map(|(_, data)| data.lock().name.clone())
+							.collect::<Vec<_>>(),
+					},
+				)
+				.field(
+					"ops",
+					&IterDebug {
+						inner: inner
+							.ops
+							.iter()
+							.map(|(_, data)| data.lock().name.clone())
+							.collect::<Vec<_>>(),
+					},
+				)
 				.finish()
 		})
 		// self.with_nodes_ops(|nodes, ops| {
@@ -1061,9 +1085,7 @@ impl Graph {
 	/// Panics if any `Node`s still exists for this `NodeID`.
 	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
 	pub fn remove_node(&self, node_id: NodeID) -> NodeInnerData {
-		self.with_root_inner_mut(|_graph, graph_inner| {
-			graph_inner.remove_node(node_id)
-		})
+		self.with_root_inner_mut(|_graph, graph_inner| graph_inner.remove_node(node_id))
 	}
 
 	/// Remove from the graph the selected `OpID`
@@ -1072,9 +1094,7 @@ impl Graph {
 	/// Panics if the `OpID` is not a member of this graph.
 	/// Panics if any `Op`s still exists for this `OpID`.
 	pub fn remove_op(&self, op_id: OpID) -> OpInnerData {
-		self.with_root_inner_mut(|_graph, graph_inner| {
-			graph_inner.remove_op(op_id)
-		})
+		self.with_root_inner_mut(|_graph, graph_inner| graph_inner.remove_op(op_id))
 	}
 
 	/// Create a `Node` from a `NodeInner`
@@ -1084,21 +1104,17 @@ impl Graph {
 	/// # Panics
 	/// Panics if the NodeInner is not a member of this graph.
 	pub fn node_from_id(&self, inner: NodeID) -> Node {
-		self.with_root_inner_mut(|graph, graph_inner| {
-			graph_inner.node_from_inner(graph, inner)
-		})
+		self.with_root_inner_mut(|graph, graph_inner| graph_inner.node_from_inner(graph, inner))
 	}
 
 	/// Create an `Op` from an `OpInner`
-	///	
+	///
 	/// # Locking
 	/// This locks the underlying graph. If the graph is already locked then GraphInner should be used to avoid deadlocks.
 	/// # Panics
 	/// Panics if the OpInner is not a member of this graph.
 	pub fn op_from_id(&self, inner: OpID) -> Op {
-		self.with_root_inner_mut(|graph, graph_inner| {
-			graph_inner.op_from_inner(graph, inner)
-		})
+		self.with_root_inner_mut(|graph, graph_inner| graph_inner.op_from_inner(graph, inner))
 	}
 
 	// /// Create a `Node` from a `NodeInner`
@@ -1217,19 +1233,11 @@ impl Graph {
 	}
 
 	pub fn node_count(&self) -> usize {
-		self.with_root_inner_mut(|_graph, inner| {
-			inner
-				.nodes
-				.len()
-		})
+		self.with_root_inner_mut(|_graph, inner| inner.nodes.len())
 	}
 
 	pub fn op_count(&self) -> usize {
-		self.with_root_inner_mut(|_graph, inner| {
-			inner
-				.ops
-				.len()
-		})
+		self.with_root_inner_mut(|_graph, inner| inner.ops.len())
 	}
 
 	// pub fn node_index(&self, node: NodeID) -> usize {
@@ -1286,7 +1294,6 @@ impl Graph {
 			{
 				let mut graph_link = graph.link.lock();
 				if let x @ &mut GraphLink::Root(_) = &mut *graph_link {
-
 					return f(&graph, x);
 				}
 			}
@@ -1465,37 +1472,39 @@ impl GraphInner {
 			graph: graph.clone(),
 			data: match data {
 				Some(x) => x.clone(),
-				None => panic!("NodeInner (id:{}) is not a part of this Graph.", inner.id())
+				None => panic!("NodeInner (id:{}) is not a part of this Graph.", inner.id()),
 			},
 			id: inner,
 		}
 	}
 
 	/// Create an `Op` from an `OpInner`
-	///	
+	///
 	/// # Panics
 	/// Panics if the OpInner is not a member of this graph.
 	pub fn op_from_inner(&self, graph: &Graph, inner: OpID) -> Op {
 		let data = self.ops.get(&inner);
 		match data {
-			Some(x) => {
-				Op {
-					graph: graph.clone(),
-					id: inner,
-					data: x.clone(),
-					instance: x.lock().instance.clone(),
-				}
+			Some(x) => Op {
+				graph: graph.clone(),
+				id: inner,
+				data: x.clone(),
+				instance: x.lock().instance.clone(),
 			},
-			None => panic!("OpInner (id:{}) is not a part of this Graph.", inner.id())
+			None => panic!("OpInner (id:{}) is not a part of this Graph.", inner.id()),
 		}
 	}
 
 	fn node_children(&mut self, node: NodeID) -> IndexSet<OpID> {
-		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).node_children(node)
+		self.relations
+			.get_or_instantiate_relations(&self.nodes, &self.ops)
+			.node_children(node)
 	}
 
 	fn node_parents(&mut self, node: NodeID) -> IndexSet<OpID> {
-		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).node_parents(node)
+		self.relations
+			.get_or_instantiate_relations(&self.nodes, &self.ops)
+			.node_parents(node)
 	}
 
 	fn node_parent(&mut self, node: NodeID) -> OpID {
@@ -1514,11 +1523,15 @@ impl GraphInner {
 	}
 
 	fn nodes_tagged(&mut self, tag: &NodeTag) -> IndexSet<NodeID> {
-		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).nodes_tagged(tag)
+		self.associations
+			.get_or_instantiate_association(&self.nodes, &self.ops)
+			.nodes_tagged(tag)
 	}
 
 	fn nodes_named(&mut self, name: &str) -> IndexSet<NodeID> {
-		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).nodes_named(name)
+		self.associations
+			.get_or_instantiate_association(&self.nodes, &self.ops)
+			.nodes_named(name)
 	}
 
 	fn node_named(&mut self, name: &str) -> NodeID {
@@ -1528,59 +1541,60 @@ impl GraphInner {
 		let node = iter
 			.next()
 			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
-		assert!(
-			iter.next().is_none(),
-			"More than one Node named: {}",
-			name
-		);
+		assert!(iter.next().is_none(), "More than one Node named: {}", name);
 		node.clone()
 	}
 
 	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).op_children(op)
+		self.relations
+			.get_or_instantiate_relations(&self.nodes, &self.ops)
+			.op_children(op)
 	}
 
 	fn op_parents(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.relations.get_or_instantiate_relations(&self.nodes, &self.ops).op_parents(op)
+		self.relations
+			.get_or_instantiate_relations(&self.nodes, &self.ops)
+			.op_parents(op)
 	}
 
 	fn ops_tagged(&mut self, tag: &OpTag) -> IndexSet<OpID> {
-		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).ops_tagged(tag)
+		self.associations
+			.get_or_instantiate_association(&self.nodes, &self.ops)
+			.ops_tagged(tag)
 	}
 
 	fn ops_named(&mut self, name: &str) -> IndexSet<OpID> {
-		self.associations.get_or_instantiate_association(&self.nodes, &self.ops).ops_named(name)
+		self.associations
+			.get_or_instantiate_association(&self.nodes, &self.ops)
+			.ops_named(name)
 	}
 
 	fn op_named(&mut self, name: &str) -> OpID {
 		let set = self.ops_named(name);
 		let mut iter = set.iter();
 
-
 		let op = iter
 			.next()
 			.unwrap_or_else(|| panic!("No Node associated with name: {}", name));
-		assert!(
-			iter.next().is_none(),
-			"More than one Op named: {}",
-			name
-		);
+		assert!(iter.next().is_none(), "More than one Op named: {}", name);
 		op.clone()
 	}
-
-
 
 	/// Add an existing node to the graph.
 	/// Updates membership in the graph and denormalised data for names and tags.
 	/// Does not add information for relationships to ops.
 	fn add_node(&mut self, node_id: NodeID, node_data: Arc<Mutex<NodeInnerData>>) {
-		assert!(!self.nodes.contains_key(&node_id), "Cannot add node that is already in graph: {}", node_data.lock().name);
+		assert!(
+			!self.nodes.contains_key(&node_id),
+			"Cannot add node that is already in graph: {}",
+			node_data.lock().name
+		);
 		let node_data = self.nodes.entry(node_id).or_insert(node_data);
 
 		self.relations.add_node(node_id);
 
 		self.associations.associate_node_name(node_id, &node_data.lock().name);
-		
+
 		for tag in node_data.lock().tags.iter() {
 			self.associations.associate_node_tag(node_id, tag);
 		}
@@ -1593,14 +1607,17 @@ impl GraphInner {
 	/// Panics if any `Node`s still exists for this `NodeID`.
 	/// If the Node is still referenced by Ops in the graph then this will panic in debug mode, and may panic in Release.
 	fn remove_node(&mut self, node_id: NodeID) -> NodeInnerData {
-		let node_data =  match self.nodes.remove(&node_id) {
+		let node_data = match self.nodes.remove(&node_id) {
 			Some(x) => x,
-			None => panic!("NodeID (id:{}) is not a part of this Graph.", node_id.id())
+			None => panic!("NodeID (id:{}) is not a part of this Graph.", node_id.id()),
 		};
 
 		let node_data = match Arc::try_unwrap(node_data) {
 			Ok(x) => x.into_inner(),
-			Err(_) => panic!("NodeID (id:{}) could not be removed from the graph as Node handles still exist", node_id.id())
+			Err(_) => panic!(
+				"NodeID (id:{}) could not be removed from the graph as Node handles still exist",
+				node_id.id()
+			),
 		};
 		if cfg!(debug_assertions) {
 			// if debug, instantiate so that remove node can panic if parents or children still exist
@@ -1621,7 +1638,11 @@ impl GraphInner {
 	/// # Panics
 	/// May panic if input and output nodes haven't already been added.
 	fn add_op(&mut self, op_id: OpID, op_data: Arc<Mutex<OpInnerData>>) {
-		assert!(!self.ops.contains_key(&op_id), "Cannot add node that is already in graph: {}", op_data.lock().name);
+		assert!(
+			!self.ops.contains_key(&op_id),
+			"Cannot add node that is already in graph: {}",
+			op_data.lock().name
+		);
 		let op_data = self.ops.entry(op_id).or_insert(op_data);
 
 		self.relations.add_op(op_id, op_data);
@@ -1639,18 +1660,21 @@ impl GraphInner {
 	/// Panics if the `OpID` is not a member of this graph.
 	/// Panics if any `Op`s still exists for this `OpID`.
 	fn remove_op(&mut self, op_id: OpID) -> OpInnerData {
-
-		let op_data =  match self.ops.remove(&op_id) {
+		let op_data = match self.ops.remove(&op_id) {
 			Some(x) => x,
-			None => panic!("OpID (id:{}) is not a part of this Graph.", op_id.id())
+			None => panic!("OpID (id:{}) is not a part of this Graph.", op_id.id()),
 		};
 
 		let op_data = match Arc::try_unwrap(op_data) {
 			Ok(x) => x.into_inner(),
-			Err(_) => panic!("OpID (id:{}) could not be removed from the graph as Op handles still exist", op_id.id())
+			Err(_) => panic!(
+				"OpID (id:{}) could not be removed from the graph as Op handles still exist",
+				op_id.id()
+			),
 		};
 
-		self.relations.remove_op(op_id, op_data.instance.inputs(), op_data.instance.outputs());
+		self.relations
+			.remove_op(op_id, op_data.instance.inputs(), op_data.instance.outputs());
 
 		self.associations.unassociate_op_name(op_id, &op_data.name);
 		for tag in op_data.tags.iter() {
@@ -1734,29 +1758,60 @@ struct Relations {
 }
 
 impl Relations {
-	fn get_or_instantiate_relations(&mut self, nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut RelationsInner {
+	fn get_or_instantiate_relations(
+		&mut self,
+		nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+		ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>,
+	) -> &mut RelationsInner {
 		if self.inner.is_none() {
 			self.inner = Some(RelationsInner::from_graph(nodes, ops))
 		}
 		self.inner.as_mut().unwrap()
 	}
 
-
-	fn add_node(&mut self, node_id: NodeID){
+	fn add_node(&mut self, node_id: NodeID) {
 		if let Some(ref mut relations) = self.inner {
-			relations.node_parents.insert(node_id, IndexSet::new()).map(|_existing| panic!("Parent relations already existed Node (id:{}) was already a member of the graph", node_id.id()));
-			relations.node_children.insert(node_id, IndexSet::new()).map(|_existing| panic!("Child relations already existed Node (id:{}) was already a member of the graph", node_id.id()));
+			relations
+				.node_parents
+				.insert(node_id, IndexSet::new())
+				.map(|_existing| {
+					panic!(
+						"Parent relations already existed Node (id:{}) was already a member of the graph",
+						node_id.id()
+					)
+				});
+			relations
+				.node_children
+				.insert(node_id, IndexSet::new())
+				.map(|_existing| {
+					panic!(
+						"Child relations already existed Node (id:{}) was already a member of the graph",
+						node_id.id()
+					)
+				});
 		}
 	}
 
-	fn remove_node(&mut self, node_id: NodeID){
+	fn remove_node(&mut self, node_id: NodeID) {
 		if let Some(ref mut relations) = self.inner {
-			relations.node_parents.swap_remove(&node_id).map(|v|assert!(v.is_empty(), "Node (id:{}) was removed while it still had remaining parents", node_id.id()));
-			relations.node_children.swap_remove(&node_id).map(|v|assert!(v.is_empty(), "Node (id:{}) was removed while it still had remaining children", node_id.id()));
+			relations.node_parents.swap_remove(&node_id).map(|v| {
+				assert!(
+					v.is_empty(),
+					"Node (id:{}) was removed while it still had remaining parents",
+					node_id.id()
+				)
+			});
+			relations.node_children.swap_remove(&node_id).map(|v| {
+				assert!(
+					v.is_empty(),
+					"Node (id:{}) was removed while it still had remaining children",
+					node_id.id()
+				)
+			});
 		}
 	}
 
-	fn add_op(&mut self, op_id: OpID, op_data: &Mutex<OpInnerData>){
+	fn add_op(&mut self, op_id: OpID, op_data: &Mutex<OpInnerData>) {
 		if let Some(ref mut relations) = self.inner {
 			let instance = &op_data.lock().instance;
 			let parents = instance.inputs();
@@ -1792,9 +1847,8 @@ impl Relations {
 		}
 	}
 
-	fn remove_op(&mut self, op_id: OpID, parents: IndexSet<NodeID>, children: IndexSet<NodeID>){
+	fn remove_op(&mut self, op_id: OpID, parents: IndexSet<NodeID>, children: IndexSet<NodeID>) {
 		if let Some(ref mut relations) = self.inner {
-
 			for node in &parents {
 				relations
 					.node_children
@@ -1826,8 +1880,6 @@ impl Relations {
 			relations.op_children.swap_remove(&op_id);
 		}
 	}
-
-
 }
 
 #[derive(Default)]
@@ -1839,7 +1891,10 @@ struct RelationsInner {
 }
 
 impl RelationsInner {
-	fn from_graph(nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+	fn from_graph(
+		nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+		ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>,
+	) -> Self {
 		let mut relations = RelationsInner { ..Default::default() };
 
 		for node in nodes.keys() {
@@ -1877,25 +1932,25 @@ impl RelationsInner {
 	}
 
 	fn op_children(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.op_children
-			.get(op)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.op_children.get(op).map_or_else(|| IndexSet::new(), |r| r.clone())
 	}
 
 	fn op_parents(&mut self, op: &OpID) -> IndexSet<NodeID> {
-		self.op_parents
-			.get(op)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
-	}	
+		self.op_parents.get(op).map_or_else(|| IndexSet::new(), |r| r.clone())
+	}
 }
 
 #[derive(Default)]
 struct Associations {
-	inner: Option<AssociationsInner>
+	inner: Option<AssociationsInner>,
 }
 
 impl Associations {
-	fn get_or_instantiate_association(&mut self, nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> &mut AssociationsInner {
+	fn get_or_instantiate_association(
+		&mut self,
+		nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+		ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>,
+	) -> &mut AssociationsInner {
 		if self.inner.is_none() {
 			self.inner = Some(AssociationsInner::from_graph(nodes, ops))
 		}
@@ -1976,14 +2031,15 @@ struct AssociationsInner {
 	tag_to_ops: IndexMap<OpTag, IndexSet<OpID>>,
 }
 
-
-
 impl AssociationsInner {
-	fn from_graph(nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>, ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>) -> Self {
+	fn from_graph(
+		nodes: &BTreeMap<NodeID, Arc<Mutex<NodeInnerData>>>,
+		ops: &BTreeMap<OpID, Arc<Mutex<OpInnerData>>>,
+	) -> Self {
 		let mut associations = Self { ..Default::default() };
 
 		for (node, data) in nodes {
-			let NodeInnerData{ref name, ref tags, ..} = &*data.lock();
+			let NodeInnerData { ref name, ref tags, .. } = &*data.lock();
 			associations
 				.name_to_nodes
 				.entry(name.clone())
@@ -2000,7 +2056,7 @@ impl AssociationsInner {
 		}
 
 		for (op, data) in ops {
-			let OpInnerData{ref name, ref tags, ..} = &*data.lock();
+			let OpInnerData { ref name, ref tags, .. } = &*data.lock();
 			associations
 				.name_to_ops
 				.entry(name.clone())
@@ -2032,9 +2088,7 @@ impl AssociationsInner {
 	}
 
 	fn ops_tagged<'a>(&'a mut self, tag: &OpTag) -> IndexSet<OpID> {
-		self.tag_to_ops
-			.get(tag)
-			.map_or_else(|| IndexSet::new(), |r| r.clone())
+		self.tag_to_ops.get(tag).map_or_else(|| IndexSet::new(), |r| r.clone())
 	}
 
 	fn ops_named(&mut self, name: &str) -> IndexSet<OpID> {

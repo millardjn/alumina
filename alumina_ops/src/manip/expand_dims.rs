@@ -28,16 +28,16 @@
 
 use crate::manip::remove_dims::RemoveDims;
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{ArrayViewD, ArrayViewMutD, Dimension};
 use smallvec::SmallVec;
 use std::any::Any;
@@ -86,9 +86,9 @@ where
 	debug_assert!(extra_count == extra_axes.len());
 
 	let output = input
-	.graph()
-	.new_node(output_shape)
-	.set_name_unique(&format!("expand_dims({})", input));
+		.graph()
+		.new_node(output_shape)
+		.set_name_unique(&format!("expand_dims({})", input));
 
 	let _op = ExpandDims {
 		input,

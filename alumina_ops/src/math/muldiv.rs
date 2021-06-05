@@ -1,15 +1,15 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Axis, Dimension, Zip};
-use unchecked_index as ui;
 use std::any::Any;
+use unchecked_index as ui;
 
 /// An activation function based on complex multiplication and division.
 ///

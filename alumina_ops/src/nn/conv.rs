@@ -1,23 +1,24 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, HeavyNode, Node, NodeID, NodeTag, Op, Graph},
+	graph::{merge_graphs, Graph, HeavyNode, Node, NodeID, NodeTag, Op},
 	init::msra,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
-use ndarray::{ArrayD, Dimension, IxDyn};
-use threadpool::ThreadPool;
-use threadpool_scope::scope_with;
-use smallvec::SmallVec;
+use indexmap::{indexset, IndexMap, IndexSet};
 use lazy_static::lazy_static;
 use matrixmultiply_mt;
+use ndarray::{ArrayD, Dimension, IxDyn};
 use num_cpus;
+use smallvec::SmallVec;
+use threadpool::ThreadPool;
+use threadpool_scope::scope_with;
 
 use std::{
+	any::Any,
 	cmp::{max, min},
 	iter::once,
 	mem::size_of,
@@ -26,7 +27,6 @@ use std::{
 		atomic::{AtomicUsize, Ordering},
 		Mutex,
 	},
-	any::Any,
 };
 use typenum::{bit::*, marker_traits::Unsigned, operator_aliases::Sub1, UInt, UTerm, U1, U2, U3};
 use unchecked_index as ui;
@@ -37,11 +37,11 @@ lazy_static! {
 	static ref THREAD_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::new(*NUM_CPUS));
 }
 
-struct Ptr<T>{
+struct Ptr<T> {
 	p: *mut T,
 }
-unsafe impl<T> Sync for Ptr<T>{}
-unsafe impl<T> Send for Ptr<T>{}
+unsafe impl<T> Sync for Ptr<T> {}
+unsafe impl<T> Send for Ptr<T> {}
 
 #[derive(Debug, Clone)]
 pub enum Padding {
@@ -139,7 +139,8 @@ where
 		)
 		.into());
 	};
-	let filter_shape: Vec<usize> = filter_shape.iter()
+	let filter_shape: Vec<usize> = filter_shape
+		.iter()
 		.chain(once(&input_channels))
 		.chain(once(&output_channels))
 		.cloned()
@@ -220,7 +221,8 @@ where
 		.into());
 	};
 
-	let filter_shape: Vec<usize> = filter_shape.iter()
+	let filter_shape: Vec<usize> = filter_shape
+		.iter()
 		.chain(once(&input_channels))
 		.chain(once(&output_channels))
 		.cloned()
@@ -463,7 +465,7 @@ impl OpInstance for ConvInstance {
 		let n = input.shape()[0]; // TODO use ensure to guard against zero length shapes
 		let in_size: usize = input.shape()[1..].iter().product();
 		let _out_size: usize = output.shape()[1..].iter().product();
-		let patch_size = filter.shape()[0..filter.ndim()-1].iter().product();
+		let patch_size = filter.shape()[0..filter.ndim() - 1].iter().product();
 
 		let input_channels = input.shape()[input.ndim() - 1];
 		let output_channels = output.shape()[output.ndim() - 1];
@@ -476,14 +478,8 @@ impl OpInstance for ConvInstance {
 		let out_spaxels: usize = output_spatial.iter().product();
 
 		// Checks
-		assert!(
-			input.ndim() == output.ndim(),
-			"Input len does not match output len"
-		);
-		assert!(
-			input.ndim() == filter.ndim(),
-			"Filter len does not match input len"
-		);
+		assert!(input.ndim() == output.ndim(), "Input len does not match output len");
+		assert!(input.ndim() == filter.ndim(), "Filter len does not match input len");
 
 		assert!(
 			input.shape()[0] == output.shape()[0],
@@ -494,10 +490,10 @@ impl OpInstance for ConvInstance {
 			"input channels dimension does not match final filter dimension"
 		);
 		assert!(
-			output_channels == filter.shape()[filter.ndim() -1],
+			output_channels == filter.shape()[filter.ndim() - 1],
 			"output channels dimension does not match first filter dimension"
 		);
-		
+
 		let input = input.as_slice().unwrap();
 		let filter = filter.as_slice().unwrap();
 		let output = output.as_slice().unwrap();
@@ -507,19 +503,15 @@ impl OpInstance for ConvInstance {
 		let input_strides = stride_vec(input_channels, &input_spatial);
 		let output_strides = stride_vec(output_channels, &output_spatial);
 
-		
 		let n_threads = *NUM_CPUS;
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
-		let thread_division = (out_spaxels*n+n_threads-1)/n_threads;
-		let spaxels_per_batch = min(
-			max(4, min(cache_limit, thread_division)),
-			out_spaxels * n,
-		); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let thread_division = (out_spaxels * n + n_threads - 1) / n_threads;
+		let spaxels_per_batch = min(max(4, min(cache_limit, thread_division)), out_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
 		let n_batches = (out_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
 		let batch_atomic = AtomicUsize::new(0);
 
 		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
-		scope_with(&pool, |scope|{
+		scope_with(&pool, |scope| {
 			for _ in 0..n_threads {
 				let filter_strides = &filter_strides;
 				let input_strides = &input_strides;
@@ -833,7 +825,6 @@ impl OpInstance for ConvBackInstance {
 	}
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
-
 		let input = ctx.get_input_standard(&self.input);
 		let filter = ctx.get_input_standard(&self.filter);
 		let output_grad = ctx.get_input_standard(&self.output_grad);
@@ -841,7 +832,7 @@ impl OpInstance for ConvBackInstance {
 		let n = input.shape()[0]; // TODO use ensure to guard against zero length shapes
 		let _in_size: usize = input.shape()[1..].iter().product();
 		let out_size: usize = output_grad.shape()[1..].iter().product();
-		
+
 		let input_spatial = &input.shape()[1..input.ndim() - 1];
 		let filter_spatial = &filter.shape()[0..filter.ndim() - 2];
 		let output_spatial = output_grad.shape()[1..output_grad.ndim() - 1].to_vec();
@@ -858,10 +849,7 @@ impl OpInstance for ConvBackInstance {
 			input.ndim() == output_grad.ndim(),
 			"Input len does not match output len"
 		);
-		assert!(
-			input.ndim() == filter.ndim(),
-			"Filter len does not match input len"
-		);
+		assert!(input.ndim() == filter.ndim(), "Filter len does not match input len");
 
 		assert!(
 			input.shape()[0] == output_grad.shape()[0],
@@ -899,22 +887,31 @@ impl OpInstance for ConvBackInstance {
 
 		let mut inverted_filter;
 		unsafe {
-			inverted_filter = ArrayD::uninitialized(filter_spatial.iter().cloned().chain(once(output_channels).chain(once(input_channels))).collect::<Vec<_>>());
-			rot180_assign(filter.as_slice().unwrap(), inverted_filter.as_slice_mut().unwrap(), input_channels, output_channels);
+			inverted_filter = ArrayD::uninitialized(
+				filter_spatial
+					.iter()
+					.cloned()
+					.chain(once(output_channels).chain(once(input_channels)))
+					.collect::<Vec<_>>(),
+			);
+			rot180_assign(
+				filter.as_slice().unwrap(),
+				inverted_filter.as_slice_mut().unwrap(),
+				input_channels,
+				output_channels,
+			);
 		}
 		let inverted_filter_slice = inverted_filter.as_slice().unwrap();
 
-	
 		let n_threads = *NUM_CPUS;
 		let mut inverted_filter_grads = vec![None; n_threads];
-		let ifg_ptr = Ptr{p: inverted_filter_grads.as_mut_ptr()};
+		let ifg_ptr = Ptr {
+			p: inverted_filter_grads.as_mut_ptr(),
+		};
 
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
-		let thread_division = (in_spaxels*n+n_threads-1)/n_threads;
-		let spaxels_per_batch = min(
-			max(4, min(cache_limit, thread_division)),
-			in_spaxels * n,
-		); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let thread_division = (in_spaxels * n + n_threads - 1) / n_threads;
+		let spaxels_per_batch = min(max(4, min(cache_limit, thread_division)), in_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
 		let n_batches = (in_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
 		let batch_atomic = AtomicUsize::new(0);
 
@@ -922,8 +919,7 @@ impl OpInstance for ConvBackInstance {
 		let block_atomic = AtomicUsize::new(0);
 
 		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
-		scope_with(&pool, |scope|{
-			
+		scope_with(&pool, |scope| {
 			for inverted_filter_grad in inverted_filter_grads.iter_mut() {
 				let inverted_filter_shape = inverted_filter.shape();
 				let filter_strides = &filter_strides;
@@ -951,7 +947,6 @@ impl OpInstance for ConvBackInstance {
 							break;
 						}
 
-						
 						let spaxel_ind = batch * spaxels_per_batch;
 						let batch_spaxels = min(in_spaxels * n - spaxel_ind, spaxels_per_batch);
 
@@ -1058,7 +1053,6 @@ impl OpInstance for ConvBackInstance {
 						}
 
 						if require_filter_gradients {
-							
 							let m2 = input_channels;
 							let n2 = patch_size;
 							let k2 = batch_spaxels;
@@ -1092,46 +1086,53 @@ impl OpInstance for ConvBackInstance {
 					if require_filter_gradients {
 						*inverted_filter_grad = Some(inverted_filter_grad_temp);
 					}
-
-
-					
 				});
 			}
 
 			if let Some(mut filter_grad) = filter_grad {
 				scope.join_all();
 				// write and invert first block to output block
-				
+
 				let ch2 = input_channels;
 				let ch1 = output_channels;
 				let block_size = ch1 * ch2;
 				debug_assert!(filter_grad.is_standard_layout());
-				debug_assert!(filter_grad.len() %(block_size) == 0);
-				
+				debug_assert!(filter_grad.len() % (block_size) == 0);
+
 				for _ in 0..min(n_blocks, n_threads) {
 					let block_atomic = &block_atomic;
 					let ifg_ptr = &ifg_ptr;
-					let output = Ptr{p: filter_grad.as_mut_ptr()};// first inverted grad;
-					scope.execute(move ||{
+					let output = Ptr {
+						p: filter_grad.as_mut_ptr(),
+					}; // first inverted grad;
+					scope.execute(move || {
 						let ifg_ptr = ifg_ptr.p;
-						
+
 						loop {
 							let block_num = block_atomic.fetch_add(1, Ordering::Relaxed);
 							if block_num >= n_blocks {
 								break;
 							}
-							let input_offset = (n_blocks - block_num - 1)*block_size;
-							let output_offset = block_num*block_size;
-							
+							let input_offset = (n_blocks - block_num - 1) * block_size;
+							let output_offset = block_num * block_size;
+
 							unsafe {
 								let output = output.p.offset(output_offset as isize);
 
 								// add all blocks into first
 								debug_assert!((&*ifg_ptr).as_ref().unwrap().is_standard_layout());
-								debug_assert!((&*ifg_ptr).as_ref().unwrap().len() %(block_size) == 0);
-								let inverted_grad_sum = (&mut *ifg_ptr).as_mut().unwrap().as_mut_ptr().offset(input_offset as isize);
+								debug_assert!((&*ifg_ptr).as_ref().unwrap().len() % (block_size) == 0);
+								let inverted_grad_sum = (&mut *ifg_ptr)
+									.as_mut()
+									.unwrap()
+									.as_mut_ptr()
+									.offset(input_offset as isize);
 								for i in 1..n_threads {
-									let inverted_grad_i = (&mut *ifg_ptr.offset(i as isize)).as_mut().unwrap().as_mut_ptr().offset(input_offset as isize);
+									let inverted_grad_i = (&mut *ifg_ptr.offset(i as isize))
+										.as_mut()
+										.unwrap()
+										.as_mut_ptr()
+										.offset(input_offset as isize);
 									debug_assert!((*ifg_ptr.offset(i as isize)).as_ref().unwrap().is_standard_layout());
 									for j in 0..block_size {
 										*inverted_grad_sum.offset(j as isize) += *inverted_grad_i.offset(j as isize);
@@ -1140,8 +1141,9 @@ impl OpInstance for ConvBackInstance {
 
 								for c2 in 0..ch2 {
 									for c1 in 0..ch1 {
-										*output.offset((c1 + c2*ch1) as isize) = *inverted_grad_sum.offset((c2 + c1*ch2) as isize);
-									}	
+										*output.offset((c1 + c2 * ch1) as isize) =
+											*inverted_grad_sum.offset((c2 + c1 * ch2) as isize);
+									}
 								}
 							}
 						}
@@ -1154,30 +1156,29 @@ impl OpInstance for ConvBackInstance {
 	}
 }
 
-
 /// Converts from [H, W, C1, C2] to [-H, -W, C2, C1] where negatives represent an axis reversal
 ///
 /// Overwrites values of output (they can be uninitialized).
 ///
 /// Unsafe as checks are only performed during debug builds.
-unsafe fn rot180_assign (input: &[f32], output: &mut [f32], ch1: usize, ch2: usize) {
+unsafe fn rot180_assign(input: &[f32], output: &mut [f32], ch1: usize, ch2: usize) {
 	let block_size = ch1 * ch2;
-	let num_blocks = input.len()/(block_size);
+	let num_blocks = input.len() / (block_size);
 	debug_assert_eq!(input.len(), output.len());
-	debug_assert!(input.len() %(block_size) == 0);
+	debug_assert!(input.len() % (block_size) == 0);
 
 	for b in 0..num_blocks {
-		let input_offset = (num_blocks - b - 1)*block_size;
-		let output_offset = b*block_size;
+		let input_offset = (num_blocks - b - 1) * block_size;
+		let output_offset = b * block_size;
 		for c2 in 0..ch2 {
 			for c1 in 0..ch1 {
 				//output[c1 + c2*ch1] = input[c2 + c1*ch2];
-				*ui::get_unchecked_mut(output, output_offset + c1 + c2*ch1) = *ui::get_unchecked(input, input_offset + c2 + c1*ch2);
-			}	
+				*ui::get_unchecked_mut(output, output_offset + c1 + c2 * ch1) =
+					*ui::get_unchecked(input, input_offset + c2 + c1 * ch2);
+			}
 		}
 	}
 }
-
 
 /// A recursive N-dimensional im2col like function.
 /// Packs data from a rectangular region of 'input' into 'patch'.
@@ -1723,29 +1724,33 @@ mod tests {
 			],
 		]));
 
-		let filter = Node::new(&[3, 5, 3, 1]).set_name("filter").set_value(arr3(&[
-			[
-				[3.0, 2.0, 3.0],
-				[4.0, 4.0, 9.0],
-				[2.0, 6.0, 0.0],
-				[8.0, 2.0, 8.0],
-				[0.0, 6.0, 2.0],
-			],
-			[
-				[5.0, 10.0, 6.0],
-				[0.0, 0.0, 5.0],
-				[2.0, 5.0, 1.0],
-				[7.0, 3.0, 7.0],
-				[2.0, 4.0, 5.0],
-			],
-			[
-				[6.0, 3.0, 0.0],
-				[4.0, 5.0, 7.0],
-				[3.0, 10.0, 1.0],
-				[1.0, 1.0, 5.0],
-				[9.0, 0.0, 10.0],
-			],
-		]).into_shape([3, 5, 3, 1]).unwrap());
+		let filter = Node::new(&[3, 5, 3, 1]).set_name("filter").set_value(
+			arr3(&[
+				[
+					[3.0, 2.0, 3.0],
+					[4.0, 4.0, 9.0],
+					[2.0, 6.0, 0.0],
+					[8.0, 2.0, 8.0],
+					[0.0, 6.0, 2.0],
+				],
+				[
+					[5.0, 10.0, 6.0],
+					[0.0, 0.0, 5.0],
+					[2.0, 5.0, 1.0],
+					[7.0, 3.0, 7.0],
+					[2.0, 4.0, 5.0],
+				],
+				[
+					[6.0, 3.0, 0.0],
+					[4.0, 5.0, 7.0],
+					[3.0, 10.0, 1.0],
+					[1.0, 1.0, 5.0],
+					[9.0, 0.0, 10.0],
+				],
+			])
+			.into_shape([3, 5, 3, 1])
+			.unwrap(),
+		);
 
 		let expected_full: ArrayD<f32> = arr2(&[
 			[

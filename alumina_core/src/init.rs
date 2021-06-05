@@ -80,7 +80,7 @@ pub fn msra(multiplier: f32) -> Initialiser {
 		move |mut arr: ArrayViewMutD<f32>| {
 			let mut rng = thread_rng();
 			//let inputs_per_output = *arr.shape().get(0).unwrap_or(&1); // output channels is the last axis
-			let inputs_per_output = arr.shape()[0..arr.ndim() -1].iter().product::<usize>();
+			let inputs_per_output = arr.shape()[0..arr.ndim() - 1].iter().product::<usize>();
 			let norm = Normal::new(0.0, f64::from((multiplier / inputs_per_output as f32).sqrt()))
 				.expect("Could not create normal distribution");
 			for e in arr.iter_mut() {

@@ -7,10 +7,10 @@ use alumina_core::{
 };
 use alumina_data::DataStream;
 use indexmap::{IndexMap, IndexSet};
+use ndarray::{ArcArray, IxDyn};
 use ndarray::{ArrayD, ArrayViewD, Zip};
 use std::{borrow::Borrow, hash::Hash, iter::once};
 use unchecked_index as ui;
-use ndarray::{ArcArray, IxDyn};
 
 pub mod adam;
 pub mod sgd;
@@ -94,14 +94,20 @@ pub trait GradientStepper {
 	fn step_count(&self) -> usize;
 
 	/// Return best estimate for each node
-	fn best_estimate(&self, params: &mut dyn Iterator<Item = &Node>) -> IndexMap<Node, ArcArray<f32, IxDyn>>{
-		params.into_iter().map(|n| (n.borrow().clone(), n.borrow().value().unwrap_or_else(
-			|| {
-				let mut shape = n.borrow().shape().clone();
-				shape.collapse_dimensions_to_minimum();
-				ArcArray::zeros(shape.to_data_shape().unwrap())
-			}
-		))).collect()
+	fn best_estimate(&self, params: &mut dyn Iterator<Item = &Node>) -> IndexMap<Node, ArcArray<f32, IxDyn>> {
+		params
+			.into_iter()
+			.map(|n| {
+				(
+					n.borrow().clone(),
+					n.borrow().value().unwrap_or_else(|| {
+						let mut shape = n.borrow().shape().clone();
+						shape.collapse_dimensions_to_minimum();
+						ArcArray::zeros(shape.to_data_shape().unwrap())
+					}),
+				)
+			})
+			.collect()
 	}
 
 	/// If required complete any final step required after optimisation e.g. parameter snapshot averaging
@@ -156,7 +162,6 @@ where
 		let mut count = 0;
 		let inputs: IndexSet<Node> = inputs.into_iter().map(Into::into).inspect(|_| count += 1).collect();
 		assert_eq!(inputs.len(), count, "inputs contained duplicates");
-
 
 		// TODO only parameters required to calculate loss should be included, no more
 		let parameters = loss
@@ -392,14 +397,15 @@ where
 	where
 		I: Borrow<Node> + Hash + Eq,
 	{
-		
 		let mut signal = Signal::Continue;
 
 		let (mut results, loss) = if calc_loss {
 			let mut results = exec(
 				inputs,
 				inner.parameters_and_grads.values().chain(once(&inner.loss)),
-				&mut ExecConfig::default().perf_records(perf_records).subgraph(Some(&inner.subgraph)),
+				&mut ExecConfig::default()
+					.perf_records(perf_records)
+					.subgraph(Some(&inner.subgraph)),
 			)?;
 			let loss = results.swap_remove(&inner.loss).unwrap().sum();
 			(results, loss)
@@ -407,7 +413,9 @@ where
 			let results = exec(
 				inputs,
 				inner.parameters_and_grads.values(),
-				&mut ExecConfig::default().perf_records(perf_records).subgraph(Some(&inner.subgraph)),
+				&mut ExecConfig::default()
+					.perf_records(perf_records)
+					.subgraph(Some(&inner.subgraph)),
 			)?;
 			(results, 0.0)
 		};
@@ -469,7 +477,6 @@ where
 	/// Continually call `step_with_callbacks(..)` with while drawing inputs from the `DataStream` until a
 	/// `Signal::Stop` is generated.
 	pub fn optimise<D: DataStream>(&mut self, data_stream: &mut D) -> Result<(), ExecError> {
-
 		let mut perf_records = self.perf_records.take();
 		let opt_result = loop {
 			let step_result = Self::step_with_callbacks_impl(
@@ -482,11 +489,11 @@ where
 				self.calc_loss,
 				self.calc_change,
 			);
-			
+
 			match step_result {
-				Err(e) => { break Err(e)},
-				Ok((_, Signal::Stop)) => {break Ok(())},
-				_ => {},
+				Err(e) => break Err(e),
+				Ok((_, Signal::Stop)) => break Ok(()),
+				_ => {}
 			}
 		};
 

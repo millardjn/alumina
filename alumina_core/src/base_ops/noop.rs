@@ -1,17 +1,15 @@
 use crate::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{IndexSet, IndexMap};
+use indexmap::{IndexMap, IndexSet};
 use std::any::Any;
 
-struct NoOp {
-
-}
+struct NoOp {}
 
 impl OpSpecification for NoOp {
 	type InstanceType = NoOpInstance;

@@ -1,9 +1,9 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_node_graphs, Node, NodeID, Graph},
+	graph::{merge_node_graphs, Graph, Node, NodeID},
 	shape::SCALAR,
 	shape_prop::ShapePropContext,
 };
@@ -22,7 +22,8 @@ where
 	merge_node_graphs(&inputs);
 
 	let output = Node::new(SCALAR).set_name_unique(&format!(
-		"l1({})", inputs.iter().map(|n|n.name()).collect::<Vec<_>>().join(",")
+		"l1({})",
+		inputs.iter().map(|n| n.name()).collect::<Vec<_>>().join(",")
 	));
 
 	let mut op = L1::new(output.clone());
@@ -80,7 +81,12 @@ impl OpSpecification for L1 {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			inputs: self
+				.inputs
+				.iter()
+				.map(|i| mapping.get(i).unwrap_or(i))
+				.cloned()
+				.collect(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
 		}
 	}
@@ -213,8 +219,15 @@ impl OpSpecification for L1Back {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			output_grad: mapping.get(&self.output_grad).unwrap_or_else(|| &self.output_grad).clone(),
-			input_and_grads: self.input_and_grads.iter().map(|(i, g)| (mapping.get(i).unwrap_or(i).clone(), mapping.get(g).unwrap_or(g).clone())).collect(),
+			output_grad: mapping
+				.get(&self.output_grad)
+				.unwrap_or_else(|| &self.output_grad)
+				.clone(),
+			input_and_grads: self
+				.input_and_grads
+				.iter()
+				.map(|(i, g)| (mapping.get(i).unwrap_or(i).clone(), mapping.get(g).unwrap_or(g).clone()))
+				.collect(),
 		}
 	}
 
@@ -244,7 +257,11 @@ impl OpInstance for L1BackInstance {
 
 	fn as_specification(&self, graph: &Graph) -> Box<dyn Any> {
 		Box::new(L1Back {
-			input_and_grads: self.input_and_grads.iter().map(|(&i, &g)| (graph.node_from_id(i), graph.node_from_id(g))).collect(),
+			input_and_grads: self
+				.input_and_grads
+				.iter()
+				.map(|(&i, &g)| (graph.node_from_id(i), graph.node_from_id(g)))
+				.collect(),
 			output_grad: graph.node_from_id(self.output_grad),
 		})
 	}

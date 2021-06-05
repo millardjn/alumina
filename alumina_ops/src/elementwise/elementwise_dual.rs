@@ -12,21 +12,19 @@
 //! See the Scale Op for a simple example of how this is used.
 
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Dimension, Zip};
 use rayon::prelude::*;
-use std::fmt;
 use std::any::Any;
-
-
+use std::fmt;
 
 pub trait NullaryDualFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn calc(&self) -> (f32, f32);
@@ -765,7 +763,12 @@ impl<F: NaryDualFunc> OpSpecification for NaryElementwiseDual<F> {
 		Self {
 			output1: mapping.get(&self.output1).unwrap_or(&self.output1).clone(),
 			output2: mapping.get(&self.output2).unwrap_or(&self.output2).clone(),
-			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			inputs: self
+				.inputs
+				.iter()
+				.map(|i| mapping.get(i).unwrap_or(i))
+				.cloned()
+				.collect(),
 			f: self.f.clone(),
 		}
 	}

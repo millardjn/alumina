@@ -59,7 +59,7 @@ impl SubGraph {
 	/// In the case of multiple graphs, items are only strictly ordered with respect to items of the same `Graph`.
 	pub fn graph_order(&self) -> SubGraph {
 		let mut node_index: IndexSet<Node> = self.nodes.iter().cloned().collect();
-		let mut op_index: IndexSet<Op>= self.ops.iter().cloned().collect();
+		let mut op_index: IndexSet<Op> = self.ops.iter().cloned().collect();
 		node_index.sort();
 		op_index.sort();
 

@@ -1,6 +1,6 @@
 use crate::{ConcatComponents, DataSet};
 use byteorder::{BigEndian, ByteOrder};
-use ndarray::{IxDyn, ArcArray};
+use ndarray::{ArcArray, IxDyn};
 use std::{fs::File, io::Read, path::Path};
 
 /// A `DataSet` created from both mnist binary format image and label files.
@@ -28,7 +28,7 @@ impl Mnist {
 	pub fn testing<P: AsRef<Path>>(folder_path: P) -> Self {
 		let folder_path = folder_path.as_ref();
 		let err = "Pass a folder containing 't10k-images.idx3-ubyte' and 't10k-labels.idx1-ubyte'";
-		assert!(folder_path.is_dir(),"{}", err);
+		assert!(folder_path.is_dir(), "{}", err);
 		let label_file = File::open(folder_path.join("t10k-labels.idx1-ubyte").as_path()).expect(err);
 		let image_file = File::open(folder_path.join("t10k-images.idx3-ubyte").as_path()).expect(err);
 		Mnist::new(image_file, label_file)

@@ -28,16 +28,16 @@
 
 use crate::manip::expand_dims::ExpandDims;
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 
 use ndarray::{ArrayViewD, ArrayViewMutD, Dimension};
 
@@ -83,9 +83,9 @@ where
 		.into();
 
 	let output = input
-	.graph()
-	.new_node(output_shape)
-	.set_name_unique(&format!("remove_dims({})", input));
+		.graph()
+		.new_node(output_shape)
+		.set_name_unique(&format!("remove_dims({})", input));
 
 	let _op = RemoveDims {
 		input: input.clone(),

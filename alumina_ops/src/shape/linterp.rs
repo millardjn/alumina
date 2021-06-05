@@ -18,23 +18,23 @@
 // use indexmap::IndexSet;
 
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpSpecification, OpInstance},
+	base_ops::{shape_constraint::ShapeConstraint, OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 
 use matrixmultiply_mt;
 use ndarray::Dimension;
 use smallvec::SmallVec;
 use std::{
+	any::Any,
 	cmp::{max, min},
 	ops::Range,
-	any::Any,
 };
 
 pub fn linterp<I>(input: I, factors: &[usize]) -> Result<Node, OpBuildError>
@@ -112,12 +112,12 @@ impl OpSpecification for Linterp {
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
 	}
-	
+
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
 			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		}
 	}
 
@@ -232,7 +232,7 @@ impl OpInstance for LinterpInstance {
 		Box::new(Linterp {
 			input: graph.node_from_id(self.input),
 			output: graph.node_from_id(self.output),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		})
 	}
 
@@ -434,7 +434,7 @@ impl OpSpecification for LinterpBack {
 		Self {
 			input_grad: mapping.get(&self.input_grad).unwrap_or(&self.input_grad).clone(),
 			output_grad: mapping.get(&self.output_grad).unwrap_or(&self.output_grad).clone(),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		}
 	}
 
@@ -501,7 +501,7 @@ impl OpInstance for LinterpBackInstance {
 		Box::new(LinterpBack {
 			input_grad: graph.node_from_id(self.input_grad),
 			output_grad: graph.node_from_id(self.output_grad),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		})
 	}
 

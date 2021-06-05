@@ -1,13 +1,13 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, Graph},
+	graph::{merge_graphs, Graph, Node, NodeID},
 	shape_prop::ShapePropContext,
 	util::wrap_dim,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Axis, Dimension, Zip};
 use std::any::Any;
 
@@ -103,7 +103,7 @@ impl OpSpecification for SoftmaxCrossEntropy {
 			logits: mapping.get(&self.logits).unwrap_or(&self.logits).clone(),
 			labels: mapping.get(&self.labels).unwrap_or(&self.labels).clone(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
-			axis: self.axis
+			axis: self.axis,
 		}
 	}
 

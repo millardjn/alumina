@@ -12,20 +12,20 @@
 //! See the Scale Op for a simple example of how this is used.
 
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::NodeShape,
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 
 use ndarray::{Dimension, Zip};
 use rayon::prelude::*;
-use std::fmt;
 use std::any::Any;
+use std::fmt;
 
 pub trait NullaryFunc: Send + Sync + Clone + fmt::Debug + 'static {
 	fn calc(&self) -> f32;
@@ -538,10 +538,10 @@ impl<F: TernaryFunc> OpSpecification for TernaryElementwise<F> {
 
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
-			output: mapping.get(&self.output).unwrap_or( &self.output).clone(),
-			input1: mapping.get(&self.output).unwrap_or( &self.input1).clone(),
-			input2: mapping.get(&self.output).unwrap_or( &self.input2).clone(),
-			input3: mapping.get(&self.output).unwrap_or( &self.input3).clone(),
+			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
+			input1: mapping.get(&self.output).unwrap_or(&self.input1).clone(),
+			input2: mapping.get(&self.output).unwrap_or(&self.input2).clone(),
+			input3: mapping.get(&self.output).unwrap_or(&self.input3).clone(),
 			f: self.f.clone(),
 		}
 	}
@@ -782,7 +782,12 @@ impl<F: NaryFunc> OpSpecification for NaryElementwise<F> {
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
-			inputs: self.inputs.iter().map(|i| mapping.get(i).unwrap_or(i)).cloned().collect(),
+			inputs: self
+				.inputs
+				.iter()
+				.map(|i| mapping.get(i).unwrap_or(i))
+				.cloned()
+				.collect(),
 			f: self.f.clone(),
 		}
 	}

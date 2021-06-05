@@ -1,17 +1,17 @@
 use alumina_core::{
-	base_ops::{OpSpecification, OpInstance},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{merge_graphs, Node, NodeID, NodeTag, Op, Graph},
+	graph::{merge_graphs, Graph, Node, NodeID, NodeTag, Op},
 	init::Initialiser,
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{ArrayViewMutD, Dimension, Zip};
-use std::iter::once;
 use std::any::Any;
+use std::iter::once;
 
 fn _custom(name: &'static str, left_slope: f32, centre_slope: f32, right_slope: f32) -> Initialiser {
 	Initialiser::new(name.to_string(), move |mut arr: ArrayViewMutD<f32>| {

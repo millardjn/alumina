@@ -6,17 +6,16 @@ use alumina::{
 	ops::{
 		nn::conv::Padding,
 		panicking::{
-			add, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_sum, scale,
-			softmax_cross_entropy,
+			add, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_sum, scale, softmax_cross_entropy,
 		},
 	},
-	opt::{adam::Adam, nth_step, every_n_steps, max_steps, print_step_data, GradientOptimiser, GradientStepper},
+	opt::{adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, GradientOptimiser, GradientStepper},
 };
-use ndarray::{ArcArray, IxDyn};
 use failure::Error;
-use std::time::Instant;
-use std::iter::empty;
 use indexmap::IndexMap;
+use ndarray::{ArcArray, IxDyn};
+use std::iter::empty;
+use std::time::Instant;
 
 fn main() -> Result<(), Error> {
 	// 1. Build a neural net graph - 76 @ 5 epochs     76 @ 10 epochs
@@ -82,17 +81,13 @@ fn main() -> Result<(), Error> {
 	let mut val = validation(&input, &labels, &accuracy, &training_loss);
 
 	// 5. Set up optimiser to run for 5 epochs and check validations every 250 steps
-	let mut opt = GradientOptimiser::new(
-		&training_loss,
-		&[&input, &labels],
-		Adam::new(1e-2, 0.9, 0.995)
-	);
+	let mut opt = GradientOptimiser::new(&training_loss, &[&input, &labels], Adam::new(1e-2, 0.9, 0.995));
 	opt.callback(max_steps(15 * epoch / batch_size));
 	opt.callback(every_n_steps(50, print_step_data(batch_size as f32)));
 	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
 		val(&mut empty());
 	}));
-	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data|{
+	opt.callback(nth_step(10 * epoch / batch_size, |s: &mut Adam, _data| {
 		s.rate(3.3e-4);
 	}));
 
@@ -109,7 +104,12 @@ fn main() -> Result<(), Error> {
 }
 
 /// Returns a closure suitable for use as a step callback which checks accuracy on the validation set
-fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &'a Node) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
+fn validation<'a>(
+	input: &'a Node,
+	labels: &'a Node,
+	accuracy: &'a Node,
+	loss: &'a Node,
+) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
 	// Set up CIFAR10 validation DataSet and DataStream
 	let val_data_set = Cifar10::testing("D:/ML/CIFAR10");
 	let val_epoch = val_data_set.length();
@@ -121,7 +121,10 @@ fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &
 		let values: IndexMap<_, _> = values.into_iter().collect();
 		let (acc_sum, loss_sum) = (0..val_epoch / val_batch).fold((0.0, 0.0), |(acc_sum, loss_sum), _| {
 			let outputs = exec(
-				values.clone().into_iter().chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
+				values
+					.clone()
+					.into_iter()
+					.chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
 				&mut ExecConfig::default(),
 			)

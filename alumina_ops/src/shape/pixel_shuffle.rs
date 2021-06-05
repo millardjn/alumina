@@ -1,15 +1,15 @@
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpSpecification, OpInstance},
+	base_ops::{shape_constraint::ShapeConstraint, OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
-	graph::{Node, NodeID, Graph},
+	graph::{Graph, Node, NodeID},
 	shape::{NodeAxis, NodeShape},
 	shape_prop::ShapePropContext,
 };
-use indexmap::{indexset, IndexSet, IndexMap};
+use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::Dimension;
-use std::{cmp::min, iter::once, any::Any};
+use std::{any::Any, cmp::min, iter::once};
 
 /// Collapse outer dimensions, shuffling entries into the channel dimension
 ///
@@ -147,12 +147,12 @@ impl OpSpecification for Collapse {
 	fn outputs(&self) -> IndexSet<Node> {
 		indexset![self.output.clone()]
 	}
-	
+
 	fn clone_with_nodes_changed(&self, mapping: &IndexMap<Node, Node>) -> Self {
 		Self {
 			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		}
 	}
 
@@ -364,7 +364,7 @@ impl OpSpecification for Expand {
 		Self {
 			input: mapping.get(&self.input).unwrap_or(&self.input).clone(),
 			output: mapping.get(&self.output).unwrap_or(&self.output).clone(),
-			factors: self.factors.clone()
+			factors: self.factors.clone(),
 		}
 	}
 

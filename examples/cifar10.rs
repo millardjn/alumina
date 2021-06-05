@@ -6,20 +6,19 @@ use alumina::{
 	ops::{
 		nn::conv::Padding,
 		panicking::{
-			add, add_n, affine, argmax, avg_pool, conv, elu, equal, ibias, l2, linear, reduce_mean, reduce_sum, scale,
-			softmax_cross_entropy, spline, leaky_relu, hoyer_squared,
+			add, add_n, affine, argmax, avg_pool, conv, elu, equal, hoyer_squared, ibias, l2, leaky_relu, linear,
+			reduce_mean, reduce_sum, scale, softmax_cross_entropy, spline,
 		},
 	},
 	opt::{
-		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser,
-		GradientStepper,
+		adam::Adam, every_n_steps, max_steps, nth_step, print_step_data, sgd::Sgd, GradientOptimiser, GradientStepper,
 	},
 };
-use ndarray::{ArcArray, IxDyn};
 use failure::Error;
-use std::time::Instant;
-use std::iter::empty;
 use indexmap::IndexMap;
+use ndarray::{ArcArray, IxDyn};
+use std::iter::empty;
+use std::time::Instant;
 
 fn main() -> Result<(), Error> {
 	// 1. Build a neural net graph - 82 @ 10 epochs
@@ -67,24 +66,20 @@ fn main() -> Result<(), Error> {
 	// let layer9 = spline(ibias(conv(layer8, 128, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer9");
 	// let layer10 = spline(ibias(conv(layer9, 256, &[3, 3], Padding::Same), &[-1]), &[1, 2], init.clone()).set_name("layer10");
 
-	let logits = ibias(
-		add(
-			linear(reduce_mean(layer7, &[1, 2], false), 10, msra(1.0)),
-			linear(reduce_mean(layer10, &[1, 2], false), 10, msra(1.0)),
-		),
-		&[-1],
-	)
+	let logits = add_n(&[
+		linear(reduce_mean(layer4, &[1, 2], false), 10, msra(1.0)),
+		linear(reduce_mean(layer7, &[1, 2], false), 10, msra(1.0)),
+		linear(reduce_mean(layer10, &[1, 2], false), 10, msra(1.0)),
+	])
 	.set_name("logits");
 
 	let training_loss = add_n(&[
 		reduce_sum(softmax_cross_entropy(&logits, &labels, -1), &[], false).set_name("loss"),
 		scale(l2(logits.graph().nodes_tagged(NodeTag::Parameter)).set_name("l2"), 1e-5).set_name("l2_regularisation"),
-		//scale(hoyer_squared(logits.graph().nodes_tagged(NodeTag::Parameter)).set_name("hs"), 1e-6).set_name("hs_regularisation"),	
 	])
 	.set_name("training_loss");
 
 	let accuracy = equal(argmax(&logits, -1), argmax(&labels, -1)).set_name("accuracy");
-
 
 	// 2. Print shapes
 	println!("\n Values:");
@@ -111,24 +106,25 @@ fn main() -> Result<(), Error> {
 
 	// 5. Set up optimiser to run for 5 epochs and check validations every 250 steps
 	let mut perf_records;
-	let mut opt = GradientOptimiser::new(
-		&training_loss,
-		&[&input, &labels],
-		Adam::new(1e-2,0.9, 0.99)
-	);
+	let mut opt = GradientOptimiser::new(&training_loss, &[&input, &labels], Adam::new(1e-2, 0.9, 0.99));
 	opt.callback(max_steps(25 * epoch / batch_size));
 	opt.callback(every_n_steps(25, print_step_data(batch_size as f32)));
-	opt.callback(nth_step(15 * epoch / batch_size, |s: &mut Adam, data|{
+	opt.callback(nth_step(15 * epoch / batch_size, |s: &mut Adam, _data| {
 		s.rate(1e-3);
 	}));
 	let mut time = Instant::now();
-	opt.callback(every_n_steps(250, move |s: &mut Adam, data| {
+	opt.callback(every_n_steps(250, move |_s: &mut Adam, _data| {
 		println!("elapsed: {}", time.elapsed().as_millis());
 		val(&mut empty());
 		time = Instant::now();
 	}));
-	
-	perf_records = accuracy.graph().ops().into_iter().map(|op| (op, Default::default())).collect();
+
+	perf_records = accuracy
+		.graph()
+		.ops()
+		.into_iter()
+		.map(|op| (op, Default::default()))
+		.collect();
 	opt.perf_records(Some(&mut perf_records));
 
 	// 6. Train (optimise) the neural net until the max_steps callback returns Signal::Stop
@@ -143,14 +139,24 @@ fn main() -> Result<(), Error> {
 	// 8. Print perf records
 	drop(opt);
 	for (op, perf) in perf_records.iter().filter(|(_, p)| p.invocation_count > 0) {
-		println!("{}\t{}\t{}", perf.cumulative_time/perf.invocation_count as f32, perf.cumulative_usage/perf.invocation_count as f32, op.name());
+		println!(
+			"{}\t{}\t{}",
+			perf.cumulative_time / perf.invocation_count as f32,
+			perf.cumulative_usage / perf.invocation_count as f32,
+			op.name()
+		);
 	}
 
 	Ok(())
 }
 
 /// Constructs and returns a closure suitable for use as a step callback which checks accuracy and loss on the validation set
-fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &'a Node) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
+fn validation<'a>(
+	input: &'a Node,
+	labels: &'a Node,
+	accuracy: &'a Node,
+	loss: &'a Node,
+) -> impl 'a + FnMut(&mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>) {
 	let val_data_set = Cifar10::testing("D:/ML/CIFAR10");
 	let val_epoch = val_data_set.length();
 	let val_batch = 400;
@@ -161,7 +167,10 @@ fn validation<'a>(input: &'a Node, labels: &'a Node, accuracy: &'a Node, loss: &
 		let values: IndexMap<_, _> = values.into_iter().collect();
 		let (acc_sum, loss_sum) = (0..val_epoch / val_batch).fold((0.0, 0.0), |(acc_sum, loss_sum), _| {
 			let outputs = exec(
-				values.clone().into_iter().chain(DataStream::next_with(&mut val_data_stream, &[input, labels])),
+				values
+					.clone()
+					.into_iter()
+					.chain(<dyn DataStream>::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
 				&mut ExecConfig::default(),
 			)
