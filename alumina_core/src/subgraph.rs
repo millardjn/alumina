@@ -255,11 +255,11 @@ impl Debug for SubGraph {
 	}
 }
 
-/// Implemented as to be order dependent for both `Op`s and `Node`s
+/// Implemented so as to be order dependent for both `Op`s and `Node`s
 impl PartialEq for SubGraph {
 	fn eq(&self, other: &SubGraph) -> bool {
 		self.nodes.len() == other.nodes.len()
-			&& self.ops.len() == other.nodes.len()
+			&& self.ops.len() == other.ops.len()
 			&& self.nodes.iter().zip(&other.nodes).all(|(a, b)| a.id() == b.id())
 			&& self.ops.iter().zip(&other.ops).all(|(a, b)| a.id() == b.id())
 	}
