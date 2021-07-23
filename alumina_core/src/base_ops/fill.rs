@@ -20,7 +20,7 @@ pub fn fill<S: Into<NodeShape>>(value: f32, shape: S) -> Result<Node, OpBuildErr
 	Ok(output)
 }
 
-/// Fillls the provided output elementwise with the provided value, then returns the same output Node.
+/// Fills the provided output elementwise with the provided value, then returns the same output Node.
 ///
 /// The output node has the same shape as the input.
 pub fn fill_into<O: Into<Node>>(value: f32, output: O) -> Result<Node, OpBuildError> {
@@ -121,18 +121,34 @@ impl OpInstance for FillInstance {
 	}
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use crate::{base_ops::fill::fill, util::relatively_close::RelClose};
-// 	use ndarray::arr0;
+#[cfg(test)]
+mod tests {
+	use crate::{base_ops::fill::{fill, fill_into}, graph::Node};
 
-// 	#[test]
-// 	fn forward_test() {
-// 		let output = fill(1.25, &[13, 33]).unwrap();
+	#[test]
+	fn forward() {
+		let output = fill(1.25, &[13, 33]).unwrap();
 
-// 		assert!(output
-// 			.calc()
-// 			.unwrap()
-// 			.all_relatively_close(&arr0(1.25), ::std::f32::EPSILON));
-// 	}
-// }
+		assert!(output
+			.calc()
+			.unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
+	}
+
+	#[test]
+	fn forward_into() {
+		let output = Node::new(&[13, 33]);
+		fill_into(1.25, &output).unwrap();
+
+		assert!(output
+			.calc()
+			.unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
+	}
+
+	#[test]
+	fn shape() {
+		let output = fill(1.25, &[13, 33]).unwrap();
+
+		assert!(output
+			.calc().unwrap().shape() == [13, 33]);
+	}
+}
