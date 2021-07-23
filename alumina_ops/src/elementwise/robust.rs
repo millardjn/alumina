@@ -10,6 +10,8 @@ use alumina_core::{
 ///
 /// Based on the paper: A More General Robust Loss Function https://arxiv.org/pdf/1701.03077.pdf Eq.13 & Eq.14
 /// Note that:
+/// 
+/// when power(α) > 2, this loss is undefined
 ///
 /// when power(α) == 2, this is the L2 loss
 ///
@@ -20,6 +22,8 @@ use alumina_core::{
 /// when power(α) == -2, this is the Geman-McClure loss
 ///
 /// when power(α) == -∞, this is the Welsch/Leclerc loss
+///
+/// For other values of power(α) the loss smoothly interpolates between these loss functions. However, despite stable implementations for the special values at 2 and 0, when power(α) approaches these values, significant numerical error will be encountered. 
 ///
 /// The scale(c) is the range of values either size of zero for which the loss will closely approximate the L2 loss.
 /// A small scale value will mean that small inputs will result in larger outputs.
@@ -59,23 +63,24 @@ impl UnaryFunc for RobustFunc {
 		let c = self.scale; // use notation from paper
 		let a = self.power;
 		let x = input;
-		#[allow(clippy::float_cmp)] // comparing to a user value not a computed value, stfu clippy
+		#[allow(clippy::float_cmp)] // comparing to a user value not a computed value
 		{
+			let x = x/c;
+			let x2 = x *x;
 			if a == 0.0 {
-				(0.5 * (x / c) * (x / c)).ln_1p()
+				(0.5 * x2).ln_1p()
 			} else if a == ::std::f32::NEG_INFINITY {
-				-(-0.5 * (x / c) * (x / c)).exp_m1()
+				-(-0.5 * x2).exp_m1()
 			} else if a == 1.0 {
-				// (((x/c)*(x/c) + 1.0).sqrt() - 1.0)
+				// ((x2 + 1.0).sqrt() - 1.0)
 
 				// This is the numerically stable version of above as per https://stackoverflow.com/questions/32444817/numerically-stable-evaluation-of-sqrtxa-sqrtx
-				let z = (x / c) * (x / c);
-				z / ((z + 1.0).sqrt() + 1.0)
+				x2 / ((x2 + 1.0).sqrt() + 1.0)
 			} else if a == 2.0 {
-				((x / c) * (x / c)) / a
+				x2 / a
 			} else {
-				let za = 1.0f32.max(2.0 - a);
-				za / a * (((x / c) * (x / c) / za + 1.0).powf(0.5 * a) - 1.0)
+				let za = (a-2.0).abs();
+				za / a * ((x2 / za + 1.0).powf(0.5 * a) - 1.0)
 			}
 		}
 	}
@@ -125,7 +130,7 @@ impl BinaryFunc for RobustBackFunc {
 			} else if a == 2.0 {
 				x / (c * c)
 			} else {
-				let za = 1.0f32.max(2.0 - a);
+				let za = (a-2.0).abs();
 				x / (c * c) * ((x / c) * (x / c) / za + 1.0).powf(0.5 * a - 1.0)
 			}
 		}
@@ -224,15 +229,13 @@ mod tests {
 	}
 
 	#[test]
-	fn grad_numeric_robust_rand_test() {
+	fn grad_numeric_robust_near_special_test() {
 		let mut rng = thread_rng();
-		let range = Uniform::new(0.1, 1.0);
-		let power_range = Uniform::new(-3.0, 3.0);
+		let range = Uniform::new(0.0, 2.0);
 
-		for _ in 0..20 {
-			let power = power_range.sample(&mut rng);
+		for &power in &[1.9, -1.9, 1.01, -1.01, 0.99, -0.99, 0.5, -0.5] {
 			let scale = 1.0 + range.sample(&mut rng);
-
+			println!("power:{}, scale:{}", power, scale);
 			let input = Node::new(&[13, 33]).set_name("input");
 			let output = Node::new(&[13, 33]).set_name("output");
 			let _op = Robust::new(input.clone(), output.clone(), RobustFunc { scale, power })
