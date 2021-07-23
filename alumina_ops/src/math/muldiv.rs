@@ -49,7 +49,7 @@ impl MulDiv {
 		MulDiv {
 			input,
 			output,
-			epsilon: 0.5,
+			epsilon: 0.1,
 		}
 	}
 
@@ -169,9 +169,9 @@ impl OpInstance for MulDivInstance {
 						*ui::get_unchecked_mut(output, i * 4 + 1) += a * d + b * c;
 
 						// complex division
-						let denom = c * c + d * d;
-						*ui::get_unchecked_mut(output, i * 4 + 2) += (a * c + b * d) / (epsilon + denom);
-						*ui::get_unchecked_mut(output, i * 4 + 3) += (b * c - a * d) / (epsilon + denom);
+						let denom = epsilon*epsilon + c * c + d * d;
+						*ui::get_unchecked_mut(output, i * 4 + 2) += (a * c + b * d) / denom;
+						*ui::get_unchecked_mut(output, i * 4 + 3) += (b * c - a * d) / denom;
 					}
 
 					for i in 0..remainder {
@@ -207,7 +207,7 @@ impl MulDivBack {
 			input,
 			input_grad,
 			output_grad,
-			epsilon: 0.5,
+			epsilon: 0.1,
 		}
 	}
 
@@ -341,7 +341,7 @@ impl OpInstance for MulDivBackInstance {
 						let yg = ui::get_unchecked(input_grad, i * 4 + 2);
 						let zg = ui::get_unchecked(input_grad, i * 4 + 3);
 
-						let c2d2e = c * c + d * d + epsilon;
+						let c2d2e = c * c + d * d + epsilon*epsilon;
 						let c2d2e_2 = c2d2e * c2d2e;
 
 						// gradients from multiplication
@@ -407,31 +407,35 @@ mod tests {
 			]))
 			.set_name("input");
 
-		let output = muldiv(&input).unwrap();
+		//let output = muldiv(&input).epsilon(0.1).unwrap();
+
+		let output = Node::new(input.shape()).set_name("output");
+		MulDiv::new(&input, &output).epsilon(0.1).build().unwrap();
 
 		assert!(output.calc().unwrap().all_relatively_close(
 			&arr2(&[
 				[
 					-0.2,
 					0.4,
-					0.439_956,
-					0.079_992_004,
+					0.435_643_55,
+					0.079_207_92,
 					-1.0,
 					12.4,
-					0.852_048_93,
-					0.005_479_415,
+					0.851_471_6,
+					0.005475702,
 					4.7
 				],
 				[
 					-0.6,
 					4.4,
-					0.765_504_06,
-					0.013_792_866,
+					0.764_199_7,
+					0.013769363,
 					-1.4,
 					24.4,
-					0.891_967_54,
-					0.002_919_697,
+					0.891_645_4,
+					0.002918643,
 					3.2
+
 				],
 			]),
 			1e-5
