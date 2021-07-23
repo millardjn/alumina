@@ -1,5 +1,6 @@
 pub mod dummy;
 pub mod fill;
+pub mod apply;
 pub mod noop;
 pub mod shape_constraint;
 
