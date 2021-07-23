@@ -4,23 +4,27 @@ See mnist.rs in examples or [Rusty_SR](https://github.com/millardjn/rusty_sr) fo
 
 ## Overview
 The key types are `Node` and `Ops` which are `Rc`-like references to components of a shared mutable `Graph`, which is extended gradually with new tensors and operations via construction functions. Facilities for reverse-mode automatic differentiation are included in operations, extending the graph as necessary.
-Typical graph construction shown below:
+Typical graph construction and differentiation shown below:
 
 ```rust
-	// 1. Build a MLP neural net graph - 98% @ 10 epochs
-	let input = Node::new(&[-1, 28, 28, 1]).set_name("input");
-	let labels = Node::new(&[-1, 10]).set_name("labels");
+// 1. Build a MLP neural net graph - 98% @ 10 epochs
+let input = Node::new(&[-1, 28, 28, 1]).set_name("input");
+let labels = Node::new(&[-1, 10]).set_name("labels");
 
-	let layer1 = elu(affine(&input, 256, msra(1.0))).set_name("layer1");
-	let layer2 = elu(affine(&layer1, 256, msra(1.0))).set_name("layer2");
-	let logits = linear(&layer2, 10, msra(1.0)).set_name("logits");
+let layer1 = elu(affine(&input, 256, msra(1.0))).set_name("layer1");
+let layer2 = elu(affine(&layer1, 256, msra(1.0))).set_name("layer2");
+let logits = linear(&layer2, 10, msra(1.0)).set_name("logits");
 
-	let training_loss = add(
-		reduce_sum(softmax_cross_entropy(&logits, &labels, -1), &[], false).set_name("loss"),
-		scale(l2(logits.graph().nodes_tagged(NodeTag::Parameter)), 1e-3).set_name("regularisation"),
-	)
-	.set_name("training_loss");
-	let accuracy = equal(argmax(&logits, -1), argmax(&labels, -1)).set_name("accuracy");
+let training_loss = add(
+  reduce_sum(softmax_cross_entropy(&logits, &labels, -1), &[], false).set_name("loss"),
+  scale(l2(logits.graph().nodes_tagged(NodeTag::Parameter)), 1e-3).set_name("regularisation"),
+)
+.set_name("training_loss");
+let accuracy = equal(argmax(&logits, -1), argmax(&labels, -1)).set_name("accuracy");
+
+let parameters = accuracy.graph().nodes_tagged(NodeTag::Parameter);
+
+let grads = Grad::of(training_loss).wrt(parameters).build()?;
 ```
 
 Current work is focused on improving the high level graph construction API, and better supporting dynamic/define-by-run graphs.
