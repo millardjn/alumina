@@ -95,7 +95,7 @@ pub trait OpSpecification: Any + Sized {
 ///
 /// No `OpInstance` should retain any reference to its containing graph as this will prevent deallocation.
 /// This includes `Node`s, instead `InnerRef<NodeInner>` should be used to identify specific inputs and outputs.
-pub trait OpInstance: fmt::Debug + OpClone + Any + Send + Sync {
+pub trait OpInstance: fmt::Debug  + Any + Send + Sync {
 	///
 	fn type_name(&self) -> &'static str;
 
@@ -119,23 +119,23 @@ pub trait OpInstance: fmt::Debug + OpClone + Any + Send + Sync {
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError>;
 }
 
-/// Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
-pub trait OpClone {
-	fn clone_box(&self) -> Box<dyn OpInstance>;
-}
+// /// Cloneable trait object workaround from DK : http://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-trait-object
+// pub trait OpClone {
+// 	fn clone_box(&self) -> Box<dyn OpInstance>;
+// }
 
-impl<T> OpClone for T
-where
-	T: 'static + OpInstance + Clone,
-{
-	fn clone_box(&self) -> Box<dyn OpInstance> {
-		Box::new(self.clone())
-	}
-}
+// impl<T> OpClone for T
+// where
+// 	T: 'static + OpInstance + Clone,
+// {
+// 	fn clone_box(&self) -> Box<dyn OpInstance> {
+// 		Box::new(self.clone())
+// 	}
+// }
 
-// We can now implement Clone manually by forwarding to clone_box.
-impl Clone for Box<dyn OpInstance> {
-	fn clone(&self) -> Box<dyn OpInstance> {
-		self.clone_box()
-	}
-}
+// // We can now implement Clone manually by forwarding to clone_box.
+// impl Clone for Box<dyn OpInstance> {
+// 	fn clone(&self) -> Box<dyn OpInstance> {
+// 		self.clone_box()
+// 	}
+// }
