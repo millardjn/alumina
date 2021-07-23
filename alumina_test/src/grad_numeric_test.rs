@@ -1,6 +1,6 @@
 use alumina_core::{
 	exec::{exec, ExecConfig},
-	grad::grad,
+	grad::Grad,
 	graph::{Node, NodeTag},
 	util::display::IterDisplay,
 };
@@ -223,7 +223,7 @@ pub fn grad_numeric_test(config: &GradNumericTest) -> (f32, IndexSet<Node>) {
 		})
 		.collect();
 
-	let grads = grad(&config.loss, inputs.iter()).expect("Call to grad() failed in numeric test.");
+	let grads = Grad::of(&config.loss).wrt(&inputs).build().expect("Construction of Grad failed in numeric test.");
 
 	let mut rel_worst = 0.0f32;
 	let mut rel_worst_input = indexset![];

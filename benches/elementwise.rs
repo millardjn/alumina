@@ -4,7 +4,7 @@ use indexmap::{indexset, IndexMap, IndexSet};
 use alumina::{
 	core::base_ops::{dummy::DummyOp, OpSpecification},
 	core::exec::{exec, ExecConfig},
-	core::grad::grad,
+	core::grad::Grad,
 	core::graph::{Node, NodeTag},
 	core::init::gaussian,
 	core::subgraph::{execution_subgraph, SubGraph},
@@ -53,7 +53,7 @@ fn setup_backward(output: &Node, inputs: IndexSet<&Node>) -> (IndexSet<Node>, Su
 		input.init_value();
 	}
 
-	let grads: IndexSet<_> = grad(&output, inputs).unwrap().keys().cloned().collect();
+	let grads: IndexSet<_> = Grad::of(&output).wrt(inputs).build().unwrap().keys().cloned().collect();
 	let subgraph = execution_subgraph(&[] as &[&Node], &grads, true).unwrap();
 	(grads, subgraph)
 }

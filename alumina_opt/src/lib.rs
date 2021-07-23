@@ -1,7 +1,7 @@
 use alumina_core::{
 	errors::ExecError,
 	exec::{exec, ExecConfig, OpPerf},
-	grad::grad_strict,
+	grad::Grad,
 	graph::{Node, NodeTag, Op},
 	subgraph::{execution_subgraph, SubGraph},
 };
@@ -170,7 +170,7 @@ where
 			.into_iter()
 			.filter(|p| !inputs.contains(p));
 
-		let parameters_and_grads = grad_strict(&loss, parameters).expect("Call to grad(..) failed");
+		let parameters_and_grads = Grad::of(&loss).wrt(parameters).include_intermediate(false).build().expect("Construction of Grad failed in GradientOptimiser");
 
 		// init parameters
 		for param in parameters_and_grads.keys() {

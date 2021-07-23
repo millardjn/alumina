@@ -102,7 +102,7 @@ impl From<ShapeError> for ShapePropError {
 	}
 }
 
-/// Returned from grad() when one or more `Op`s produced an error when constructing the gradient call.
+/// Returned from `Grad::build(..)` when one or more `Op`s produced an error when constructing the gradient call.
 #[derive(Debug, Fail)]
 #[fail(display = "The following ops errored when producing their gradient {}.", errors)]
 pub struct GradError {
