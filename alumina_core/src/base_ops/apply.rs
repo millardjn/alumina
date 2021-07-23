@@ -8,7 +8,7 @@ use crate::{
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexMap, IndexSet};
-use ndarray::ArrayViewMutD;
+use ndarray::{ArrayD, ArrayViewMutD};
 use std::{any::Any, fmt, sync::Arc};
 
 
@@ -139,7 +139,16 @@ impl OpInstance for ApplyInstance {
 	}
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
-        (self.f.f)(ctx.get_output(&self.output));
+		let mut arr = ArrayD::zeros(ctx.shape(&self.output));
+		(self.f.f)(arr.view_mut());
+
+		if ctx.can_set(&self.output) {
+			ctx.set(&self.output, arr.to_shared());
+		} else {
+			let mut out = ctx.get_output(&self.output);
+			out += &arr;
+		}
+	
 		Ok(())
 	}
 }
