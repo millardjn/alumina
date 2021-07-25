@@ -1,5 +1,5 @@
 use alumina_core::{
-	exec::{exec, ExecConfig},
+	exec::ExecutionPlan,
 	grad::Grad,
 	graph::{Node, NodeTag},
 	util::display::IterDisplay,
@@ -223,7 +223,10 @@ pub fn grad_numeric_test(config: &GradNumericTest) -> (f32, IndexSet<Node>) {
 		})
 		.collect();
 
-	let grads = Grad::of(&config.loss).wrt(&inputs).build().expect("Construction of Grad failed in numeric test.");
+	let grads = Grad::of(&config.loss)
+		.wrt(&inputs)
+		.build()
+		.expect("Construction of Grad failed in numeric test.");
 
 	let mut rel_worst = 0.0f32;
 	let mut rel_worst_input = indexset![];
@@ -306,7 +309,8 @@ fn grad_numeric_test_inner(
 ) -> (f64, f64) {
 	// first call with grads and y as outputs
 	let outputs = tested_inputs.iter().map(|n| &grads[n]).chain(::std::iter::once(loss));
-	let results = exec(input_values.clone(), outputs, &mut ExecConfig::default())
+	let results = ExecutionPlan::new(input_values.clone(), outputs)
+		.execute()
 		.unwrap_or_else(|err| panic!("Call to exec() failed in numeric test.\n{:#?}", err));
 
 	// adjust in each direction
@@ -367,10 +371,12 @@ fn grad_numeric_test_inner(
 	// 	.fold(0.0f64, |acc, &val| acc + f64::from(val));
 	// let diff = loss2 - loss1;
 
-	let exec_vals1 = exec(input1_values, indexset![loss], &mut ExecConfig::default())
+	let exec_vals1 = ExecutionPlan::new(input1_values, indexset![loss])
+		.execute()
 		.unwrap_or_else(|err| panic!("Call to exec() failed in numeric test.\n{:#?}", err));
 
-	let exec_vals2 = exec(input2_values, indexset![loss], &mut ExecConfig::default())
+	let exec_vals2 = ExecutionPlan::new(input2_values, indexset![loss])
+		.execute()
 		.unwrap_or_else(|err| panic!("Call to exec() failed in numeric test.\n{:#?}", err));
 
 	assert_eq!(

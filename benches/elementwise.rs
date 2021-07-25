@@ -3,7 +3,7 @@ use indexmap::{indexset, IndexMap, IndexSet};
 
 use alumina::{
 	core::base_ops::{dummy::DummyOp, OpSpecification},
-	core::exec::{exec, ExecConfig},
+	core::exec::ExecutionPlan,
 	core::grad::Grad,
 	core::graph::{Node, NodeTag},
 	core::init::gaussian,
@@ -34,7 +34,7 @@ fn setup(output: &Node, inputs: IndexSet<&Node>) -> SubGraph {
 		input.init_value();
 	}
 
-	execution_subgraph(&[] as &[&Node], &[output], true).unwrap()
+	execution_subgraph(&[] as &[&Node], &[output], false).unwrap()
 }
 
 /// Set value of all inputs using initialisers
@@ -54,7 +54,7 @@ fn setup_backward(output: &Node, inputs: IndexSet<&Node>) -> (IndexSet<Node>, Su
 	}
 
 	let grads: IndexSet<_> = Grad::of(&output).wrt(inputs).build().unwrap().keys().cloned().collect();
-	let subgraph = execution_subgraph(&[] as &[&Node], &grads, true).unwrap();
+	let subgraph = execution_subgraph(&[] as &[&Node], &grads, false).unwrap();
 	(grads, subgraph)
 }
 
@@ -65,12 +65,10 @@ fn dummy_small_bench(b: &mut Bencher<'_>) {
 
 	let exec_subgraph = setup(&output, indexset![]);
 	b.iter(|| {
-		exec(
-			IndexMap::<Node, _>::new(),
-			indexset![output.clone()],
-			&mut ExecConfig::default().subgraph(Some(&exec_subgraph)),
-		)
-		.unwrap()
+		ExecutionPlan::new(IndexMap::<Node, _>::new(), indexset![output.clone()])
+			.subgraph(Some(&exec_subgraph))
+			.execute()
+			.unwrap()
 	})
 }
 
@@ -81,12 +79,10 @@ fn dummy_bench(b: &mut Bencher<'_>) {
 
 	let exec_subgraph = setup(&output, indexset![]);
 	b.iter(|| {
-		exec(
-			IndexMap::<Node, _>::new(),
-			indexset![output.clone()],
-			&mut ExecConfig::default().subgraph(Some(&exec_subgraph)),
-		)
-		.unwrap()
+		ExecutionPlan::new(IndexMap::<Node, _>::new(), indexset![output.clone()])
+			.subgraph(Some(&exec_subgraph))
+			.execute()
+			.unwrap()
 	})
 }
 
@@ -96,12 +92,10 @@ fn relu_bench(b: &mut Bencher<'_>) {
 
 	let exec_subgraph = setup(&output, indexset![&input]);
 	b.iter(|| {
-		exec(
-			IndexMap::<Node, _>::new(),
-			indexset![output.clone()],
-			&mut ExecConfig::default().subgraph(Some(&exec_subgraph)),
-		)
-		.unwrap()
+		ExecutionPlan::new(IndexMap::<Node, _>::new(), indexset![output.clone()])
+			.subgraph(Some(&exec_subgraph))
+			.execute()
+			.unwrap()
 	})
 }
 
@@ -111,12 +105,10 @@ fn backward_relu_bench(b: &mut Bencher<'_>) {
 
 	let (grads, exec_subgraph) = setup_backward(&output, indexset![&input]);
 	b.iter(|| {
-		exec(
-			IndexMap::<Node, _>::new(),
-			grads.clone(),
-			&mut ExecConfig::default().subgraph(Some(&exec_subgraph)),
-		)
-		.unwrap()
+		ExecutionPlan::new(IndexMap::<Node, _>::new(), grads.clone())
+			.subgraph(Some(&exec_subgraph))
+			.execute()
+			.unwrap()
 	})
 }
 

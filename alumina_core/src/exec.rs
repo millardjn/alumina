@@ -2,7 +2,6 @@
 use crate::{
 	errors::ExecError,
 	graph::{Node, NodeID, Op, OpID},
-	//shape_prop::cached_shapes_inner,
 	shape_prop::cached_shapes_inner,
 	subgraph::{execution_subgraph, SubGraph},
 };
@@ -798,16 +797,35 @@ pub struct OpPerf {
 	pub cumulative_time: f32,
 }
 
-pub struct ExecConfig<'a> {
-	pub use_node_values: bool,
-	pub subgraph: Option<&'a SubGraph>,
-	pub perf_records: Option<&'a mut IndexMap<Op, OpPerf>>,
+pub struct ExecutionPlan<'a> {
+	inputs: IndexMap<Node, ArcArray<f32, IxDyn>>,
+	outputs: IndexSet<Node>,
+	ignore_node_values: bool,
+	subgraph: Option<&'a SubGraph>,
+	perf_records: Option<&'a mut IndexMap<Op, OpPerf>>,
 }
 
-impl<'a> ExecConfig<'a> {
-	/// Default: true
-	pub fn use_node_values(mut self, use_node_values: bool) -> Self {
-		self.use_node_values = use_node_values;
+impl<'a> ExecutionPlan<'a> {
+	pub fn new<I, O, T1, T2>(inputs: T1, outputs: T2) -> Self
+	where
+		I: Into<Node>,
+		O: Into<Node>,
+		T1: IntoIterator<Item = (I, ArcArray<f32, IxDyn>)>,
+		T2: IntoIterator<Item = O>,
+	{
+		ExecutionPlan {
+			inputs: inputs.into_iter().map(|(n, v)| (n.into(), v)).collect(),
+			outputs: outputs.into_iter().map(Into::into).collect(),
+			ignore_node_values: false,
+			subgraph: None,
+			perf_records: None,
+		}
+	}
+	/// Determines whether node values are ignored during execution.
+	///
+	/// Default: false
+	pub fn ignore_node_values(mut self, ignore_node_values: bool) -> Self {
+		self.ignore_node_values = ignore_node_values;
 		self
 	}
 
@@ -824,164 +842,141 @@ impl<'a> ExecConfig<'a> {
 		self.perf_records = perf_records;
 		self
 	}
-}
 
-impl<'a> Default for ExecConfig<'a> {
-	fn default() -> Self {
-		ExecConfig {
-			use_node_values: true,
-			subgraph: None,
-			perf_records: None,
-		}
-	}
-}
+	/// Execution with a custom subgraph
+	///
+	/// Ops are executed in the order contained in the subgraph, if this order is not topological
+	/// then a `SubGraphNotExecutable` Error is returned (i.e. Any Op that reads from a node must come after all Ops that write to that node).
+	///
+	/// The order of nodes in the result map is the same as the outputs argument with duplicates skipped.
+	pub fn execute(&mut self) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError> {
+		let perf_records = &mut self.perf_records;
+		let subgraph = self.subgraph.as_ref();
 
-/// Execution with a custom subgraph
-///
-/// Ops are executed in the order contained in the subgraph, if this order is not topological
-/// then a `SubGraphNotExecutable` Error is returned (i.e. Any Op that reads from a node must come after all Ops that write to that node).
-///
-/// The order of nodes in the result map is the same as the outputs argument with duplicates skipped.
-pub fn exec<I, O, T1, T2>(
-	inputs: T1,
-	outputs: T2,
-	config: &mut ExecConfig,
-) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError>
-where
-	I: Borrow<Node> + Hash + Eq,
-	O: Into<Node>,
-	T1: IntoIterator<Item = (I, ArcArray<f32, IxDyn>)>,
-	T2: IntoIterator<Item = O>,
-{
-	let inputs: IndexMap<_, _> = inputs.into_iter().collect();
-	let outputs: IndexSet<Node> = outputs.into_iter().map(Into::into).collect();
+		let mut system = sysinfo::System::new_with_specifics(RefreshKind::new().with_cpu());
 
-	let mut system = sysinfo::System::new_with_specifics(RefreshKind::new().with_cpu());
+		let new_subgraph;
+		let subgraph = if let Some(subgraph) = subgraph {
+			subgraph
+		} else {
+			new_subgraph = execution_subgraph(self.inputs.keys(), self.outputs.clone(), self.ignore_node_values)
+				.map_err(|e| ExecError::Subgraph { error: e })?;
 
-	let new_subgraph;
-	let subgraph = if let Some(subgraph) = config.subgraph.as_ref() {
-		subgraph
-	} else {
-		new_subgraph = execution_subgraph(
-			inputs.keys().map(|n| n.borrow().clone()),
-			outputs.clone(),
-			config.use_node_values,
-		)
-		.map_err(|e| ExecError::Subgraph { error: e })?;
+			&new_subgraph
+		};
 
-		&new_subgraph
-	};
-
-	// Check that all outputs are in the subgraph
-	// Excess inputs are deduplicated
-	for node in &outputs {
-		if !subgraph.nodes.contains(node) {
-			return Err(ExecError::OutputsNotInSubgraph { node: node.clone() });
-		}
-	}
-
-	let (writers_remaining, readers_remaining) = cached_node_input_output_count(subgraph, &outputs);
-
-	let mut inputs: IndexMap<NodeID, ArcArray<f32, IxDyn>> = inputs
-		.into_iter()
-		.map(|(node, data)| (node.borrow().id(), data))
-		.collect();
-
-	// put values into inputs now to avoid possible race condition if a value gets removed partway through the execution
-	if config.use_node_values {
-		for node in &subgraph.nodes {
-			if let Some(val) = node.value() {
-				inputs.entry(node.id()).or_insert_with(|| val);
+		// Check that all outputs are in the subgraph
+		// Excess inputs are deduplicated
+		for node in &self.outputs {
+			if !subgraph.nodes.contains(node) {
+				return Err(ExecError::OutputsNotInSubgraph { node: node.clone() });
 			}
 		}
-	}
 
-	let shape_map = cached_shapes_inner(
-		subgraph,
-		&inputs
+		let (writers_remaining, readers_remaining) = cached_node_input_output_count(subgraph, &self.outputs);
+
+		let mut inputs: IndexMap<NodeID, ArcArray<f32, IxDyn>> = self
+			.inputs
 			.iter()
-			.map(|(&node, value)| (node, IxDyn(value.shape())))
-			.collect(),
-		false,
-	)
-	.map_err(|e| ExecError::Shape { error: e })?;
+			.map(|(node, data)| (node.id(), data.clone()))
+			.collect();
 
-	let value_map: IndexMap<Node, DataState<f32>> = subgraph
-		.nodes
-		.iter()
-		.map(|node| {
-			(
-				node.clone(),
-				inputs
-					.swap_remove(&node.id())
-					.map(|data| {
-						if data.shape() == shape_map[&node.id()].slice() {
-							DataState::Input {
-								readers_remaining: readers_remaining[&node.id()],
-								data,
-							}
-						} else {
-							DataState::BroadcastInput {
-								readers_remaining: readers_remaining[&node.id()],
-								data,
-							}
-						}
-					})
-					.unwrap_or_else(|| DataState::Unallocated {
-						writers_remaining: writers_remaining[&node.id()],
-						readers_remaining: readers_remaining[&node.id()],
-					}),
-			)
-		})
-		.collect();
-
-	// let mut perf_map = OP_PERF_DATA.lock().unwrap();
-
-	// Fold over ops executing those that arent skipped. No permanent references handed out
-	let mut context = subgraph
-		.ops
-		.iter()
-		.fold(Ok(ExecutionContext::new(value_map, shape_map)), |result, op| {
-			result.and_then(|ctx| {
-				let (ctx, skip) = ctx.set_next_op(op)?;
-
-				if !skip {
-					//assert!(config.perf_records.as_mut().and_then(|pr|pr.get_mut(op)).is_some());
-					if let Some(record) = &mut config.perf_records.as_mut().and_then(|pr| pr.get_mut(op)) {
-						system.refresh_cpu();
-						//let _ = system.get_processors().iter().map(|p|p.get_cpu_usage()).sum::<f32>();
-						//let _ = system.get_global_processor_info().get_cpu_usage() as f32;
-						let start = Instant::now();
-						op.instance().execute(&ctx).map_err(|e| ExecError::Op {
-							error: e,
-							op: op.clone(),
-						})?;
-						system.refresh_cpu();
-						record.invocation_count += 1;
-						record.cumulative_usage +=
-							system.get_processors().iter().map(|p| p.get_cpu_usage()).sum::<f32>()
-								/ system.get_processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
-						record.cumulative_time += start.elapsed().as_micros() as f32;
-					} else {
-						op.instance().execute(&ctx).map_err(|e| ExecError::Op {
-							error: e,
-							op: op.clone(),
-						})?;
-					}
+		// put values into inputs now to avoid possible race condition if a value gets removed partway through the execution
+		if !self.ignore_node_values {
+			for node in &subgraph.nodes {
+				if let Some(val) = node.value() {
+					inputs.entry(node.id()).or_insert_with(|| val);
 				}
+			}
+		}
 
-				Ok(ctx)
+		let shape_map = cached_shapes_inner(
+			subgraph,
+			&inputs
+				.iter()
+				.map(|(&node, value)| (node, IxDyn(value.shape())))
+				.collect(),
+			false,
+		)
+		.map_err(|e| ExecError::Shape { error: e })?;
+
+		let value_map: IndexMap<Node, DataState<f32>> = subgraph
+			.nodes
+			.iter()
+			.map(|node| {
+				(
+					node.clone(),
+					inputs
+						.swap_remove(&node.id())
+						.map(|data| {
+							if data.shape() == shape_map[&node.id()].slice() {
+								DataState::Input {
+									readers_remaining: readers_remaining[&node.id()],
+									data,
+								}
+							} else {
+								DataState::BroadcastInput {
+									readers_remaining: readers_remaining[&node.id()],
+									data,
+								}
+							}
+						})
+						.unwrap_or_else(|| DataState::Unallocated {
+							writers_remaining: writers_remaining[&node.id()],
+							readers_remaining: readers_remaining[&node.id()],
+						}),
+				)
 			})
-		})?;
+			.collect();
 
-	// This gets called by set_next_op for all ops except the last one.
-	context.finalise_current_op();
+		// let mut perf_map = OP_PERF_DATA.lock().unwrap();
 
-	let ExecutionContext {
-		value_map, shape_map, ..
-	} = context;
+		// Fold over ops executing those that arent skipped. No permanent references handed out
+		let mut context = subgraph
+			.ops
+			.iter()
+			.fold(Ok(ExecutionContext::new(value_map, shape_map)), |result, op| {
+				result.and_then(|ctx| {
+					let (ctx, skip) = ctx.set_next_op(op)?;
 
-	form_output_map(outputs, value_map.into_inner(), shape_map)
+					if !skip {
+						//assert!(config.perf_records.as_mut().and_then(|pr|pr.get_mut(op)).is_some());
+						if let Some(record) = perf_records.as_mut().and_then(|pr| pr.get_mut(op)) {
+							system.refresh_cpu();
+							//let _ = system.get_processors().iter().map(|p|p.get_cpu_usage()).sum::<f32>();
+							//let _ = system.get_global_processor_info().get_cpu_usage() as f32;
+							let start = Instant::now();
+							op.instance().execute(&ctx).map_err(|e| ExecError::Op {
+								error: e,
+								op: op.clone(),
+							})?;
+							system.refresh_cpu();
+							record.invocation_count += 1;
+							record.cumulative_usage +=
+								system.get_processors().iter().map(|p| p.get_cpu_usage()).sum::<f32>()
+									/ system.get_processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
+							record.cumulative_time += start.elapsed().as_micros() as f32;
+						} else {
+							op.instance().execute(&ctx).map_err(|e| ExecError::Op {
+								error: e,
+								op: op.clone(),
+							})?;
+						}
+					}
+
+					Ok(ctx)
+				})
+			})?;
+
+		// This gets called by set_next_op for all ops except the last one.
+		context.finalise_current_op();
+
+		let ExecutionContext {
+			value_map, shape_map, ..
+		} = context;
+
+		form_output_map(self.outputs.clone(), value_map.into_inner(), shape_map)
+	}
 }
 
 #[derive(Hash, PartialEq, Eq, Clone)]
@@ -1049,19 +1044,6 @@ where
 	})
 }
 
-// /// Call execute and use the results to update the node values
-// pub fn exec_into_values(
-// 	inputs: IndexMap<Node, ArrayD<f32>>,
-// 	outputs: IndexSet<Node>,
-// 	use_node_values: bool,
-// ) -> Result<(), ExecError> {
-// 	let map = exec(inputs, outputs, use_node_values)?;
-// 	for (mut n, v) in map {
-// 		n.set_value(v);
-// 	}
-// 	Ok(())
-// }
-
 #[cfg(test)]
 mod tests {
 	#![allow(non_snake_case)]
@@ -1069,7 +1051,7 @@ mod tests {
 	use crate::{
 		base_ops::{dummy::DummyOp, shape_constraint::same_shape, OpSpecification},
 		errors::{ExecutionSubgraphError, ShapesError},
-		exec::{exec, ExecConfig, ExecError},
+		exec::{ExecError, ExecutionPlan},
 		graph::Node,
 		subgraph::SubGraph,
 	};
@@ -1086,11 +1068,11 @@ mod tests {
 
 		let subgraph = SubGraph::new(indexset![&y], indexset![&op]);
 
-		match exec(
-			IndexMap::<Node, _>::new(),
-			&[y],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
+		match ExecutionPlan::new(IndexMap::<Node, _>::new(), &[y])
+			.subgraph(Some(&subgraph))
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::OpInputNotInSubgraph { .. }) => {}
 			Err(ExecError::Shape {
 				error: ShapesError::OpInputNotInSubgraph { .. },
@@ -1108,11 +1090,10 @@ mod tests {
 		let _op = DummyOp::new().input(&x).output(&y).build().unwrap();
 		let _op = DummyOp::new().input(&y).output(&x).build().unwrap();
 
-		match exec(
-			IndexMap::<Node, _>::new(),
-			&[y],
-			&mut ExecConfig::default().use_node_values(false),
-		) {
+		match &mut ExecutionPlan::new(IndexMap::<Node, _>::new(), &[y])
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::Subgraph {
 				error: ExecutionSubgraphError::Cycle { .. },
 			}) => {}
@@ -1128,11 +1109,10 @@ mod tests {
 
 		let _op = DummyOp::new().input(&x).output(&y).build().unwrap();
 
-		match exec(
-			IndexMap::<Node, _>::new(),
-			&[&y],
-			&mut ExecConfig::default().use_node_values(false),
-		) {
+		match ExecutionPlan::new(IndexMap::<Node, _>::new(), &[&y])
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::Subgraph {
 				error: ExecutionSubgraphError::InsufficientInputs { .. },
 			}) => {}
@@ -1151,11 +1131,11 @@ mod tests {
 
 		let subgraph = SubGraph::new(indexset![&x, &y, &z], indexset![&op]);
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[&z],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
+		match ExecutionPlan::new(vec![(x, arr0(1.0).into_dyn().into_shared())], &[&z])
+			.subgraph(Some(&subgraph))
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::OutputNotComputable { .. }) => {}
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
@@ -1169,11 +1149,10 @@ mod tests {
 
 		same_shape(&x, &y).unwrap();
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[&y],
-			&mut ExecConfig::default().use_node_values(false),
-		) {
+		match ExecutionPlan::new(vec![(x, arr0(1.0).into_dyn().into_shared())], &[&y])
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::Shape { .. }) => {}
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
@@ -1189,11 +1168,11 @@ mod tests {
 
 		let subgraph = SubGraph::new(indexset![&x], indexset![&op]);
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[y],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
+		match ExecutionPlan::new(vec![(x, arr0(1.0).into_dyn().into_shared())], &[y])
+			.subgraph(Some(&subgraph))
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::OutputsNotInSubgraph { .. }) => {}
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
@@ -1211,11 +1190,11 @@ mod tests {
 
 		let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[y],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
+		match ExecutionPlan::new(vec![(x, arr0(1.0).into_dyn().into_shared())], &[y])
+			.subgraph(Some(&subgraph))
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::Shape {
 				error: ShapesError::SubGraphNotExecutable { .. },
 			}) => {}
@@ -1235,11 +1214,11 @@ mod tests {
 
 		let subgraph = SubGraph::new(indexset![&x, &y], indexset![&op1, &op2]);
 
-		match exec(
-			vec![(x, arr0(1.0).into_dyn().into_shared())],
-			&[y],
-			&mut ExecConfig::default().subgraph(Some(&subgraph)).use_node_values(false),
-		) {
+		match ExecutionPlan::new(vec![(x, arr0(1.0).into_dyn().into_shared())], &[y])
+			.subgraph(Some(&subgraph))
+			.ignore_node_values(true)
+			.execute()
+		{
 			Err(ExecError::Shape {
 				error: ShapesError::SubGraphNotExecutable { .. },
 			}) => {}

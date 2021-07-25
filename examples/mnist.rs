@@ -1,5 +1,5 @@
 use alumina::{
-	core::exec::{exec, ExecConfig},
+	core::exec::ExecutionPlan,
 	core::graph::{Graph, Node, NodeTag},
 	core::init::msra,
 	data::{mnist::Mnist, DataSet, DataStream},
@@ -79,14 +79,14 @@ fn validation<'a>(
 	move |values: &mut dyn Iterator<Item = (Node, ArcArray<f32, IxDyn>)>| {
 		let values: IndexMap<_, _> = values.into_iter().collect();
 		let (acc_sum, loss_sum) = (0..val_epoch / val_batch).fold((0.0, 0.0), |(acc_sum, loss_sum), _| {
-			let outputs = exec(
+			let outputs = ExecutionPlan::new(
 				values
 					.clone()
 					.into_iter()
 					.chain(<dyn DataStream>::next_with(&mut val_data_stream, &[input, labels])),
 				&[accuracy, loss],
-				&mut ExecConfig::default(),
 			)
+			.execute()
 			.expect("validation execution failed");
 			(acc_sum + outputs[accuracy].sum(), loss_sum + outputs[loss].sum())
 		});

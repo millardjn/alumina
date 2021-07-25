@@ -1,6 +1,6 @@
 use alumina_core::{
 	errors::ExecError,
-	exec::{exec, ExecConfig, OpPerf},
+	exec::{ExecutionPlan, OpPerf},
 	grad::Grad,
 	graph::{Node, NodeTag, Op},
 	subgraph::{execution_subgraph, SubGraph},
@@ -9,7 +9,7 @@ use alumina_data::DataStream;
 use indexmap::{IndexMap, IndexSet};
 use ndarray::{ArcArray, IxDyn};
 use ndarray::{ArrayD, ArrayViewD, Zip};
-use std::{borrow::Borrow, hash::Hash, iter::once};
+use std::{borrow::Borrow, iter::once};
 use unchecked_index as ui;
 
 pub mod adam;
@@ -79,17 +79,8 @@ pub trait GradientStepper {
 	fn step(
 		&mut self,
 		parameters_and_grad_values: IndexMap<Node, ArrayD<f32>>,
-		//parameters_and_grads: &IndexMap<Node, Node>,
-		//results: IndexMap<Node, ArrayD<f32>>,
 		calc_change: bool,
-		// inputs: IndexMap<I, ArrayD<f32>>,
-		// parameters_and_grads: &IndexMap<Node, Node>,
-		// options: StepOptions,
 	) -> Result<f32, ExecError>;
-	//where
-	//I: Borrow<Node> + Hash + Eq;
-
-	//fn calc_change(bool);
 
 	fn step_count(&self) -> usize;
 
@@ -170,7 +161,11 @@ where
 			.into_iter()
 			.filter(|p| !inputs.contains(p));
 
-		let parameters_and_grads = Grad::of(&loss).wrt(parameters).include_intermediate(false).build().expect("Construction of Grad failed in GradientOptimiser");
+		let parameters_and_grads = Grad::of(&loss)
+			.wrt(parameters)
+			.include_intermediate(false)
+			.build()
+			.expect("Construction of Grad failed in GradientOptimiser");
 
 		// init parameters
 		for param in parameters_and_grads.keys() {
@@ -193,7 +188,7 @@ where
 			}
 		}
 
-		let subgraph = execution_subgraph(inputs.iter(), parameters_and_grads.values().chain(once(&loss)), true)
+		let subgraph = execution_subgraph(inputs.iter(), parameters_and_grads.values().chain(once(&loss)), false)
 			.expect("Call to execution_subgraph(..) failed");
 
 		GradientOptimiser {
@@ -324,99 +319,36 @@ where
 		self.callbacks.push(func);
 	}
 
-	// pub fn take_callbacks(&mut self) -> Vec<Box<'a + FnMut(&StepData) -> Signal>> {
-	// 	let mut callbacks = vec![];
-	// 	::std::mem::swap(&mut callbacks, &mut self.inner_mut().callbacks);
-	// 	callbacks
-	// }
-
-	// /// Complete one optimisation step then run each callback.
-	// ///
-	// /// If any callback returns `Signal::Stop` then `Stop` is returned here.
-	// fn step_with_callbacks_impl<I>(
-	// 	inner: &OptInner,
-	// 	grad_step: &mut S,
-	// 	callbacks: &mut [Box<dyn 'a + FnMut(&mut S, &StepData) -> Signal>],
-	// 	inputs: IndexMap<I, ArrayD<f32>>,
-	// 	calc_loss: bool,
-	// 	calc_change: bool,
-	// ) -> Result<(StepData, Signal), ExecError>
-	// where
-	// 	I: Borrow<Node> + Hash + Eq,
-	// {
-	// 	let mut signal = Signal::Continue;
-
-	// 	let StepData {
-	// 		loss,
-	// 		step,
-	// 		change_norm,
-	// 	} = grad_step.step(
-	// 		inputs,
-	// 		&inner.parameters_and_grads,
-	// 		StepOptions {
-	// 			loss: if calc_loss { Some(&inner.loss) } else { None },
-	// 			subgraph: Some(&inner.subgraph),
-	// 			calc_change,
-	// 		},
-	// 	)?;
-
-	// 	{
-	// 		let data = StepData {
-	// 			loss,
-	// 			step,
-	// 			change_norm,
-	// 		};
-
-	// 		for func in callbacks.iter_mut() {
-	// 			if let Signal::Stop = func(grad_step, &data) {
-	// 				signal = Signal::Stop;
-	// 			}
-	// 		}
-	// 	}
-
-	// data = StepData {
-	// 		loss,
-	// 		step,
-	// 		change_norm,
-	// 	};
-	// 	Ok((data, signal))
-	// }
-
 	/// Complete one optimisation step then run each callback.
 	///
 	/// If any callback returns `Signal::Stop` then `Stop` is returned here.
-	fn step_with_callbacks_impl<'b, I>(
+	fn step_with_callbacks_impl<'b, I, T1>(
 		inner: &'b OptInner,
 		grad_stepper: &mut S,
 		callbacks: &mut [Box<dyn 'a + FnMut(&mut S, &StepData) -> Signal>],
 		perf_records: Option<&'b mut IndexMap<Op, OpPerf>>,
-		inputs: IndexMap<I, ArcArray<f32, IxDyn>>,
+		inputs: T1,
 		calc_loss: bool,
 		calc_change: bool,
 	) -> Result<(StepData<'b>, Signal), ExecError>
 	where
-		I: Borrow<Node> + Hash + Eq,
+		I: Into<Node>,
+		T1: IntoIterator<Item = (I, ArcArray<f32, IxDyn>)>,
 	{
 		let mut signal = Signal::Continue;
 
 		let (mut results, loss) = if calc_loss {
-			let mut results = exec(
-				inputs,
-				inner.parameters_and_grads.values().chain(once(&inner.loss)),
-				&mut ExecConfig::default()
-					.perf_records(perf_records)
-					.subgraph(Some(&inner.subgraph)),
-			)?;
+			let mut results = ExecutionPlan::new(inputs, inner.parameters_and_grads.values().chain(once(&inner.loss)))
+				.perf_records(perf_records)
+				.subgraph(Some(&inner.subgraph))
+				.execute()?;
 			let loss = results.swap_remove(&inner.loss).unwrap().sum();
 			(results, loss)
 		} else {
-			let results = exec(
-				inputs,
-				inner.parameters_and_grads.values(),
-				&mut ExecConfig::default()
-					.perf_records(perf_records)
-					.subgraph(Some(&inner.subgraph)),
-			)?;
+			let results = ExecutionPlan::new(inputs, inner.parameters_and_grads.values())
+				.perf_records(perf_records)
+				.subgraph(Some(&inner.subgraph))
+				.execute()?;
 			(results, 0.0)
 		};
 
@@ -485,7 +417,7 @@ where
 				&mut self.callbacks,
 				perf_records.as_deref_mut(),
 				//self.perf_records.as_mut().map(|i| *i).unwrap_or(&mut x),
-				self.inner.inputs.iter().zip(data_stream.next()).collect(),
+				self.inner.inputs.iter().zip(data_stream.next()),
 				self.calc_loss,
 				self.calc_change,
 			);

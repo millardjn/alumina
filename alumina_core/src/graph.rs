@@ -34,11 +34,7 @@
 //! ```
 
 use crate::{
-	base_ops::OpInstance,
-	errors::ExecError,
-	exec::{exec, ExecConfig},
-	init::Initialiser,
-	shape::NodeShape,
+	base_ops::OpInstance, errors::ExecError, exec::ExecutionPlan, init::Initialiser, shape::NodeShape,
 	util::display::IterDebug,
 };
 use indexmap::{Equivalent, IndexMap, IndexSet};
@@ -168,12 +164,13 @@ impl Node {
 
 	/// Call `exec()` for this node only.
 	pub fn calc(&self) -> Result<ArrayD<f32>, ExecError> {
-		Ok(exec(IndexMap::<Node, _>::new(), &[&self], &mut ExecConfig::default())?
+		Ok(ExecutionPlan::new(IndexMap::<Node, _>::new(), &[&self])
+			.execute()?
 			.remove(self)
 			.unwrap())
 	}
 
-	/// Call 'calc()' and use the result to update this node.
+	/// Call `calc()` and use the result to update this node.
 	pub fn calc_value(&self) -> Result<Self, ExecError> {
 		self.set_value(self.calc()?);
 		Ok(self.clone())

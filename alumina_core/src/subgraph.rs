@@ -297,7 +297,7 @@ impl Hash for SubGraph {
 pub fn execution_subgraph<I, O, T1, T2>(
 	inputs: T1,
 	outputs: T2,
-	use_node_values: bool,
+	ignore_node_values: bool,
 ) -> Result<SubGraph, ExecutionSubgraphError>
 where
 	I: Into<Node>,
@@ -313,7 +313,7 @@ where
 		|node: &Node| {
 			// Exclude the parents of nodes which are inputs
 			// Record if a node has no parents and is not an input
-			if inputs.contains(node) || (use_node_values && node.has_value()) {
+			if inputs.contains(node) || (!ignore_node_values && node.has_value()) {
 				(false, true) // exclude parents of node
 			} else if node.parent_ops().is_empty() {
 				parentless_nodes.push(node.clone());
