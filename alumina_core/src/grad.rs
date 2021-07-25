@@ -19,26 +19,23 @@ enum GradValue {
 /// added after calling `Grad::build(..)`, the respective gradiant operations will be missing.
 ///
 /// # Example
-/// ```no_run
-/// # use alumina::core::graph::Node;
-/// # use alumina::ops::elementwise::{mul::mul, identity::identity};
-/// # use alumina::core::grad::Grad;
+/// ```
+/// # use alumina_core::grad::Grad;
+/// # use alumina_core::graph::Node;
 /// # use ndarray::{arr0, arr1};
 /// # use indexmap::indexset;
 /// # use failure::Error;
 /// # fn main() -> Result<(), Error> {
 /// let x = Node::new(&[2]).set_name("x").set_value(arr0(3.0));
-/// let y = Node::new(&[2]).set_name("y").set_value(arr0(2.1));
+/// let y = Node::new(&[3]).set_name("y").set_value(arr0(2.1));
+/// let z = Node::new(&[5]).set_name("y").set_value(arr0(4.2));
 ///
-/// let intermediate = mul(&x, &y)?;
-/// let loss = identity(&intermediate)?;
+/// let dyd = Grad::of(&y).wrt(&[&x, &y]).build()?;
 ///
-/// let grads = Grad::of(&loss).wrt(&[&x, &y]).build()?;
+/// assert_eq!(dyd[&x].calc()?, arr1(&[0.0, 0.0]).into_dyn());
+/// assert_eq!(dyd[&y].calc()?, arr1(&[1.0, 1.0, 1.0]).into_dyn());
 ///
-/// assert_eq!(grads[&x].calc()?, arr1(&[2.1, 2.1]).into_dyn());
-/// assert_eq!(grads[&y].calc()?, arr1(&[3.0, 3.0]).into_dyn());
-///
-/// assert_eq!(grads[&intermediate].calc()?, arr1(&[1.0, 1.0]).into_dyn());
+/// assert_eq!(dyd.get(&z), None);
 /// # Ok(())
 /// # }
 /// ```

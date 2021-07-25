@@ -12,7 +12,7 @@
 //!
 //!
 //! ```rust
-//! # use alumina::graph::Node;
+//! # use alumina_core::graph::Node;
 //! # use std::hash::{Hash, Hasher, SipHasher};
 //!
 //! let fixed_2d_node = Node::new(&[4, 3]);
@@ -138,8 +138,8 @@ impl Node {
 	///
 	/// This node belongs to its own graph until joined by operations.
 	/// ```
-	/// # use alumina::graph::Node;
-	/// # use alumina::shape::NodeAxis;
+	/// # use alumina_core::graph::Node;
+	/// # use alumina_core::shape::NodeAxis;
 	///
 	/// let fixed_2d_node = Node::new(&[4, 3]);
 	/// let variable_2d_node = Node::new(&[-1, 3]);
@@ -155,9 +155,8 @@ impl Node {
 	///
 	/// ```
 	/// # extern crate ndarray;
-	/// # extern crate alumina;
 	/// # use ndarray::{arr0, arr2};
-	/// # use alumina::graph::Node;
+	/// # use alumina_core::graph::Node;
 	///
 	/// let value_node1 = Node::from_value(arr0(5.0));
 	/// let value_node2 = Node::from_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
@@ -258,9 +257,8 @@ impl Node {
 	///
 	/// ```
 	/// # extern crate ndarray;
-	/// # extern crate alumina;
 	/// # use ndarray::{arr0, arr2};
-	/// # use alumina::graph::Node;
+	/// # use alumina_core::graph::Node;
 	///
 	/// let value_node1 = Node::new(&[0; 0]).set_value(arr0(5.0));
 	/// let value_node2 = Node::new(&[2, 3]).set_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));

@@ -9,19 +9,17 @@
 //! # Examples
 //!
 //! ```
-//! # extern crate failure;
-//! # extern crate alumina;
-//! # use alumina::graph::Node;
-//! # use alumina::shape::{NodeShape};
-//! # use alumina::ops::manip::remove_dims::remove_dims;
-//! # use failure::Error;
-//! # fn main() -> Result<(), Error> {
+//! # use alumina_core::graph::Node;
+//! # use alumina_core::shape::{NodeShape};
+//! # use alumina_core::errors::OpBuildError;
+//! # use alumina_ops::manip::remove_dims::remove_dims;
+//! # fn main() -> Result<(), OpBuildError> {
 //! let input = Node::new(&[1, 1, 5, 6, 1, 7, 1]);
 //! let output = remove_dims(&input, &[0, 1, 4, 6])?;
 //!
 //! let expected: NodeShape = (&[5, 6, 7]).into();
 //!
-//! assert_eq!(&expected, output.shape());
+//! assert_eq!(expected, output.shape());
 //! # Ok(())
 //! # }
 //! ```

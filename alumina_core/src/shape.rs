@@ -10,9 +10,8 @@ use std::{
 /// Easy `Into<NodeShape>` value for scalar nodes.
 ///
 /// ```
-/// # extern crate alumina;
-/// # use alumina::graph::Node;
-/// # use alumina::shape::SCALAR;
+/// # use alumina_core::graph::Node;
+/// # use alumina_core::shape::SCALAR;
 /// # use std::sync::Arc;
 /// let scalar_node = Node::new(SCALAR);
 /// assert_eq!(0, scalar_node.shape().len());
