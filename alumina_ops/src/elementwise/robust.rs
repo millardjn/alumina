@@ -10,7 +10,7 @@ use alumina_core::{
 ///
 /// Based on the paper: A More General Robust Loss Function https://arxiv.org/pdf/1701.03077.pdf Eq.13 & Eq.14
 /// Note that:
-/// 
+///
 /// when power(α) > 2, this loss is undefined
 ///
 /// when power(α) == 2, this is the L2 loss
@@ -23,7 +23,7 @@ use alumina_core::{
 ///
 /// when power(α) == -∞, this is the Welsch/Leclerc loss
 ///
-/// For other values of power(α) the loss smoothly interpolates between these loss functions. However, despite stable implementations for the special values at 2 and 0, when power(α) approaches these values, significant numerical error will be encountered. 
+/// For other values of power(α) the loss smoothly interpolates between these loss functions. However, despite stable implementations for the special values at 2 and 0, when power(α) approaches these values, significant numerical error will be encountered.
 ///
 /// The scale(c) is the range of values either size of zero for which the loss will closely approximate the L2 loss.
 /// A small scale value will mean that small inputs will result in larger outputs.
@@ -65,8 +65,8 @@ impl UnaryFunc for RobustFunc {
 		let x = input;
 		#[allow(clippy::float_cmp)] // comparing to a user value not a computed value
 		{
-			let x = x/c;
-			let x2 = x *x;
+			let x = x / c;
+			let x2 = x * x;
 			if a == 0.0 {
 				(0.5 * x2).ln_1p()
 			} else if a == ::std::f32::NEG_INFINITY {
@@ -79,7 +79,7 @@ impl UnaryFunc for RobustFunc {
 			} else if a == 2.0 {
 				x2 / a
 			} else {
-				let za = (a-2.0).abs();
+				let za = (a - 2.0).abs();
 				za / a * ((x2 / za + 1.0).powf(0.5 * a) - 1.0)
 			}
 		}
@@ -130,7 +130,7 @@ impl BinaryFunc for RobustBackFunc {
 			} else if a == 2.0 {
 				x / (c * c)
 			} else {
-				let za = (a-2.0).abs();
+				let za = (a - 2.0).abs();
 				x / (c * c) * ((x / c) * (x / c) / za + 1.0).powf(0.5 * a - 1.0)
 			}
 		}

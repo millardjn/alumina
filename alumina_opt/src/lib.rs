@@ -8,7 +8,7 @@ use alumina_core::{
 use alumina_data::DataStream;
 use indexmap::{IndexMap, IndexSet};
 use ndarray::{ArcArray, IxDyn};
-use ndarray::{ArrayD, ArrayViewD, Zip};
+use ndarray::{ArrayViewD, Zip};
 use std::{borrow::Borrow, iter::once};
 use unchecked_index as ui;
 
@@ -78,7 +78,7 @@ pub trait GradientStepper {
 	// error, step number, l2 norm of param change, and the new parameters
 	fn step(
 		&mut self,
-		parameters_and_grad_values: IndexMap<Node, ArrayD<f32>>,
+		parameters_and_grad_values: IndexMap<Node, ArcArray<f32, IxDyn>>,
 		calc_change: bool,
 	) -> Result<f32, ExecError>;
 

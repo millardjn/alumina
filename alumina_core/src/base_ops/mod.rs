@@ -1,6 +1,6 @@
+pub mod apply;
 pub mod dummy;
 pub mod fill;
-pub mod apply;
 pub mod noop;
 pub mod shape_constraint;
 
@@ -95,7 +95,7 @@ pub trait OpSpecification: Any + Sized {
 ///
 /// No `OpInstance` should retain any reference to its containing graph as this will prevent deallocation.
 /// This includes `Node`s, instead `InnerRef<NodeInner>` should be used to identify specific inputs and outputs.
-pub trait OpInstance: fmt::Debug  + Any + Send + Sync {
+pub trait OpInstance: fmt::Debug + Any + Send + Sync {
 	///
 	fn type_name(&self) -> &'static str;
 

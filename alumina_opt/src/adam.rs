@@ -1,7 +1,7 @@
 use crate::{calc_change_sqr, GradientStepper};
 use alumina_core::{errors::ExecError, graph::Node};
 use indexmap::{indexmap, IndexMap};
-use ndarray::{ArrayD, Zip};
+use ndarray::{ArcArray, ArrayD, IxDyn, Zip};
 use rayon::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -109,17 +109,14 @@ impl GradientStepper for Adam {
 
 	fn step(
 		&mut self,
-		mut parameters_and_grad_values: IndexMap<Node, ArrayD<f32>>,
+		mut parameters_and_grad_values: IndexMap<Node, ArcArray<f32, IxDyn>>,
 		//parameters_and_grads: &IndexMap<Node, Node>,
 		//mut results: IndexMap<Node, ArrayD<f32>>,
 		calc_change: bool,
 		// inputs: IndexMap<I, ArrayD<f32>>,
 		// parameters_and_grads: &IndexMap<Node, Node>,
 		// options: StepOptions,
-	) -> Result<f32, ExecError>
-//where
-		//I: Borrow<Node> + Hash + Eq,
-	{
+	) -> Result<f32, ExecError> {
 		// let (mut results, loss) = if let Some(loss) = options.loss {
 		// 	let results = exec(
 		// 		inputs,
@@ -166,7 +163,7 @@ impl GradientStepper for Adam {
 				.filter_map(|(param, state)| {
 					parameters_and_grad_values
 						.swap_remove(param)
-						.map(|grad_arr| (param, state, grad_arr))
+						.map(|grad_arr| (param, state, grad_arr.to_owned()))
 				})
 				.par_bridge()
 				.map(|(param, state, mut grad_arr)| {

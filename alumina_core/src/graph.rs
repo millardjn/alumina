@@ -163,7 +163,7 @@ impl Node {
 	}
 
 	/// Call `exec()` for this node only.
-	pub fn calc(&self) -> Result<ArrayD<f32>, ExecError> {
+	pub fn calc(&self) -> Result<ArcArray<f32, IxDyn>, ExecError> {
 		Ok(ExecutionPlan::new(IndexMap::<Node, _>::new(), &[&self])
 			.execute()?
 			.remove(self)

@@ -11,27 +11,27 @@ use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{ArrayD, ArrayViewMutD};
 use std::{any::Any, fmt, sync::Arc};
 
-
 /// Wrap to implement debug and clone
 #[derive(Clone)]
 struct ApplyWrap {
-    f: Arc<dyn Fn(ArrayViewMutD<f32>) + Send + Sync + 'static>
+	f: Arc<dyn Fn(ArrayViewMutD<f32>) + Send + Sync + 'static>,
 }
 
 impl fmt::Debug for ApplyWrap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Apply Op Closure {{ .. }}")
-    }
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "Apply Op Closure {{ .. }}")
+	}
 }
-
 
 /// Produces and output node with the given shape, and an op to fill the array with the provided closure.
 ///
 /// The output node has the same shape as the input.
-pub fn apply<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, S: Into<NodeShape>>(f: F, shape: S) -> Result<Node, OpBuildError> {
+pub fn apply<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, S: Into<NodeShape>>(
+	f: F,
+	shape: S,
+) -> Result<Node, OpBuildError> {
 	let output = Node::new(shape).set_name_unique("apply()");
 	let _op = Apply::new(&output, f).build()?;
-
 
 	Ok(output)
 }
@@ -39,7 +39,10 @@ pub fn apply<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, S: Into<NodeShap
 /// Fills the provided output with the provided closure, then returns the same output Node.
 ///
 /// The output node has the same shape as the input.
-pub fn apply_into<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, O: Into<Node>>(f: F, output: O) -> Result<Node, OpBuildError> {
+pub fn apply_into<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, O: Into<Node>>(
+	f: F,
+	output: O,
+) -> Result<Node, OpBuildError> {
 	let output = output.into();
 	let _op = Apply::new(output.clone(), f).build()?;
 	Ok(output)
@@ -49,7 +52,7 @@ pub fn apply_into<F: Fn(ArrayViewMutD<f32>) + Send + Sync + 'static, O: Into<Nod
 #[derive(Debug)]
 pub struct Apply {
 	output: Node,
-    f: ApplyWrap,
+	f: ApplyWrap,
 }
 
 /// Note: If cloned, any state in the closure will be cloned as is including pseudo random generators.
@@ -59,15 +62,21 @@ impl Apply {
 		O: Into<Node>,
 	{
 		let output = output.into();
-		Apply { output, f: ApplyWrap{f: Arc::new(f)} }
+		Apply {
+			output,
+			f: ApplyWrap { f: Arc::new(f) },
+		}
 	}
 
-    pub fn new_boxed<O>(output: O, f: Arc<dyn Fn(ArrayViewMutD<f32>) + Send + Sync + 'static>) -> Self
+	pub fn new_boxed<O>(output: O, f: Arc<dyn Fn(ArrayViewMutD<f32>) + Send + Sync + 'static>) -> Self
 	where
 		O: Into<Node>,
 	{
 		let output = output.into();
-		Apply { output, f: ApplyWrap{f} }
+		Apply {
+			output,
+			f: ApplyWrap { f },
+		}
 	}
 }
 
@@ -148,41 +157,47 @@ impl OpInstance for ApplyInstance {
 			let mut out = ctx.get_output(&self.output);
 			out += &arr;
 		}
-	
+
 		Ok(())
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::{base_ops::apply::{apply, apply_into}, graph::Node};
+	use crate::{
+		base_ops::apply::{apply, apply_into},
+		graph::Node,
+	};
 
 	#[test]
 	fn forward_fill() {
-        let output = apply(|mut x| x.fill(1.25), &[13, 33]).unwrap();
+		let output = apply(|mut x| x.fill(1.25), &[13, 33]).unwrap();
 
-		assert!(output
-			.calc()
-			.unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
+		assert!(output.calc().unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
 	}
 
 	#[test]
 	fn forward_into_count() {
 		let output = Node::new(&[13, 33]);
-        
-        apply_into(|mut x| {x.iter_mut().enumerate().for_each(|(i, x)| *x = i as f32)}, &output).unwrap();
+
+		apply_into(
+			|mut x| x.iter_mut().enumerate().for_each(|(i, x)| *x = i as f32),
+			&output,
+		)
+		.unwrap();
 
 		assert!(output
 			.calc()
-			.unwrap().iter().enumerate().all(|(i, &e)| (e - i as f32).abs() < f32::EPSILON));
+			.unwrap()
+			.iter()
+			.enumerate()
+			.all(|(i, &e)| (e - i as f32).abs() < f32::EPSILON));
 	}
 
-
-    #[test]
+	#[test]
 	fn shape() {
 		let output = apply(|mut x| x.fill(1.25), &[13, 33]).unwrap();
 
-		assert!(output
-			.calc().unwrap().shape() == [13, 33]);
+		assert!(output.calc().unwrap().shape() == [13, 33]);
 	}
 }

@@ -1,10 +1,14 @@
 //! Types and tools for constructing symbolic gradients.
-use crate::{base_ops::{OpSpecification, apply::{Apply}, fill::fill_into, shape_constraint::same_shape}, errors::GradError, graph::{IntoNodeValue, Node, NodeID}, subgraph::{backward_subgraph_from, forward_subgraph_from, SubGraph}, util::display::{Iter2Display, IterDisplay}};
-use indexmap::{IndexMap, IndexSet, indexset, indexmap};
+use crate::{
+	base_ops::{apply::Apply, fill::fill_into, shape_constraint::same_shape, OpSpecification},
+	errors::GradError,
+	graph::{IntoNodeValue, Node, NodeID},
+	subgraph::{backward_subgraph_from, forward_subgraph_from, SubGraph},
+	util::display::{Iter2Display, IterDisplay},
+};
+use indexmap::{indexmap, indexset, IndexMap, IndexSet};
 use ndarray::{ArcArray, ArrayViewMutD, IxDyn};
 use std::{borrow::Borrow, sync::Arc};
-
-
 
 enum GradValue {
 	Value(ArcArray<f32, IxDyn>),
@@ -49,7 +53,7 @@ pub struct Grad {
 
 impl Grad {
 	/// Begin building the gradient constructor by selective a single dependant value node, i.e. the `y` in `dy/dx`.
-	pub fn of(node: impl Into<Node>) -> Self{
+	pub fn of(node: impl Into<Node>) -> Self {
 		Self {
 			ys: indexset![node.into()],
 			xs: indexset![],
@@ -61,10 +65,10 @@ impl Grad {
 	/// Begin building the gradient constructor by selective multiple dependant value nodes, i.e. the `y`s in `d y1/dx + dy2/dx + dy3/dx`.
 	/// If multiple `y`s are used, the calculated gradients for each x are the summation of the contribution from each y.
 	/// Avoid using multiple `y`s where one is a dependant variable of another.
-	pub fn of_multi<I, T>(nodes: T) -> Self 
+	pub fn of_multi<I, T>(nodes: T) -> Self
 	where
-	I: Into<Node>,
-	T: IntoIterator<Item = I>,
+		I: Into<Node>,
+		T: IntoIterator<Item = I>,
 	{
 		Self {
 			ys: nodes.into_iter().map(Into::into).collect(),
@@ -78,13 +82,13 @@ impl Grad {
 	/// These will be included in the resuling output map.
 	pub fn wrt<I, T>(mut self, nodes: T) -> Self
 	where
-	I: Into<Node>,
-	T: IntoIterator<Item = I>,
+		I: Into<Node>,
+		T: IntoIterator<Item = I>,
 	{
 		self.xs = nodes.into_iter().map(Into::into).collect();
 		self
 	}
-	
+
 	/// Overwrite the default `1.0` value for the initial gradient of a chosen dependant value node.
 	/// The given value will be broadcast to the shape of the node at evaluation time.
 	pub fn grad_value(mut self, node: Node, value: impl IntoNodeValue) -> Self {
@@ -100,7 +104,7 @@ impl Grad {
 		self.grad_values.insert(node.id(), GradValue::Fn(Arc::new(f)));
 		self
 	}
-	
+
 	/// If `false` the map returned from build only includest the gradients of the w.r.t nodes. If `true` then all gradient nodes added to the graph are returned.
 	///
 	/// Default: `false`
@@ -130,19 +134,20 @@ impl Grad {
 				Some(GradValue::Value(v)) => {
 					// Set Value if fixed value
 					context.grad_of(y_id).set_value(v);
-				},
+				}
 				Some(GradValue::Fn(f)) => {
-					Apply::new_boxed(context.grad_of(y_id), f.clone()).build().expect("Failed to add apply op to graph during gradient construction");
+					Apply::new_boxed(context.grad_of(y_id), f.clone())
+						.build()
+						.expect("Failed to add apply op to graph during gradient construction");
 				}
 			};
 		}
 
-	
 		// make sure all xs have a grad node
 		for x in &xs {
 			let _ = context.grad_of(&x.borrow().id());
 		}
-	
+
 		// take the gradient of each op, and collect any errors
 		let errors = ops.iter().fold(IndexMap::new(), |mut errors, op| {
 			op.instance().gradient(&mut context).unwrap_or_else(|e| {
@@ -150,13 +155,13 @@ impl Grad {
 			});
 			errors
 		});
-	
+
 		let GradientContext {
 			node_to_grad,
 			mut nodes,
 			..
 		} = context;
-	
+
 		// Set them to fill zero if there are no inputs to the grad
 		for (node_inner, grad) in &node_to_grad {
 			//if y.id() != *node_inner && grad.parent_ops().is_empty() {
@@ -168,8 +173,6 @@ impl Grad {
 						err
 					)
 				});
-
-
 			}
 			if !grad.shape().is_known() {
 				same_shape(nodes.get(node_inner).unwrap(), grad).unwrap_or_else(|err| {
@@ -181,13 +184,13 @@ impl Grad {
 				});
 			}
 		}
-	
+
 		let result_map = node_to_grad
 			.into_iter()
 			.map(|(inner, grad)| (nodes.swap_take(&inner).unwrap(), grad))
 			.filter(|(n, _ng)| include_intermediate || xs.contains(n))
 			.collect();
-	
+
 		if errors.is_empty() {
 			Ok(result_map)
 		} else {
@@ -196,13 +199,8 @@ impl Grad {
 				partial: result_map,
 			})
 		}
-
-
 	}
 }
-
-
-
 
 /// The subgraph should be the intersection of everything that the xs could affect, and everything that could affect y.
 /// With the addition of the xs regardless of whether they can affect y.
@@ -267,7 +265,6 @@ impl GradientContext {
 		} else {
 			y_names = ys.get_index(0).unwrap().name()
 		};
-
 
 		GradientContext {
 			ys,

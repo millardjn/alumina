@@ -123,15 +123,16 @@ impl OpInstance for FillInstance {
 
 #[cfg(test)]
 mod tests {
-	use crate::{base_ops::fill::{fill, fill_into}, graph::Node};
+	use crate::{
+		base_ops::fill::{fill, fill_into},
+		graph::Node,
+	};
 
 	#[test]
 	fn forward() {
 		let output = fill(1.25, &[13, 33]).unwrap();
 
-		assert!(output
-			.calc()
-			.unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
+		assert!(output.calc().unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
 	}
 
 	#[test]
@@ -139,16 +140,13 @@ mod tests {
 		let output = Node::new(&[13, 33]);
 		fill_into(1.25, &output).unwrap();
 
-		assert!(output
-			.calc()
-			.unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
+		assert!(output.calc().unwrap().iter().all(|&e| (e - 1.25).abs() < f32::EPSILON));
 	}
 
 	#[test]
 	fn shape() {
 		let output = fill(1.25, &[13, 33]).unwrap();
 
-		assert!(output
-			.calc().unwrap().shape() == [13, 33]);
+		assert!(output.calc().unwrap().shape() == [13, 33]);
 	}
 }

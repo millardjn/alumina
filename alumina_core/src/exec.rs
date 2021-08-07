@@ -759,7 +759,7 @@ fn form_output_map(
 	outputs: IndexSet<Node>,
 	mut value_map: IndexMap<Node, DataState<f32>>,
 	shape_map: IndexMap<NodeID, IxDyn>,
-) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError> {
+) -> Result<IndexMap<Node, ArcArray<f32, IxDyn>>, ExecError> {
 	// if output was not calculated return error
 	let mut map = IndexMap::with_capacity(outputs.len());
 	for node in outputs {
@@ -768,16 +768,17 @@ fn form_output_map(
 		}
 		match value_map.swap_remove(&node.id()) {
 			Some(DataState::Writable { data, .. }) | Some(DataState::Readable { data, .. }) => {
-				map.insert(node, data.into_owned());
+				map.insert(node, data);
 			}
 			Some(DataState::Input { data, .. }) => {
-				map.insert(node, data.into_owned());
+				map.insert(node, data);
 			}
 			Some(DataState::BroadcastInput { data, .. }) => {
 				let arr = data
 					.broadcast(shape_map[&node.id()].slice())
 					.expect("Alumina Bug: an incorrect shape snuck through somehow")
-					.into_owned();
+					.into_owned()
+					.into_shared();
 				map.insert(node, arr);
 			}
 			Some(DataState::Unallocated { .. }) | None => {
@@ -829,6 +830,8 @@ impl<'a> ExecutionPlan<'a> {
 		self
 	}
 
+	/// Force a particular execution subgraph to be used. If None, `execution_subgraph(inputs, outputs, ignore_node_values)` is called during execution to generate one.
+	///
 	/// Default: None
 	pub fn subgraph(mut self, subgraph: Option<&'a SubGraph>) -> Self {
 		self.subgraph = subgraph;
@@ -849,7 +852,7 @@ impl<'a> ExecutionPlan<'a> {
 	/// then a `SubGraphNotExecutable` Error is returned (i.e. Any Op that reads from a node must come after all Ops that write to that node).
 	///
 	/// The order of nodes in the result map is the same as the outputs argument with duplicates skipped.
-	pub fn execute(&mut self) -> Result<IndexMap<Node, ArrayD<f32>>, ExecError> {
+	pub fn execute(&mut self) -> Result<IndexMap<Node, ArcArray<f32, IxDyn>>, ExecError> {
 		let perf_records = &mut self.perf_records;
 		let subgraph = self.subgraph.as_ref();
 

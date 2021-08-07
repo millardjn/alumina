@@ -1,7 +1,7 @@
 use crate::{calc_change_sqr, GradientStepper};
 use alumina_core::{errors::ExecError, graph::Node};
 use indexmap::{indexmap, IndexMap};
-use ndarray::{ArrayD, Zip};
+use ndarray::{ArcArray, ArrayD, IxDyn, Zip};
 use rayon::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -55,7 +55,7 @@ impl GradientStepper for Sgd {
 
 	fn step(
 		&mut self,
-		mut parameters_and_grad_values: IndexMap<Node, ArrayD<f32>>,
+		mut parameters_and_grad_values: IndexMap<Node, ArcArray<f32, IxDyn>>,
 		//parameters_and_grads: &IndexMap<Node, Node>,
 		//mut results: IndexMap<Node, ArrayD<f32>>,
 		calc_change: bool,
@@ -104,7 +104,7 @@ impl GradientStepper for Sgd {
 				.filter_map(|(param, momentum_arr)| {
 					parameters_and_grad_values
 						.swap_remove(param)
-						.map(|grad_arr| (param, momentum_arr, grad_arr))
+						.map(|grad_arr| (param, momentum_arr, grad_arr.to_owned()))
 				})
 				.par_bridge()
 				.map(|(param, momentum_arr, mut grad_arr)| {

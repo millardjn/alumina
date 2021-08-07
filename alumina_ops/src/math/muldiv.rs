@@ -169,7 +169,7 @@ impl OpInstance for MulDivInstance {
 						*ui::get_unchecked_mut(output, i * 4 + 1) += a * d + b * c;
 
 						// complex division
-						let denom = epsilon*epsilon + c * c + d * d;
+						let denom = epsilon * epsilon + c * c + d * d;
 						*ui::get_unchecked_mut(output, i * 4 + 2) += (a * c + b * d) / denom;
 						*ui::get_unchecked_mut(output, i * 4 + 3) += (b * c - a * d) / denom;
 					}
@@ -341,7 +341,7 @@ impl OpInstance for MulDivBackInstance {
 						let yg = ui::get_unchecked(input_grad, i * 4 + 2);
 						let zg = ui::get_unchecked(input_grad, i * 4 + 3);
 
-						let c2d2e = c * c + d * d + epsilon*epsilon;
+						let c2d2e = c * c + d * d + epsilon * epsilon;
 						let c2d2e_2 = c2d2e * c2d2e;
 
 						// gradients from multiplication
@@ -435,7 +435,6 @@ mod tests {
 					0.891_645_4,
 					0.002918643,
 					3.2
-
 				],
 			]),
 			1e-5
