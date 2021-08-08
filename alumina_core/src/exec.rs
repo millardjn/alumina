@@ -7,7 +7,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use lru::LruCache;
-use ndarray::{ArcArray, ArrayD, ArrayViewD, ArrayViewMutD, Dimension, IxDyn};
+use ndarray::{ArcArray, ArrayViewD, ArrayViewMutD, Dimension, IxDyn};
 use std::time::Instant;
 use std::{
 	borrow::Borrow,
@@ -281,9 +281,10 @@ impl ExecutionContext {
 			| DataState::Readable { ref mut data, .. }
 			| DataState::Input { ref mut data, .. }
 			| DataState::BroadcastInput { ref mut data, .. } => {
-				let mut arr_std = ArcArray::<f32, IxDyn>::uninitialized(data.shape());
-				arr_std.assign(&data);
-				::std::mem::swap(data, &mut arr_std)
+				if !data.is_standard_layout() {
+					// guard with if because round-trip unnecessarily allocates
+					*data = data.as_standard_layout().to_shared()
+				}
 			}
 		}
 	}
@@ -513,7 +514,7 @@ impl ExecutionContext {
 				);
 
 				let data = if let DataState::Writable { ref mut data, .. } = x {
-					let mut data2 = ArcArray::<f32, IxDyn>::uninitialized(IxDyn(&[0])); // 1. deallocated at 2
+					let mut data2 = ArcArray::<f32, IxDyn>::zeros(IxDyn(&[])); // 1. deallocated at 2
 					::std::mem::swap(data, &mut data2);
 					data2
 				} else {
@@ -525,7 +526,7 @@ impl ExecutionContext {
 					data: data.into_shared(),
 				};
 
-				::std::mem::swap(&mut new_value, x); // 2. deallocate uninit value here, its ok because f32 doesnt have a destructor
+				::std::mem::swap(&mut new_value, x); // 2. deallocate empty array here
 
 				if let DataState::Readable { ref mut data, .. } = x {
 					data.view()
@@ -544,7 +545,7 @@ impl ExecutionContext {
 				// upgrade to Input
 
 				let data = if let DataState::BroadcastInput { ref mut data, .. } = x {
-					let mut data2 = ArcArray::uninitialized(IxDyn(&[0])); // 1. deallocated at 2
+					let mut data2 = ArcArray::zeros(IxDyn(&[])); // 1. deallocated at 2
 					::std::mem::swap(data, &mut data2);
 					data2
 				} else {
@@ -565,7 +566,7 @@ impl ExecutionContext {
 					data,
 				};
 
-				::std::mem::swap(&mut new_value, x); // 2. deallocate uninit value here, its ok because f32 doesnt have a destructor
+				::std::mem::swap(&mut new_value, x); // 2. deallocate empty array here
 
 				if let DataState::Input { ref mut data, .. } = x {
 					data.view()
@@ -728,17 +729,12 @@ impl ExecutionContext {
 
 	/// Take the value of a node as an owned array, which is guaranteed to be in standard layout ( C order).
 	pub fn take_standard(&self, node: &NodeID) -> ArcArray<f32, IxDyn> {
-		let arr = self.take(node);
-		if arr.is_standard_layout() {
-			arr
-		} else {
-			unsafe {
-				let mut arr_std = ArcArray::<f32, IxDyn>::uninitialized(arr.shape());
-				debug_assert!(arr_std.is_standard_layout());
-				arr_std.assign(&arr);
-				arr_std
-			}
+		let mut arr = self.take(node);
+		if !arr.is_standard_layout() {
+			// guard with if because round-trip unnecessarily allocates
+			arr = arr.as_standard_layout().to_shared()
 		}
+		arr
 	}
 
 	pub fn shape(&self, node: &NodeID) -> &[usize] {
@@ -955,9 +951,8 @@ impl<'a> ExecutionPlan<'a> {
 							})?;
 							system.refresh_cpu();
 							record.invocation_count += 1;
-							record.cumulative_usage +=
-								system.get_processors().iter().map(|p| p.get_cpu_usage()).sum::<f32>()
-									/ system.get_processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
+							record.cumulative_usage += system.processors().iter().map(|p| p.cpu_usage()).sum::<f32>()
+								/ system.processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
 							record.cumulative_time += start.elapsed().as_micros() as f32;
 						} else {
 							op.instance().execute(&ctx).map_err(|e| ExecError::Op {

@@ -197,11 +197,11 @@ impl OpInstance for SoftmaxCrossEntropyInstance {
 		Zip::from(ctx.get_output(&self.output))
 			.and(ctx.get_input(&self.logits).lanes(Axis(self.axis)))
 			.and(ctx.get_input(&self.labels).lanes(Axis(self.axis)))
-			.par_apply(|output, logits, labels| {
+			.par_for_each(|output, logits, labels| {
 				let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));
 				let exp_sum = logits.iter().fold(0., |sum, &v| sum + (v - max).exp());
 
-				Zip::from(logits).and(labels).apply(|logit, label| {
+				Zip::from(logits).and(labels).for_each(|logit, label| {
 					*output += label * (exp_sum.ln() - (logit - max));
 				});
 			});
@@ -390,7 +390,7 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 				.and(ctx.get_input(&self.logits).lanes(Axis(self.axis)))
 				.and(ctx.get_input(&self.labels).lanes(Axis(self.axis)))
 				.and(ctx.get_input(&self.output_grad))
-				.par_apply(|mut logits_grad, logits, labels, output_grad| {
+				.par_for_each(|mut logits_grad, logits, labels, output_grad| {
 					let len = logits.len();
 
 					let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));
@@ -420,7 +420,7 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 			Zip::from(ctx.get_input(&self.logits).lanes(Axis(self.axis)))
 				.and(ctx.get_output(&self.labels_grad).lanes_mut(Axis(self.axis)))
 				.and(ctx.get_input(&self.output_grad))
-				.par_apply(|logits, mut label_grad, output_grad| {
+				.par_for_each(|logits, mut label_grad, output_grad| {
 					let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));
 					let exp_sum = logits.iter().fold(0., |sum, &v| sum + (v - max).exp());
 
@@ -436,7 +436,7 @@ impl OpInstance for SoftmaxCrossEntropyBackInstance {
 				.and(ctx.get_output(&self.labels_grad).lanes_mut(Axis(self.axis)))
 				.and(ctx.get_input(&self.labels).lanes(Axis(self.axis)))
 				.and(ctx.get_input(&self.output_grad))
-				.par_apply(|mut logits_grad, logits, mut label_grad, labels, output_grad| {
+				.par_for_each(|mut logits_grad, logits, mut label_grad, labels, output_grad| {
 					let len = logits.len();
 
 					let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));

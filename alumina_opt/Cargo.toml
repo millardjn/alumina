@@ -6,16 +6,15 @@ edition = "2018"
 
 
 [dependencies]
-alumina_core = { path = "../alumina_core" }
-alumina_ops = { path = "../alumina_ops" }
-#alumina_exec = { path = "../alumina_exec" }
-alumina_data = { path = "../alumina_data" }
+alumina_core = { path = "../alumina_core", version = "0.3"  }
+alumina_ops = { path = "../alumina_ops", version = "0.3"  }
+alumina_data = { path = "../alumina_data", version = "0.3"  }
 
-ndarray = "*"
-indexmap = "*"
-rayon = "*"
-unchecked-index = "*"
+ndarray = {version = "0.15", features = ["rayon"]}
+indexmap = "1.7"
+rayon = "1.5"
+unchecked-index = "0.2"
 
-rand = "0.7"
-rand_distr = "0.2"
-rand_pcg = "0.2"
+rand = "0.8"
+rand_distr = "0.4"
+rand_pcg = "0.3"

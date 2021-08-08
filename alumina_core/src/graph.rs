@@ -1685,7 +1685,7 @@ impl GraphInner {
 	}
 
 	fn unique_node_name(&mut self, new_name_root: &str) -> String {
-		if self.nodes_named(&new_name_root).is_empty() {
+		if self.nodes_named(new_name_root).is_empty() {
 			return new_name_root.to_string();
 		}
 
@@ -1699,7 +1699,7 @@ impl GraphInner {
 	}
 
 	fn unique_op_name(&mut self, new_name_root: &str) -> String {
-		if self.ops_named(&new_name_root).is_empty() {
+		if self.ops_named(new_name_root).is_empty() {
 			return new_name_root.to_string();
 		}
 

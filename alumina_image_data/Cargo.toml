@@ -1,11 +1,11 @@
 [package]
 name = "alumina_image_data"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["zza <millard.jn@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-alumina = { path = "../" }
-ndarray = "0.12.1"
+alumina = { path = "../" , version = "0.3" }
+ndarray = "0.15.1"
 walkdir = "2.2"
-image = "0.20"
+image = "0.23"

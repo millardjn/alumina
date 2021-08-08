@@ -135,7 +135,7 @@ impl OpInstance for ArgMaxInstance {
 
 		Zip::from(input.lanes(Axis(self.axis)))
 			.and(&mut output)
-			.apply(|input, output| {
+			.par_for_each(|input, output| {
 				let mut iter = input.iter().enumerate();
 				if let Some((mut max_i, mut max)) = iter.next() {
 					for (i, x) in iter {

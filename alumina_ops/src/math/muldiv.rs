@@ -147,7 +147,7 @@ impl OpInstance for MulDivInstance {
 
 		Zip::from(input.lanes(Axis(ndim - 1)))
 			.and(output.lanes_mut(Axis(ndim - 1)))
-			.par_apply(|input, mut output| {
+			.par_for_each(|input, mut output| {
 				let len = input.len();
 				debug_assert_eq!(input.len(), output.len());
 
@@ -317,7 +317,7 @@ impl OpInstance for MulDivBackInstance {
 		Zip::from(input_grad.lanes_mut(Axis(ndim - 1)))
 			.and(input.lanes(Axis(ndim - 1)))
 			.and(output_grad.lanes(Axis(ndim - 1)))
-			.par_apply(|mut input_grad, input, output_grad| {
+			.par_for_each(|mut input_grad, input, output_grad| {
 				let len = input.len();
 				debug_assert_eq!(input.len(), output_grad.len());
 				debug_assert_eq!(input.len(), input_grad.len());

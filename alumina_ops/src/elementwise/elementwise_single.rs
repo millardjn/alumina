@@ -126,7 +126,7 @@ impl<F: NullaryFunc> OpInstance for NullaryElementwiseInstance<F> {
 	}
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
-		Zip::from(ctx.get_output(&self.output)).par_apply(|output| {
+		Zip::from(ctx.get_output(&self.output)).par_for_each(|output| {
 			*output += self.f.calc();
 		});
 		Ok(())
@@ -263,7 +263,7 @@ impl<F: UnaryFunc> OpInstance for UnaryElementwiseInstance<F> {
 		} else {
 			Zip::from(ctx.get_output(&self.output))
 				.and(ctx.get_input(&self.input))
-				.par_apply(|output, &input| {
+				.par_for_each(|output, &input| {
 					*output += self.f.calc(input);
 				});
 		}
@@ -422,36 +422,34 @@ impl<F: BinaryFunc> OpInstance for BinaryElementwiseInstance<F> {
 			// if output can be set using the input array, update inplace and do that.
 			let mut input1 = ctx.take(&self.input1);
 			if self.input1 == self.input2 {
-				Zip::from(&mut input1).par_apply(|in1| {
+				Zip::from(&mut input1).par_for_each(|in1| {
 					*in1 = self.f.calc(*in1, *in1);
 				});
-				ctx.set(&self.output, input1);
 			} else {
 				let input2 = ctx.get_input(&self.input2);
-				Zip::from(&mut input1).and(input2).par_apply(|in1, &in2| {
+				Zip::from(&mut input1).and(input2).par_for_each(|in1, &in2| {
 					*in1 = self.f.calc(*in1, in2);
 				});
-				ctx.set(&self.output, input1);
 			}
+			ctx.set(&self.output, input1);
 		} else if ctx.can_take(&self.input2) && ctx.can_set(&self.output) {
 			let mut input2 = ctx.take(&self.input2);
 			if self.input1 == self.input2 {
-				Zip::from(&mut input2).par_apply(|in2| {
+				Zip::from(&mut input2).par_for_each(|in2| {
 					*in2 = self.f.calc(*in2, *in2);
 				});
-				ctx.set(&self.output, input2);
 			} else {
 				let input1 = ctx.get_input(&self.input1);
-				Zip::from(&mut input2).and(input1).par_apply(|in2, &in1| {
+				Zip::from(&mut input2).and(input1).par_for_each(|in2, &in1| {
 					*in2 = self.f.calc(in1, *in2);
 				});
-				ctx.set(&self.output, input2);
 			}
+			ctx.set(&self.output, input2);
 		} else {
 			Zip::from(ctx.get_output(&self.output))
 				.and(ctx.get_input(&self.input1))
 				.and(ctx.get_input(&self.input2))
-				.par_apply(|output, &input1, &input2| {
+				.par_for_each(|output, &input1, &input2| {
 					*output += self.f.calc(input1, input2);
 				});
 		}
@@ -630,17 +628,17 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 			// if output can be set using the input array, update inplace and do that.
 			let mut input1 = ctx.take(&self.input1);
 			if self.input1 == self.input2 && self.input1 == self.input3 {
-				Zip::from(&mut input1).par_apply(|in1| {
+				Zip::from(&mut input1).par_for_each(|in1| {
 					*in1 = self.f.calc(*in1, *in1, *in1);
 				});
 			} else if self.input1 == self.input2 {
 				let input3 = ctx.get_input(&self.input3);
-				Zip::from(&mut input1).and(input3).par_apply(|in1, in3| {
+				Zip::from(&mut input1).and(input3).par_for_each(|in1, in3| {
 					*in1 = self.f.calc(*in1, *in1, *in3);
 				});
 			} else if self.input1 == self.input3 {
 				let input2 = ctx.get_input(&self.input2);
-				Zip::from(&mut input1).and(input2).par_apply(|in1, in2| {
+				Zip::from(&mut input1).and(input2).par_for_each(|in1, in2| {
 					*in1 = self.f.calc(*in1, *in2, *in1);
 				});
 			} else {
@@ -649,7 +647,7 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 				Zip::from(&mut input1)
 					.and(input2)
 					.and(input3)
-					.par_apply(|in1, in2, in3| {
+					.par_for_each(|in1, in2, in3| {
 						*in1 = self.f.calc(*in1, *in2, *in3);
 					});
 			}
@@ -657,17 +655,17 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 		} else if ctx.can_take(&self.input2) && ctx.can_set(&self.output) {
 			let mut input2 = ctx.take(&self.input2);
 			if self.input2 == self.input1 && self.input2 == self.input3 {
-				Zip::from(&mut input2).par_apply(|in2| {
+				Zip::from(&mut input2).par_for_each(|in2| {
 					*in2 = self.f.calc(*in2, *in2, *in2);
 				});
 			} else if self.input2 == self.input1 {
 				let input3 = ctx.get_input(&self.input3);
-				Zip::from(&mut input2).and(input3).par_apply(|in2, in3| {
+				Zip::from(&mut input2).and(input3).par_for_each(|in2, in3| {
 					*in2 = self.f.calc(*in2, *in2, *in3);
 				});
 			} else if self.input2 == self.input3 {
 				let input1 = ctx.get_input(&self.input1);
-				Zip::from(&mut input2).and(input1).par_apply(|in2, in1| {
+				Zip::from(&mut input2).and(input1).par_for_each(|in2, in1| {
 					*in2 = self.f.calc(*in1, *in2, *in2);
 				});
 			} else {
@@ -676,7 +674,7 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 				Zip::from(&mut input2)
 					.and(input1)
 					.and(input3)
-					.par_apply(|in2, in1, in3| {
+					.par_for_each(|in2, in1, in3| {
 						*in2 = self.f.calc(*in1, *in2, *in3);
 					});
 			}
@@ -684,17 +682,17 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 		} else if ctx.can_take(&self.input3) && ctx.can_set(&self.output) {
 			let mut input3 = ctx.take(&self.input3);
 			if self.input3 == self.input1 && self.input3 == self.input2 {
-				Zip::from(&mut input3).par_apply(|in3| {
+				Zip::from(&mut input3).par_for_each(|in3| {
 					*in3 = self.f.calc(*in3, *in3, *in3);
 				});
 			} else if self.input3 == self.input1 {
 				let input2 = ctx.get_input(&self.input2);
-				Zip::from(&mut input3).and(input2).par_apply(|in3, in2| {
+				Zip::from(&mut input3).and(input2).par_for_each(|in3, in2| {
 					*in3 = self.f.calc(*in3, *in2, *in3);
 				});
 			} else if self.input3 == self.input2 {
 				let input1 = ctx.get_input(&self.input1);
-				Zip::from(&mut input3).and(input1).par_apply(|in3, in1| {
+				Zip::from(&mut input3).and(input1).par_for_each(|in3, in1| {
 					*in3 = self.f.calc(*in1, *in3, *in3);
 				});
 			} else {
@@ -703,7 +701,7 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 				Zip::from(&mut input3)
 					.and(input1)
 					.and(input2)
-					.par_apply(|in3, in1, in2| {
+					.par_for_each(|in3, in1, in2| {
 						*in3 = self.f.calc(*in1, *in2, *in3);
 					});
 			}
@@ -713,7 +711,7 @@ impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
 				.and(ctx.get_input(&self.input1))
 				.and(ctx.get_input(&self.input2))
 				.and(ctx.get_input(&self.input3))
-				.par_apply(|output, in1, in2, in3| {
+				.par_for_each(|output, in1, in2, in3| {
 					*output += self.f.calc(*in1, *in2, *in3);
 				});
 		}
@@ -876,17 +874,17 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 				ctx.shape(&self.output),
 				"Alumina Bug: input {} shape: {:?} did not match output shape: {:?}",
 				i,
-				ctx.shape(&input),
+				ctx.shape(input),
 				ctx.shape(&self.output)
 			);
 		}
 
 		if ctx.can_set(&self.output) {
 			for (i, input) in self.inputs.iter().enumerate() {
-				if ctx.can_take(&input) && self.inputs.iter().filter(|&n| n == input).count() == 1 {
+				if ctx.can_take(input) && self.inputs.iter().filter(|&n| n == input).count() == 1 {
 					// Inplace version
 
-					let input_arr = ctx.take(&input);
+					let input_arr = ctx.take(input);
 
 					let len = input_arr.len();
 

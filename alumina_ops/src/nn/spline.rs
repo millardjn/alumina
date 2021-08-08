@@ -352,7 +352,7 @@ impl OpInstance for SplineInstance {
 			.and_broadcast(&weights0)
 			.and_broadcast(&weights1)
 			.and_broadcast(&weights2)
-			.par_apply(|output, &input, &left, &centre, &right| {
+			.par_for_each(|output, &input, &left, &centre, &right| {
 				let x = input;
 				if x <= -1.0 {
 					*output += (-2.0 / 3.0) * (centre - 1.5 * left * x - 0.875 * left - 0.125 * right);
@@ -593,7 +593,7 @@ impl OpInstance for SplineBackInstance {
 				.and_broadcast(&weights1)
 				.and_broadcast(&weights2)
 				.and(input_grad)
-				.par_apply(|&output_grad, &input, &left, &centre, &right, input_grad| {
+				.par_for_each(|&output_grad, &input, &left, &centre, &right, input_grad| {
 					let x = input;
 					if x <= -1.0 {
 						*input_grad += output_grad * left;
@@ -611,39 +611,33 @@ impl OpInstance for SplineBackInstance {
 		if ctx.is_required_output(&self.weights_grad) {
 			let mut weights_grad = ctx.get_output(&self.weights_grad);
 			let mut weights_grad_iter = weights_grad.outer_iter_mut();
-			let weights_grad0 = weights_grad_iter.next().unwrap();
-			let weights_grad1 = weights_grad_iter.next().unwrap();
-			let weights_grad2 = weights_grad_iter.next().unwrap();
+			let mut weights_grad0 = weights_grad_iter.next().unwrap();
+			let mut weights_grad1 = weights_grad_iter.next().unwrap();
+			let mut weights_grad2 = weights_grad_iter.next().unwrap();
 
-			unsafe {
-				Zip::from(&output_grad)
-					.and(&input)
-					.and_broadcast(&weights_grad0)
-					.and_broadcast(&weights_grad1)
-					.and_broadcast(&weights_grad2)
-					.apply(|&output_grad, &input, left_grad, centre_grad, right_grad| {
-						let left_grad = left_grad as *const f32 as *mut f32;
-						let centre_grad = centre_grad as *const f32 as *mut f32;
-						let right_grad = right_grad as *const f32 as *mut f32;
-
-						let x = input;
-						if x <= -1.0 {
-							*left_grad += output_grad * (x + 7.0 / 12.0);
-							*centre_grad += output_grad * (-2.0 / 3.0);
-							*right_grad += output_grad * (1.0 / 12.0);
-						} else if x >= 1.0 {
-							*left_grad += output_grad * (-1.0 / 12.0);
-							*centre_grad += output_grad * (2.0 / 3.0);
-							*right_grad += output_grad * (x - 7.0 / 12.0);
-						} else {
-							let x2 = x * x;
-							let x3 = x * x * x;
-							*left_grad += output_grad * (x * (1.0 / 6.0) - 0.25) * x2;
-							*centre_grad += output_grad * (x - x3 * (1.0 / 3.0));
-							*right_grad += output_grad * (x * (1.0 / 6.0) + 0.25) * x2;
-						}
-					});
-			}
+			Zip::from(&output_grad)
+				.and(&input)
+				.and_broadcast(weights_grad0.cell_view())
+				.and_broadcast(weights_grad1.cell_view())
+				.and_broadcast(weights_grad2.cell_view())
+				.for_each(|&output_grad, &input, left_grad, centre_grad, right_grad| {
+					let x = input;
+					if x <= -1.0 {
+						left_grad.set(left_grad.get() + output_grad * (x + 7.0 / 12.0));
+						centre_grad.set(centre_grad.get() + output_grad * (-2.0 / 3.0));
+						right_grad.set(right_grad.get() + output_grad * (1.0 / 12.0));
+					} else if x >= 1.0 {
+						left_grad.set(left_grad.get() + output_grad * (-1.0 / 12.0));
+						centre_grad.set(centre_grad.get() + output_grad * (2.0 / 3.0));
+						right_grad.set(right_grad.get() + output_grad * (x - 7.0 / 12.0));
+					} else {
+						let x2 = x * x;
+						let x3 = x * x * x;
+						left_grad.set(left_grad.get() + output_grad * (x * (1.0 / 6.0) - 0.25) * x2);
+						centre_grad.set(centre_grad.get() + output_grad * (x - x3 * (1.0 / 3.0)));
+						right_grad.set(right_grad.get() + output_grad * (x * (1.0 / 6.0) + 0.25) * x2);
+					}
+				});
 		}
 
 		Ok(())

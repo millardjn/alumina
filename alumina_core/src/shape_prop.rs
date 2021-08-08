@@ -42,7 +42,7 @@ pub fn shapes_inner(
 	use_node_values: bool,
 ) -> Result<IndexMap<NodeID, IxDyn>, ShapesError> {
 	// Set up initial map of nodes to shapes from node shapes, the inputs, and optionally the shape of node valued
-	let (input_errors, mut map) = input_update(&execution_subgraph, inputs, use_node_values);
+	let (input_errors, mut map) = input_update(execution_subgraph, inputs, use_node_values);
 
 	if !input_errors.is_empty() {
 		return Err(ShapesError::InputCantMerge {
@@ -56,7 +56,7 @@ pub fn shapes_inner(
 
 	let mut map_completed = IndexMap::with_capacity(execution_subgraph.nodes.len());
 
-	op_update(&execution_subgraph, &mut map, &mut map_completed)?;
+	op_update(execution_subgraph, &mut map, &mut map_completed)?;
 
 	Ok(map
 		.into_iter()
@@ -109,7 +109,7 @@ fn op_update<'a>(
 	for op in execution_subgraph.ops.iter() {
 		{
 			let mut context = ShapePropContext {
-				subgraph: &execution_subgraph,
+				subgraph: execution_subgraph,
 				map,
 				map_completed,
 
@@ -190,7 +190,7 @@ pub(crate) fn cached_shapes_inner(
 		// Get a copy of counts from the cache, or insert a new one for this subgraph
 		let result: Result<IndexMap<NodeID, IxDyn>, ShapesError> =
 			cache.get(&key).cloned().map(Ok).unwrap_or_else(|| {
-				let shape_map = shapes_inner(&subgraph, &inputs, use_node_values)?;
+				let shape_map = shapes_inner(subgraph, inputs, use_node_values)?;
 
 				cache.put(key.clone(), shape_map.clone());
 
@@ -202,7 +202,7 @@ pub(crate) fn cached_shapes_inner(
 	});
 
 	debug_assert!(
-		match (&result, &shapes_inner(&subgraph, &inputs, use_node_values)) {
+		match (&result, &shapes_inner(subgraph, inputs, use_node_values)) {
 			(&Err(_), &Err(_)) => true,
 			(&Ok(ref m1), &Ok(ref m2)) => m1 == m2,
 			(_, _) => false,

@@ -299,7 +299,7 @@ impl OpInstance for L1BackInstance {
 				} else {
 					Zip::from(&mut ctx.get_output(input_grad))
 						.and(&ctx.get_input(input))
-						.par_apply(|output, input| {
+						.par_for_each(|output, input| {
 							*output += input.signum() * double_output_grad;
 						});
 				}

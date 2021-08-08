@@ -314,7 +314,7 @@ impl OpInstance for LinterpInstance {
 		let in_size = input.len() / batches;
 		let out_size = output.len() / batches;
 
-		let patch_strides = patch_strides(&input_spatial);
+		let patch_strides = patch_strides(input_spatial);
 		let n_patches = patch_strides[0] * (input_spatial[0] + 1); // TODO use ensure to guard against zero length shapes
 
 		let k = 2usize.pow(factors_spatial.len() as u32);
@@ -338,7 +338,7 @@ impl OpInstance for LinterpInstance {
 			for i in 0..n_patches {
 				pack_lowres_patch(
 					in_batch,
-					&input_spatial,
+					input_spatial,
 					n_channels,
 					i,
 					i,
@@ -370,13 +370,13 @@ impl OpInstance for LinterpInstance {
 			for i in 0..n_patches {
 				unpack_hires_patch(
 					out_batch,
-					&output_spatial,
+					output_spatial,
 					n_channels,
 					i,
 					i,
 					&patch_strides,
 					&hires_matrix,
-					&factors_spatial,
+					factors_spatial,
 					0,
 				)
 			}
@@ -571,7 +571,7 @@ impl OpInstance for LinterpBackInstance {
 
 		let factor_strides = factor_strides(factors_spatial);
 
-		let patch_strides = patch_strides(&input_spatial);
+		let patch_strides = patch_strides(input_spatial);
 		let n_patches = patch_strides[0] * (input_spatial[0] + 1);
 
 		let k: usize = factors_spatial.iter().product(); // k and m are swapped vs forward pass
@@ -595,13 +595,13 @@ impl OpInstance for LinterpBackInstance {
 			for i in 0..n_patches {
 				pack_hires_patch(
 					out_grad_batch,
-					&output_spatial,
+					output_spatial,
 					n_channels,
 					i,
 					i,
 					&patch_strides,
 					&mut hires_matrix,
-					&factors_spatial,
+					factors_spatial,
 					&factor_strides,
 					0,
 				)
@@ -629,7 +629,7 @@ impl OpInstance for LinterpBackInstance {
 			for i in 0..n_patches {
 				unpack_lowres_patch(
 					in_grad_batch,
-					&input_spatial,
+					input_spatial,
 					n_channels,
 					i,
 					i,

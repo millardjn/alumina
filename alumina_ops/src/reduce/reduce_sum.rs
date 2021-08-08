@@ -34,7 +34,7 @@ where
 		.set_name_unique(&format!("reduce_sum({})", input));
 
 	let _op = ReduceSum::new(input, output.clone())
-		.axes(&axes)
+		.axes(axes)
 		.keep_dims(keep_dims)
 		.build()?;
 
@@ -213,20 +213,14 @@ impl OpInstance for ReduceSumInstance {
 				.into_iter()
 				.map(NodeAxis::lower)
 				.collect::<SmallVec<[usize; 8]>>();
-			let output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceSum should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
+			let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceSum should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
 
-			// Safe Version
-			// for in_chunk in input.exact_chunks(output_shape.as_slice()) {
-			// 	output += &in_chunk;
-			// }
-
-			unsafe {
-				// do not split/parallelise this Zip!
-				Zip::from(&input).and_broadcast(&output).apply(|input, output| {
-					let output = output as *const f32 as *mut f32;
-					*output += input;
+			Zip::from(&input)
+				.and_broadcast(output.cell_view())
+				.for_each(|&input, output| {
+					let new = output.get() + input;
+					output.set(new);
 				});
-			}
 		}
 
 		Ok(())

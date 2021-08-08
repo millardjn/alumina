@@ -6,7 +6,8 @@ pub use crate::crop::{Crop, Cropping};
 use alumina_core::graph::Node;
 use indexmap::IndexMap;
 use ndarray::{ArcArray, Axis, IxDyn};
-use rand::{seq::SliceRandom, thread_rng, Rng, RngCore, SeedableRng};
+use rand::SeedableRng;
+use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
 use rand_pcg::Pcg64Mcg;
 use smallvec::SmallVec;
 use std::{
@@ -572,7 +573,7 @@ impl<S: DataSet> Random<S> {
 impl<S: DataSet> DataStream for Random<S> {
 	fn next(&mut self) -> Vec<ArcArray<f32, IxDyn>> {
 		let set_len = self.set.length();
-		self.set.get(self.rng.gen_range(0, set_len))
+		self.set.get(self.rng.gen_range(0..set_len))
 	}
 }
 
@@ -948,7 +949,7 @@ impl<S: DataStream> DataStream for Batch<S> {
 					.chain(arr.shape())
 					.cloned()
 					.collect::<SmallVec<[usize; 6]>>();
-				let mut batch_arr = unsafe { ArcArray::uninitialized(IxDyn(&batch_shape)) };
+				let mut batch_arr = ArcArray::zeros(IxDyn(&batch_shape));
 				batch_arr
 					.index_axis_mut(Axis(0), 0)
 					.as_slice_mut()

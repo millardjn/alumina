@@ -34,7 +34,7 @@ pub fn calc_change_sqr(arr1: ArrayViewD<f32>, arr2: ArrayViewD<f32>) -> f32 {
 			change_sqr += sum.iter().sum::<f32>();
 		}
 	} else {
-		Zip::from(arr1).and(arr2).apply(|&a1, &a2| {
+		Zip::from(arr1).and(arr2).for_each(|&a1, &a2| {
 			change_sqr += (a1 - a2) * (a1 - a2);
 		});
 	}

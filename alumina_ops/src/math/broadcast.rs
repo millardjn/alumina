@@ -304,7 +304,7 @@ impl OpInstance for BroadcastInstance {
 			let input: ArrayViewD<f32> = ctx.get_input(&self.input);
 			let output: ArrayViewMutD<f32> = ctx.get_output(&self.output);
 
-			Zip::from(output).and_broadcast(input).par_apply(|output, input| {
+			Zip::from(output).and_broadcast(input).par_for_each(|output, input| {
 				*output += input;
 			});
 

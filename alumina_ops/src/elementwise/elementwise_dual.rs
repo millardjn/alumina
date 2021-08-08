@@ -134,14 +134,14 @@ impl<F: NullaryDualFunc> OpInstance for NullaryElementwiseDualInstance<F> {
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
 		if self.output1 == self.output2 {
-			Zip::from(ctx.get_output(&self.output1)).par_apply(|output1| {
+			Zip::from(ctx.get_output(&self.output1)).par_for_each(|output1| {
 				let (o1, o2) = self.f.calc();
 				*output1 += o1 + o2;
 			});
 		} else {
 			Zip::from(ctx.get_output(&self.output1))
 				.and(ctx.get_output(&self.output2))
-				.par_apply(|output1, output2| {
+				.par_for_each(|output1, output2| {
 					let (o1, o2) = self.f.calc();
 					*output1 += o1;
 					*output2 += o2;
@@ -302,7 +302,7 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 				// if output can be set using the input array, update inplace and do that.
 				let mut input = ctx.take(&self.input); // input.par_map_inplace(|x| *x = self.f.calc(*x));
 
-				Zip::from(&mut input).par_apply(|input| {
+				Zip::from(&mut input).par_for_each(|input| {
 					let (o1, o2) = self.f.calc(*input);
 					*input = o1 + o2;
 				});
@@ -310,7 +310,7 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 			} else {
 				Zip::from(ctx.get_output(&self.output1))
 					.and(ctx.get_input(&self.input))
-					.par_apply(|output1, &input| {
+					.par_for_each(|output1, &input| {
 						let (o1, o2) = self.f.calc(input);
 						*output1 += o1 + o2;
 					});
@@ -321,7 +321,7 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 
 			Zip::from(&mut input)
 				.and(ctx.get_output(&self.output2))
-				.par_apply(|input, output2| {
+				.par_for_each(|input, output2| {
 					let (o1, o2) = self.f.calc(*input);
 					*input = o1;
 					*output2 += o2;
@@ -333,7 +333,7 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 
 			Zip::from(&mut input)
 				.and(ctx.get_output(&self.output1))
-				.par_apply(|input, output1| {
+				.par_for_each(|input, output1| {
 					let (o1, o2) = self.f.calc(*input);
 					*input = o2;
 					*output1 += o1;
@@ -343,7 +343,7 @@ impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
 			Zip::from(ctx.get_output(&self.output1))
 				.and(ctx.get_output(&self.output2))
 				.and(ctx.get_input(&self.input))
-				.par_apply(|output1, output2, &input| {
+				.par_for_each(|output1, output2, &input| {
 					let (o1, o2) = self.f.calc(input);
 					*output1 += o1;
 					*output2 += o2;
@@ -531,7 +531,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 				// one input and one output
 				if ctx.can_take(&self.input1) && ctx.can_set(&self.output1) {
 					let mut input1 = ctx.take(&self.input1);
-					Zip::from(&mut input1).par_apply(|in1| {
+					Zip::from(&mut input1).par_for_each(|in1| {
 						let (o1, o2) = self.f.calc(*in1, *in1);
 						*in1 = o1 + o2;
 					});
@@ -539,7 +539,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 				} else {
 					Zip::from(ctx.get_input(&self.input1))
 						.and(ctx.get_output(&self.output1))
-						.par_apply(|in1, output| {
+						.par_for_each(|in1, output| {
 							let (o1, o2) = self.f.calc(*in1, *in1);
 							*output += o1 + o2;
 						});
@@ -551,7 +551,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					let mut input1 = ctx.take(&self.input1);
 					Zip::from(&mut input1)
 						.and(ctx.get_output(&self.output2))
-						.par_apply(|in1, out2| {
+						.par_for_each(|in1, out2| {
 							let (o1, o2) = self.f.calc(*in1, *in1);
 							*in1 = o1;
 							*out2 += o2;
@@ -561,7 +561,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					let mut input1 = ctx.take(&self.input1);
 					Zip::from(&mut input1)
 						.and(ctx.get_output(&self.output1))
-						.par_apply(|in1, out1| {
+						.par_for_each(|in1, out1| {
 							let (o1, o2) = self.f.calc(*in1, *in1);
 							*in1 = o2;
 							*out1 += o1;
@@ -571,7 +571,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(ctx.get_input(&self.input1))
 						.and(ctx.get_output(&self.output1))
 						.and(ctx.get_output(&self.output2))
-						.par_apply(|in1, output1, output2| {
+						.par_for_each(|in1, output1, output2| {
 							let (o1, o2) = self.f.calc(*in1, *in1);
 							*output1 += o1;
 							*output2 += o2;
@@ -584,7 +584,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					let mut input1 = ctx.take(&self.input1);
 					Zip::from(&mut input1)
 						.and(ctx.get_input(&self.input2))
-						.par_apply(|in1, in2| {
+						.par_for_each(|in1, in2| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in1 = o1 + o2;
 						});
@@ -593,7 +593,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					let mut input2 = ctx.take(&self.input2);
 					Zip::from(ctx.get_input(&self.input1))
 						.and(&mut input2)
-						.par_apply(|in1, in2| {
+						.par_for_each(|in1, in2| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in2 = o1 + o2;
 						});
@@ -602,7 +602,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(ctx.get_input(&self.input1))
 						.and(ctx.get_input(&self.input2))
 						.and(ctx.get_output(&self.output1))
-						.par_apply(|in1, in2, out1| {
+						.par_for_each(|in1, in2, out1| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*out1 += o1 + o2;
 						});
@@ -617,7 +617,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 				{
 					let mut input1 = ctx.take(&self.input1);
 					let mut input2 = ctx.take(&self.input2);
-					Zip::from(&mut input1).and(&mut input2).par_apply(|in1, in2| {
+					Zip::from(&mut input1).and(&mut input2).par_for_each(|in1, in2| {
 						let (o1, o2) = self.f.calc(*in1, *in2);
 						*in1 = o1;
 						*in2 = o2;
@@ -629,7 +629,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(&mut input1)
 						.and(ctx.get_input(&self.input2))
 						.and(ctx.get_output(&self.output2))
-						.par_apply(|in1, in2, out2| {
+						.par_for_each(|in1, in2, out2| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in1 = o1;
 							*out2 += o2;
@@ -640,7 +640,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(ctx.get_input(&self.input1))
 						.and(&mut input2)
 						.and(ctx.get_output(&self.output2))
-						.par_apply(|in1, in2, out2| {
+						.par_for_each(|in1, in2, out2| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in2 = o1;
 							*out2 += o2;
@@ -651,7 +651,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(&mut input1)
 						.and(ctx.get_input(&self.input2))
 						.and(ctx.get_output(&self.output1))
-						.par_apply(|in1, in2, out1| {
+						.par_for_each(|in1, in2, out1| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in1 = o2;
 							*out1 += o1;
@@ -662,7 +662,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 					Zip::from(ctx.get_input(&self.input1))
 						.and(&mut input2)
 						.and(ctx.get_output(&self.output1))
-						.par_apply(|in1, in2, out1| {
+						.par_for_each(|in1, in2, out1| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*in2 = o2;
 							*out1 += o1;
@@ -673,7 +673,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 						.and(ctx.get_input(&self.input2))
 						.and(ctx.get_output(&self.output1))
 						.and(ctx.get_output(&self.output2))
-						.par_apply(|in1, in2, out1, out2| {
+						.par_for_each(|in1, in2, out1, out2| {
 							let (o1, o2) = self.f.calc(*in1, *in2);
 							*out1 += o1;
 							*out2 += o2;
@@ -874,7 +874,7 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 				ctx.shape(&self.output1),
 				"Alumina Bug: input {} shape: {:?} did not match output1 shape: {:?}",
 				i,
-				ctx.shape(&input),
+				ctx.shape(input),
 				ctx.shape(&self.output1)
 			);
 		}

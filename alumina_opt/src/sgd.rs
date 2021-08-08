@@ -113,7 +113,7 @@ impl GradientStepper for Sgd {
 					Zip::from(&param_arr)
 						.and(momentum_arr)
 						.and(grad_arr.view_mut())
-						.par_apply(|param, grad_momentum, grad| {
+						.par_for_each(|param, grad_momentum, grad| {
 							*grad_momentum = (*grad_momentum) * momentum + *grad;
 							let change = -rate * (*grad_momentum);
 							*grad = *param + change;
@@ -136,10 +136,12 @@ impl GradientStepper for Sgd {
 				.map(|(param, mut grad_arr)| {
 					let param_arr = param.value().unwrap();
 
-					Zip::from(&param_arr).and(grad_arr.view_mut()).par_apply(|param, grad| {
-						let change = -rate * *grad;
-						*grad = *param + change;
-					});
+					Zip::from(&param_arr)
+						.and(grad_arr.view_mut())
+						.par_for_each(|param, grad| {
+							let change = -rate * *grad;
+							*grad = *param + change;
+						});
 
 					let change_sqr = if calc_change {
 						calc_change_sqr(param_arr.view(), grad_arr.view())

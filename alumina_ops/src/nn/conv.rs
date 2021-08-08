@@ -497,8 +497,8 @@ impl OpInstance for ConvInstance {
 		let output = output.as_slice().unwrap();
 		debug_assert!(!filter.iter().cloned().any(f32::is_nan), "{:?}", filter);
 
-		let filter_strides = stride_vec(input_channels, &filter_spatial);
-		let input_strides = stride_vec(input_channels, &input_spatial);
+		let filter_strides = stride_vec(input_channels, filter_spatial);
+		let input_strides = stride_vec(input_channels, input_spatial);
 		let output_strides = stride_vec(output_channels, &output_spatial);
 
 		let n_threads = *NUM_CPUS;
@@ -546,48 +546,48 @@ impl OpInstance for ConvInstance {
 									in_n,
 									input_channels,
 									output_ind,
-									&filter_spatial,
-									&input_spatial,
-									&output_spatial,
-									&filter_strides,
-									&input_strides,
-									&output_strides,
+									filter_spatial,
+									input_spatial,
+									output_spatial,
+									filter_strides,
+									input_strides,
+									output_strides,
 								),
 								2 => unsafe_pack_specialised::<U2>(
 									patch,
 									in_n,
 									input_channels,
 									output_ind,
-									&filter_spatial,
-									&input_spatial,
-									&output_spatial,
-									&filter_strides,
-									&input_strides,
-									&output_strides,
+									filter_spatial,
+									input_spatial,
+									output_spatial,
+									filter_strides,
+									input_strides,
+									output_strides,
 								),
 								3 => unsafe_pack_specialised::<U3>(
 									patch,
 									in_n,
 									input_channels,
 									output_ind,
-									&filter_spatial,
-									&input_spatial,
-									&output_spatial,
-									&filter_strides,
-									&input_strides,
-									&output_strides,
+									filter_spatial,
+									input_spatial,
+									output_spatial,
+									filter_strides,
+									input_strides,
+									output_strides,
 								),
 								_ => unsafe_pack(
 									patch,
 									in_n,
 									input_channels,
 									output_ind,
-									&filter_spatial,
-									&input_spatial,
-									&output_spatial,
-									&filter_strides,
-									&input_strides,
-									&output_strides,
+									filter_spatial,
+									input_spatial,
+									output_spatial,
+									filter_strides,
+									input_strides,
+									output_strides,
 								),
 							}
 							// pack_patch_recurse(patch, in_n, &kernel_shape, input_channels,
@@ -879,13 +879,13 @@ impl OpInstance for ConvBackInstance {
 
 		let input_grad_slice = input_grad.as_ref().map(|ig| ig.as_slice().unwrap());
 
-		let filter_strides = stride_vec(output_channels, &filter_spatial);
-		let input_strides = stride_vec(input_channels, &input_spatial);
+		let filter_strides = stride_vec(output_channels, filter_spatial);
+		let input_strides = stride_vec(input_channels, input_spatial);
 		let output_strides = stride_vec(output_channels, &output_spatial);
 
 		let mut inverted_filter;
 		unsafe {
-			inverted_filter = ArrayD::uninitialized(
+			inverted_filter = ArrayD::zeros(
 				filter_spatial
 					.iter()
 					.cloned()
@@ -962,48 +962,48 @@ impl OpInstance for ConvBackInstance {
 									outg_n,
 									output_channels,
 									input_ind,
-									&filter_spatial,
-									&output_spatial,
-									&input_spatial,
-									&filter_strides,
-									&output_strides,
-									&input_strides,
+									filter_spatial,
+									output_spatial,
+									input_spatial,
+									filter_strides,
+									output_strides,
+									input_strides,
 								),
 								2 => unsafe_pack_specialised::<U2>(
 									patch,
 									outg_n,
 									output_channels,
 									input_ind,
-									&filter_spatial,
-									&output_spatial,
-									&input_spatial,
-									&filter_strides,
-									&output_strides,
-									&input_strides,
+									filter_spatial,
+									output_spatial,
+									input_spatial,
+									filter_strides,
+									output_strides,
+									input_strides,
 								),
 								3 => unsafe_pack_specialised::<U3>(
 									patch,
 									outg_n,
 									output_channels,
 									input_ind,
-									&filter_spatial,
-									&output_spatial,
-									&input_spatial,
-									&filter_strides,
-									&output_strides,
-									&input_strides,
+									filter_spatial,
+									output_spatial,
+									input_spatial,
+									filter_strides,
+									output_strides,
+									input_strides,
 								),
 								_ => unsafe_pack(
 									patch,
 									outg_n,
 									output_channels,
 									input_ind,
-									&filter_spatial,
-									&output_spatial,
-									&input_spatial,
-									&filter_strides,
-									&output_strides,
-									&input_strides,
+									filter_spatial,
+									output_spatial,
+									input_spatial,
+									filter_strides,
+									output_strides,
+									input_strides,
 								),
 							}
 

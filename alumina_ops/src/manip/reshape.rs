@@ -194,7 +194,7 @@ impl OpInstance for ReshapeInstance {
 			let input = input.into_shape(ctx.shape(&self.output)).unwrap();
 			let output: ArrayViewMutD<f32> = ctx.get_output(&self.output);
 
-			Zip::from(output).and(input).par_apply(|output, input| {
+			Zip::from(output).and(input).par_for_each(|output, input| {
 				*output += input;
 			});
 		}

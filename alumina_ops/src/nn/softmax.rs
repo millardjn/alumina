@@ -137,11 +137,11 @@ impl OpInstance for SoftmaxInstance {
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
 		Zip::from(ctx.get_input(&self.logits).lanes(Axis(self.axis)))
 			.and(ctx.get_output(&self.output).lanes_mut(Axis(self.axis)))
-			.par_apply(|logits, outputs| {
+			.par_for_each(|logits, outputs| {
 				let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));
 				let exp_sum = logits.iter().fold(0.0, |sum, &v| sum + (v - max).exp());
 
-				Zip::from(logits).and(outputs).apply(|logit, output| {
+				Zip::from(logits).and(outputs).for_each(|logit, output| {
 					*output += (logit - max).exp() / exp_sum;
 				});
 			});
@@ -283,7 +283,7 @@ impl OpInstance for SoftmaxBackInstance {
 		Zip::from(ctx.get_output(&self.logits_grad).lanes_mut(Axis(self.axis)))
 			.and(ctx.get_input(&self.logits).lanes(Axis(self.axis)))
 			.and(ctx.get_input(&self.output_grad).lanes(Axis(self.axis)))
-			.par_apply(|mut logits_grad, logits, output_grad| {
+			.par_for_each(|mut logits_grad, logits, output_grad| {
 				let len = logits.len();
 
 				let max = logits.iter().fold(::std::f32::NEG_INFINITY, |max, &v| v.max(max));

@@ -32,7 +32,7 @@ where
 		.set_name_unique(&format!("reduce_prod({})", input));
 
 	let _op = ReduceProd::new(input, output.clone())
-		.axes(&axes)
+		.axes(axes)
 		.keep_dims(keep_dims)
 		.build()?;
 
@@ -203,7 +203,7 @@ impl OpInstance for ReduceProdInstance {
 
 			Zip::from(&mut output)
 				.and(input.exact_chunks(chunks))
-				.par_apply(|output, input| {
+				.par_for_each(|output, input| {
 					*output += input.iter().fold(1.0, |prod, v| prod * v);
 				});
 		}

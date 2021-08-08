@@ -114,7 +114,7 @@ impl OpInstance for FillInstance {
 	}
 
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
-		Zip::from(&mut ctx.get_output(&self.output)).par_apply(|output| {
+		Zip::from(&mut ctx.get_output(&self.output)).par_for_each(|output| {
 			*output += self.value;
 		});
 		Ok(())

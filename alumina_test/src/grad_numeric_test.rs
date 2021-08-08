@@ -328,16 +328,14 @@ fn grad_numeric_test_inner(
 	// first call with just y output
 	let input1_values = input_values.iter().map(|(node, value)| {
 		if tested_inputs.contains(node) {
-			unsafe {
-				let mut new = ArrayD::<f32>::uninitialized(value.shape());
-				Zip::from(&mut new)
-					.and(value)
-					.and(&results[&grads[node]])
-					.apply(|new, &value, &grad| {
-						*new = value - scale * grad;
-					});
-				(node.clone(), new.to_shared())
-			}
+			let mut new = ArrayD::<f32>::zeros(value.shape());
+			Zip::from(&mut new)
+				.and(value)
+				.and(&results[&grads[node]])
+				.for_each(|new, &value, &grad| {
+					*new = value - scale * grad;
+				});
+			(node.clone(), new.to_shared())
 		} else {
 			(node.clone(), value.clone())
 		}
@@ -346,16 +344,14 @@ fn grad_numeric_test_inner(
 	// second call with just y output TODO consider pre-extracting a subgraph
 	let input2_values = input_values.iter().map(|(node, value)| {
 		if tested_inputs.contains(node) {
-			unsafe {
-				let mut new = ArrayD::<f32>::uninitialized(value.shape());
-				Zip::from(&mut new)
-					.and(value)
-					.and(&results[&grads[node]])
-					.apply(|new, &value, &grad| {
-						*new = value + scale * grad;
-					});
-				(node.clone(), new.to_shared())
-			}
+			let mut new = ArrayD::<f32>::zeros(value.shape());
+			Zip::from(&mut new)
+				.and(value)
+				.and(&results[&grads[node]])
+				.for_each(|new, &value, &grad| {
+					*new = value + scale * grad;
+				});
+			(node.clone(), new.to_shared())
 		} else {
 			(node.clone(), value.clone())
 		}

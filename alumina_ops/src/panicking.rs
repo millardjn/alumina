@@ -6,7 +6,7 @@ use crate::{
 		relu, robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh,
 	},
 	grad::stop_grad,
-	manip::{expand_dims, permute_axes, remove_dims},
+	manip::{expand_dims, permute_axes, remove_dims, reshape},
 	math::{argmax, broadcast, muldiv},
 	nn::{
 		conv::{self, ConvData, Padding},
@@ -830,6 +830,26 @@ where
 	I: Into<Node>,
 {
 	build_or_pretty_panic(reduce_prod::reduce_prod(input, axes, keep_dims), "ReduceSum")
+}
+
+/// # Panics
+/// Panics if building the underlying Op panics.
+pub fn reshape<I, S>(shape: S, input: I) -> Node
+where
+	S: Into<Node>,
+	I: Into<Node>,
+{
+	build_or_pretty_panic(reshape::reshape(shape, input), "Reduce")
+}
+
+/// # Panics
+/// Panics if building the underlying Op panics.
+pub fn reshape_into<I, O>(input: I, output: O) -> Op
+where
+	I: Into<Node>,
+	O: Into<Node>,
+{
+	build_or_pretty_panic(reshape::reshape_into(input, output), "Reduce")
 }
 
 /// Calculates the combined L1 norm of the input nodes, returning a scalar node.
