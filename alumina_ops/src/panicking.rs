@@ -7,7 +7,7 @@ use crate::{
 	},
 	grad::stop_grad,
 	manip::{expand_dims, permute_axes, remove_dims, reshape},
-	math::{argmax, broadcast, muldiv},
+	math::{argmax, broadcast, freq_filter, muldiv},
 	nn::{
 		conv::{self, ConvData, Padding},
 		matmul, softmax, softmax_cross_entropy, spline,
@@ -911,4 +911,12 @@ where
 	I: Into<Node>,
 {
 	build_or_pretty_panic(shape_of::shape_of(input), "ShapeOf")
+}
+
+pub fn freq_filter<I, F>(input: I, axes: &[usize], f: F) -> Node
+where
+	I: Into<Node>,
+	F: Fn(&[isize]) -> f32 + 'static + Sync + Send,
+{
+	build_or_pretty_panic(freq_filter::freq_filter(input, axes, f), "ShapeOf")
 }
