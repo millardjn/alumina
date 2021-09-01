@@ -9,8 +9,8 @@ edition = "2018"
 alumina_core = { path = "../alumina_core", version = "0.3"  }
 #alumina_exec = { path = "../alumina_exec", version = "0.3"  }
 
-indexmap = "1"
-ndarray = {version = "0.15", features = ["rayon"]}
+indexmap = {version = "1", features = ["rayon", "serde-1"]}
+ndarray = { version = "0.15", features = ["rayon", "serde-1"] }
 rand = "0.8"
 rand_distr = "0.4"
 

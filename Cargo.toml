@@ -17,7 +17,7 @@ members = [
 	
 	"alumina_test",
 	
-	#"alumina_image_data",
+	"alumina_image_data",
 ]
 
 [dependencies]
@@ -26,12 +26,12 @@ alumina_ops = { path = "./alumina_ops", version = "0.3" }
 alumina_data = { path = "./alumina_data", version = "0.3" }
 alumina_opt = { path = "./alumina_opt", version = "0.3" }
 alumina_test = { path = "./alumina_test", version = "0.3" }
-	
+alumina_image_data = { path = "./alumina_image_data", version = "0.3" }
 
 
 failure = "0.1"
-indexmap = "1"
-ndarray = {version = "0.15", features = ["rayon"]}
+indexmap = {version = "1", features = ["rayon", "serde-1"]}
+ndarray = { version = "0.15", features = ["rayon", "serde-1"] }
 
 rand = "0.8"
 rand_distr = "0.4"

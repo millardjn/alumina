@@ -5,7 +5,7 @@ authors = ["zza <millard.jn@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-alumina = { path = "../" , version = "0.3" }
-ndarray = "0.15.1"
+alumina_data = { path = "../alumina_data", version = "0.3" }
+ndarray = { version = "0.15", features = ["rayon", "serde-1"] }
 walkdir = "2.2"
 image = "0.23"

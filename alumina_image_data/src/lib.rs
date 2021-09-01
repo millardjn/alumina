@@ -1,6 +1,6 @@
-use alumina::data::DataSet;
+use alumina_data::DataSet;
 use image::{DynamicImage, GenericImage, GenericImageView, Pixel};
-use ndarray::{ArrayD, ArrayViewD, IxDyn};
+use ndarray::{ArcArray, ArrayD, ArrayViewD, IxDyn};
 use std::{
 	path::{Path, PathBuf},
 	usize,
@@ -53,12 +53,12 @@ impl ImageFolder {
 }
 
 impl DataSet for ImageFolder {
-	fn get(&mut self, i: usize) -> Vec<ArrayD<f32>> {
+	fn get(&mut self, i: usize) -> Vec<ArcArray<f32, IxDyn>> {
 		let image = match image::open(&self.paths[i]) {
-			Ok(ref dyn_image) => image_to_data(dyn_image),
+			Ok(ref dyn_image) => image_to_data(dyn_image).to_shared(),
 			Err(err) => {
 				eprintln!("Image load error '{}' {}", self.paths[i].to_string_lossy(), err);
-				ArrayD::zeros(IxDyn(&[1, 1, CHANNELS][..]))
+				ArcArray::zeros(IxDyn(&[1, 1, CHANNELS][..]))
 			},
 		};
 
@@ -107,7 +107,7 @@ pub fn data_to_image(image_data: ArrayViewD<f32>) -> DynamicImage {
 pub fn image_to_data(image: &DynamicImage) -> ArrayD<f32> {
 	let (width, height) = image.dimensions();
 
-	let mut data = unsafe { ArrayD::uninitialized(IxDyn(&[height as usize, width as usize, CHANNELS][..])) };
+	let mut data = ArrayD::zeros(IxDyn(&[height as usize, width as usize, CHANNELS][..]));
 	{
 		let data_slice = data.as_slice_mut().unwrap();
 		for (x, y, pixel) in image.pixels() {
@@ -128,7 +128,7 @@ fn image_crop_test() {
 }
 
 fn _image_crop_test() {
-	use alumina::data::{Cropping, DataStream};
+	use alumina_data::{Cropping, DataStream};
 
 	let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 	d.push("res");
