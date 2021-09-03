@@ -67,6 +67,17 @@ impl ShapeConstraint {
 		}
 	}
 
+	/// For a single axis, apply a constraint that the input dimension is the same as the output dimension.
+	///
+	/// This method will overwrite any previous `joint()` rules, or `single()` rules which apply to this axis.
+	/// Any axis without a supplied rule with simply be unconstrained.
+	pub fn same(
+		mut self,
+		axis: usize,
+	) -> Self {
+		self.single(axis, std::convert::identity)
+	}
+
 	/// For a single axis, apply a rule which takes the input dimension and produces a constraint on the corresponding
 	/// output dimension.
 	///
