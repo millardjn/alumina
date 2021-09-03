@@ -1,5 +1,5 @@
 use alumina_data::DataSet;
-use image::{DynamicImage, GenericImage, GenericImageView, Pixel};
+use image::{DynamicImage, GenericImage, Pixel};
 use ndarray::{ArcArray, ArrayD, ArrayViewD, IxDyn};
 use std::{
 	path::{Path, PathBuf},
@@ -105,16 +105,17 @@ pub fn data_to_image(image_data: ArrayViewD<f32>) -> DynamicImage {
 }
 
 pub fn image_to_data(image: &DynamicImage) -> ArrayD<f32> {
+	let image = image.to_rgb16();
 	let (width, height) = image.dimensions();
 
 	let mut data = ArrayD::zeros(IxDyn(&[height as usize, width as usize, CHANNELS][..]));
 	{
 		let data_slice = data.as_slice_mut().unwrap();
-		for (x, y, pixel) in image.pixels() {
+		for (x, y, pixel) in image.enumerate_pixels() {
 			let channels = pixel.channels();
 			let data_slice = &mut data_slice[(x + y * width) as usize * CHANNELS..][..CHANNELS];
 			for i in 0..CHANNELS {
-				data_slice[i] = channels[i] as f32 / 255.0;
+				data_slice[i] = channels[i] as f32 / u16::MAX as f32;
 			}
 		}
 	}
