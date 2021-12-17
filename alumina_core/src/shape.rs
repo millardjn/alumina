@@ -263,7 +263,7 @@ impl NodeAxis {
 	/// Broadcast the constraints of other
 	pub fn broadcast_merge(&self, other: &NodeAxis) -> Result<NodeAxis, DimError> {
 		if let NodeAxis::Known { val: 1 } = other {
-			Ok(self.clone())
+			self.merge(&NodeAxis::interval(1, usize::MAX))
 		} else {
 			self.merge(other)
 		}
