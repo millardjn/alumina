@@ -146,7 +146,10 @@ pub enum ShapesError {
 	},
 
 	///
-	#[fail(display = "The Op '{}' errored when propagating shapes:\n{}.", op, error)]
+	#[fail(
+		display = "The Op '{}' errored when propagating shapes:\n{}.\n resolved shapes were: {:#?}",
+		op, error, partial
+	)]
 	ShapePropError {
 		op: Op,
 		error: ShapePropError,

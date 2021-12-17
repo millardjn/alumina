@@ -49,6 +49,7 @@ pub fn shapes_inner(
 			input_errors: Iter2Display { inner: input_errors },
 			partial: map
 				.iter()
+				.filter(|(id, _)| inputs.contains_key(*id))
 				.map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone()))
 				.collect(),
 		});
@@ -121,13 +122,17 @@ fn op_update<'a>(
 			context.set_next_op(op.clone())?;
 			op.instance().propagate_shapes(&mut context)
 		}
-		.map_err(|e| ShapesError::ShapePropError {
-			op: op.clone(),
-			error: e,
-			partial: map
-				.iter()
-				.map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone()))
-				.collect(),
+		.map_err(|e| {
+			let op_outputs = op.instance().outputs();
+			ShapesError::ShapePropError {
+				op: op.clone(),
+				error: e,
+				partial: map
+					.iter()
+					.filter(|(id, _)| map_completed.contains_key(*id) || op_outputs.contains(*id))
+					.map(|(k, v)| (execution_subgraph.nodes.get(k).unwrap().clone(), v.clone()))
+					.collect(),
+			}
 		})?;
 	}
 
