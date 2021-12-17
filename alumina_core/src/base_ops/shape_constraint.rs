@@ -67,14 +67,16 @@ impl ShapeConstraint {
 		}
 	}
 
+	/// Set an integer ratio increase constraint for each axis, where -1 represents no constraint.
+	pub fn ratios(self, axis_factors: &[isize]) -> Self {
+		axis_factors.iter().enumerate().fold(self, |s, (axis, &axis_factor)| if axis_factor >= 0 {s.single(axis, move |x|x*axis_factor as usize)} else {s})
+	}
+
 	/// For a single axis, apply a constraint that the input dimension is the same as the output dimension.
 	///
 	/// This method will overwrite any previous `joint()` rules, or `single()` rules which apply to this axis.
 	/// Any axis without a supplied rule with simply be unconstrained.
-	pub fn same(
-		self,
-		axis: usize,
-	) -> Self {
+	pub fn same(self, axis: usize) -> Self {
 		self.single(axis, std::convert::identity)
 	}
 
