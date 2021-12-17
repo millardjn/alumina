@@ -1,5 +1,5 @@
 use alumina_data::DataSet;
-use image::{DynamicImage, GenericImage, Pixel};
+use image::{DynamicImage, ImageBuffer, Pixel};
 use ndarray::{ArcArray, ArrayD, ArrayViewD, IxDyn};
 use std::{
 	path::{Path, PathBuf},
@@ -25,6 +25,7 @@ impl ImageFolder {
 		let root_path = root_path.as_ref();
 
 		let walker = WalkDir::new(root_path)
+			.sort_by_file_name()
 			.max_depth(if subfolders { usize::MAX } else { 1 })
 			.into_iter();
 		let mut paths = walker
@@ -59,7 +60,7 @@ impl DataSet for ImageFolder {
 			Err(err) => {
 				eprintln!("Image load error '{}' {}", self.paths[i].to_string_lossy(), err);
 				ArcArray::zeros(IxDyn(&[1, 1, CHANNELS][..]))
-			},
+			}
 		};
 
 		vec![image]
@@ -84,7 +85,9 @@ pub fn data_to_image(image_data: ArrayViewD<f32>) -> DynamicImage {
 	let width = image_data.shape()[1] as u32;
 	let height = image_data.shape()[0] as u32;
 
-	let mut img = DynamicImage::new_rgba8(width, height);
+	let mut img = ImageBuffer::new(width, height);
+
+	const MAX: f32 = u16::MAX as f32;
 
 	for y in 0..height {
 		for x in 0..width {
@@ -92,16 +95,16 @@ pub fn data_to_image(image_data: ArrayViewD<f32>) -> DynamicImage {
 			img.put_pixel(
 				x,
 				y,
-				image::Rgba::from_channels(
-					(data[0] * 255.0 + 0.5).min(255.0).max(0.0) as u8,
-					(data[1] * 255.0 + 0.5).min(255.0).max(0.0) as u8,
-					(data[2] * 255.0 + 0.5).min(255.0).max(0.0) as u8,
-					255u8,
+				image::Rgb::from_channels(
+					(data[0] * MAX + 0.5).min(MAX).max(0.0) as u16,
+					(data[1] * MAX + 0.5).min(MAX).max(0.0) as u16,
+					(data[2] * MAX + 0.5).min(MAX).max(0.0) as u16,
+					0,
 				),
 			);
 		}
 	}
-	img
+	DynamicImage::ImageRgb16(img)
 }
 
 pub fn image_to_data(image: &DynamicImage) -> ArrayD<f32> {
