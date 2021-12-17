@@ -3,18 +3,9 @@
 //! This is used to minimise work in execution and symbolic differentiation.
 
 use indexmap::{IndexMap, IndexSet};
-use std::{
-	borrow::Borrow,
-	collections::{BinaryHeap, VecDeque},
-	fmt::{Debug, Display, Formatter},
-	hash::{Hash, Hasher},
-};
+use std::{borrow::Borrow, cmp::{Reverse, max}, collections::{BinaryHeap, VecDeque}, fmt::{Debug, Display, Formatter}, hash::{Hash, Hasher}};
 
-use crate::{
-	errors::{CyclicGraphError, ExecutionSubgraphError},
-	graph::{Graph, Node, Op},
-	util::display::{IterDebug, IterDisplay},
-};
+use crate::{errors::{CyclicGraphError, ExecutionSubgraphError}, graph::{Graph, Node, NodeTag, Op}, util::display::{IterDebug, IterDisplay}};
 
 /// A collection of `Node`s and `Op`s which may come from a single or multiple `Graph`s.
 ///
@@ -78,23 +69,39 @@ impl SubGraph {
 	pub fn execution_order(&self) -> Result<SubGraph, CyclicGraphError> {
 		let (mut node_remaining, mut op_remaining) = self.input_counts();
 
-		let mut op_queue: BinaryHeap<Op> = op_remaining
+		#[derive(PartialEq, PartialOrd, Eq, Ord)]
+		struct OpEntry {
+			priority1: u64,
+			priority2: isize,
+			op: Reverse<Op>,
+		}
+		impl From<Op> for OpEntry {
+			fn from(op: Op) -> Self {
+				OpEntry{
+					priority1: u64::MAX - op.child_nodes().iter().fold(0, |m, n| max(m, n.id().id())),
+					priority2: op.parent_nodes().iter().filter(|n|!(n.parent_ops().len()==0 && n.tags().contains(&NodeTag::Parameter))).count() as isize - op.child_nodes().iter().filter(|n|!(n.parent_ops().len()==0 && n.tags().contains(&NodeTag::Parameter))).count() as isize,
+					op: Reverse(op)
+				}
+			}
+		}
+
+		let mut op_queue: BinaryHeap<OpEntry> = op_remaining
 			.iter()
-			.filter_map(|(op, i)| if *i == 0 { Some((*op).clone()) } else { None })
+			.filter_map(|(op, i)| if *i == 0 { Some((*op).clone().into()) } else { None })
 			.collect();
-		let mut node_queue: BinaryHeap<Node> = node_remaining
+
+		let mut node_queue: BinaryHeap<Reverse<Node>> = node_remaining
 			.iter()
-			.filter_map(|(node, i)| if *i == 0 { Some((*node).clone()) } else { None })
+			.filter_map(|(node, i)| if *i == 0 { Some(Reverse((*node).clone())) } else { None })
 			.collect();
 
 		let mut node_order = IndexSet::with_capacity(self.nodes.len());
 		let mut op_order = IndexSet::with_capacity(self.ops.len());
 
 		loop {
-			let mut did_something = false;
 
-			// Process as many nodes as possible
-			while let Some(node) = node_queue.pop() {
+			// Prefer to process nodes if possible
+			if let Some(Reverse(node)) = node_queue.pop() {
 				if node_order.contains(&node) {
 					panic!("should only be added by the last parent op?")
 				}
@@ -104,16 +111,17 @@ impl SubGraph {
 						*count -= 1;
 
 						if *count == 0 {
-							op_queue.push(child_op);
+							op_queue.push(child_op.into());
 						}
 					}
 				}
+				//println!("node{} {}", node.id().id(), node.name());
 				node_order.insert(node);
-				did_something = true;
+				continue;
 			}
 
 			// Only process a single op before reattempting more nodes
-			if let Some(op) = op_queue.pop() {
+			if let Some(OpEntry{op: Reverse(op), ..}) = op_queue.pop() {
 				if op_order.contains(&op) {
 					panic!("should only be added by the last parent node?")
 				}
@@ -123,17 +131,16 @@ impl SubGraph {
 						*count -= 1;
 
 						if *count == 0 {
-							node_queue.push(child_node);
+							node_queue.push(Reverse(child_node));
 						}
 					}
 				}
+				//println!("op{} {}", op.name());
 				op_order.insert(op);
-				did_something = true;
+				continue;
 			}
 
-			if !did_something {
-				break;
-			}
+			break;
 		}
 
 		if node_remaining.values().any(|&i| i > 0) && op_remaining.values().any(|&i| i > 0) {
@@ -163,6 +170,7 @@ impl SubGraph {
 			ops: op_order,
 		})
 	}
+	
 
 	/// Returns the number of inputs to each `Op` and `Node`, taking only members of the `SubGraph` into account.
 	pub fn input_counts(&self) -> (IndexMap<&Node, usize>, IndexMap<&Op, usize>) {
@@ -214,31 +222,47 @@ impl SubGraph {
 }
 
 impl Display for SubGraph {
-	fn fmt(&self, f: &mut Formatter) -> ::std::fmt::Result {
-		write!(f, "SubGraph {{ nodes: [")?;
-		let mut nodes = self.nodes.iter();
-		if let Some(d) = nodes.next() {
-			write!(f, "{}", d)?;
-			for d in nodes {
-				write!(f, ", {}", d)?;
-			}
-		}
-		write!(f, "], ops: [")?;
-		let mut ops = self.ops.iter();
-		if let Some(d) = ops.next() {
-			write!(f, "{}", d)?;
-			for d in ops {
-				write!(f, ", {}", d)?;
-			}
-		}
-		write!(f, "] }}")?;
-		Ok(())
+	fn fmt(&self, fmt: &mut Formatter) -> ::std::fmt::Result {
+
+		fmt.debug_struct("SubGraph")
+			.field(
+				"nodes",
+				&IterDisplay {
+					inner: self.nodes.clone(),
+				},
+			)
+			.field(
+				"ops",
+				&IterDisplay {
+					inner: self.ops.clone(),
+				},
+			)
+			.finish()
+
+		// write!(f, "SubGraph {{ nodes: [")?;
+		// let mut nodes = self.nodes.iter();
+		// if let Some(d) = nodes.next() {
+		// 	write!(f, "{}", d)?;
+		// 	for d in nodes {
+		// 		write!(f, ", {}", d)?;
+		// 	}
+		// }
+		// write!(f, "], ops: [")?;
+		// let mut ops = self.ops.iter();
+		// if let Some(d) = ops.next() {
+		// 	write!(f, "{}", d)?;
+		// 	for d in ops {
+		// 		write!(f, ", {}", d)?;
+		// 	}
+		// }
+		// write!(f, "] }}")?;
+		// Ok(())
 	}
 }
 
 impl Debug for SubGraph {
 	fn fmt(&self, fmt: &mut Formatter) -> ::std::fmt::Result {
-		fmt.debug_struct("Graph")
+		fmt.debug_struct("SubGraph")
 			.field(
 				"nodes",
 				&IterDebug {
@@ -337,6 +361,7 @@ where
 		})
 	} else {
 		let ordered_subgraph = subgraph
+			//.graph_order()
 			.execution_order()
 			.map_err(|cycle| ExecutionSubgraphError::Cycle {
 				error: cycle,
