@@ -261,8 +261,16 @@ impl Node {
 	/// let value_node2 = Node::new(&[2, 3]).set_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 	/// ```
 	pub fn set_value<V: IntoNodeValue>(&self, new_value: V) -> Self {
+		
+		let mut new_value = new_value.into_value();
+		if let Ok(shape) = self.shape().to_data_shape() {
+			new_value = new_value.broadcast(shape).expect("Value not broadcast compatible with node shape").to_shared();
+		} else {
+			// TODO: Check that shape is broadcast compatible with self
+		}
+		
 		let mut data = self.data.lock();
-		data.value = Some(new_value.into_value());
+		data.value = Some(new_value);
 
 		self.clone()
 	}
