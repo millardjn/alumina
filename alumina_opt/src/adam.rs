@@ -176,7 +176,7 @@ impl GradientStepper for Adam {
 							.and(grad_arr.view_mut())
 							.for_each(|param, momentum, curv, grad| {
 								*momentum = *momentum * beta1 + (1.0 - beta1) * *grad;
-								*curv = *curv * beta2 + (1.0 - beta1) * *grad * *grad;
+								*curv = *curv * beta2 + (1.0 - beta2) * *grad * *grad;
 								*grad = param
 									- rate * (*momentum) * momentum_correction
 										/ ((*curv * curv_correction).sqrt() + epsilon);
@@ -188,7 +188,7 @@ impl GradientStepper for Adam {
 							.and(grad_arr.view_mut())
 							.for_each(|param, momentum, curv, grad| {
 								*momentum = *momentum * beta1 + (1.0 - beta1) * *grad;
-								*curv = *curv * beta2 + (1.0 - beta1) * *grad * *grad;
+								*curv = *curv * beta2 + (1.0 - beta2) * *grad * *grad;
 								*grad = param - rate * (*momentum) / ((*curv * curv_correction).sqrt() + epsilon);
 							});
 					}
