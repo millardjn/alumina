@@ -687,6 +687,13 @@ pub trait DataStream {
 	{
 		StreamMapOne::new(self, func, component)
 	}
+
+	fn flatmap<F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>>(self, func: F) -> StreamFlatMap<Self, F, I>
+	where
+		Self: Sized,
+	{
+		StreamFlatMap::new(self, func)
+	}
 }
 
 impl dyn DataStream {
@@ -1051,5 +1058,46 @@ impl<S: DataStream, F: FnMut(ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>> Data
 		let arr = mem::replace(&mut data[self.component], ArcArray::zeros(IxDyn(&[])));
 		data[self.component] = (self.func)(arr);
 		data
+	}
+}
+
+
+
+/// Apply a function that takes a single element and returns an iterator over multiple output elements
+pub struct StreamFlatMap<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> {
+	func: F,
+	stream: S,
+	iter: Option<I::IntoIter>,
+}
+
+impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> StreamFlatMap<S, F, I> {
+	pub fn new(stream: S, func: F) -> Self {
+		StreamFlatMap { func, stream, iter: None }
+	}
+
+	/// Borrows the wrapped datastream.
+	pub fn inner(&self) -> &S {
+		&self.stream
+	}
+
+	/// Returns the wrapped datastream.
+	pub fn into_inner(self) -> S {
+		let Self { stream, .. } = self;
+		stream
+	}
+}
+
+impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> DataStream
+	for StreamFlatMap<S, F, I>
+{
+	fn next(&mut self) -> Vec<ArcArray<f32, IxDyn>> {
+		match self.iter.iter_mut().flatten().next() {
+			Some(v) => v,
+			None => {
+				let data = self.stream.next();
+				self.iter = Some((self.func)(data).into_iter());
+				self.next()
+			},
+		}
 	}
 }
