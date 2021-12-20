@@ -16,6 +16,7 @@ use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Dimension, Zip};
 use smallvec::SmallVec;
 use std::any::Any;
+use std::cmp::max;
 
 pub fn reduce_prod<I>(input: I, axes: &[isize], keep_dims: bool) -> Result<Node, OpBuildError>
 where
@@ -190,22 +191,36 @@ impl OpInstance for ReduceProdInstance {
 			ctx.set(&self.output, ctx.take(&self.input));
 		} else {
 			let input = ctx.get_input(&self.input);
-			let output = ctx.get_output(&self.output);
+			let mut output = ctx.get_output_standard(&self.output);
 
-			// reshape as though keep_dims is true
-			let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
-				.into_iter()
-				.map(NodeAxis::lower)
-				.collect::<SmallVec<[usize; 8]>>();
-			let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceProd should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
 
-			let chunks: Vec<usize> = output_shape.iter().zip(input.shape()).map(|(o, i)| i / o).collect();
 
-			Zip::from(&mut output)
-				.and(input.exact_chunks(chunks))
-				.par_for_each(|output, input| {
-					*output += input.iter().fold(1.0, |prod, v| prod * v);
-				});
+			if self.axes.iter().any(|axis| input.shape()[*axis] == 0) {
+				output += 1.0;
+			} else {
+
+				// reshape as though keep_dims is true
+				let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
+					.into_iter()
+					.map(NodeAxis::lower)
+					.collect::<Vec<usize>>();
+				let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceProd should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
+
+				let chunks: Vec<usize> = output_shape.iter().zip(input.shape()).map(|(o, i)| max(1, i / o)).collect();
+
+				debug_assert!(input.shape().len() == chunks.len());
+				debug_assert!(input.shape().len() == output.shape().len());
+
+				//dbg!(&chunks, input.shape(), output.shape());
+
+				Zip::from(&mut output)
+					.and(input.exact_chunks(chunks))
+					.par_for_each(|output, input| {
+						*output += input.iter().fold(1.0, |prod, v| prod * v);
+					});
+			}
+
+
 		}
 
 		Ok(())
@@ -235,33 +250,47 @@ fn regularise_axes(axes: &[isize], input_len: usize) -> Vec<usize> {
 }
 
 fn calc_output_shape(input_shape: &NodeShape, axes: &[usize], keep_dims: bool) -> NodeShape {
-	let output_len = input_shape.len() - if keep_dims { 0 } else { axes.len() };
-	let mut output_shape: SmallVec<[NodeAxis; 8]> = (0..output_len).map(|_| NodeAxis::known(1)).collect();
-	let mut axes_i = 0;
-	let mut output_i = 0;
 
-	for (i, in_dim) in input_shape.into_iter().enumerate() {
-		if axes_i < axes.len() && i == axes[axes_i] {
+	input_shape.iter().enumerate().filter_map(|(i, axis)| {
+		if axes.contains(&i) {
 			if keep_dims {
-				output_i += 1;
+				Some(NodeAxis::known(1))
+			} else {
+				None
 			}
-			axes_i += 1;
 		} else {
-			output_shape[output_i] = in_dim.clone();
-			output_i += 1;
+			Some(axis.clone())
 		}
-	}
+	}).into()
 
-	output_shape.into()
+
+	// let output_len = input_shape.len() - if keep_dims { 0 } else { axes.len() };
+	// let mut output_shape: SmallVec<[NodeAxis; 8]> = (0..output_len).map(|_| NodeAxis::known(1)).collect();
+	// let mut axes_i = 0;
+	// let mut output_i = 0;
+
+	// for (i, in_dim) in input_shape.into_iter().enumerate() {
+	// 	if axes_i < axes.len() && i == axes[axes_i] {
+	// 		if keep_dims {
+	// 			output_i += 1;
+	// 		}
+	// 		axes_i += 1;
+	// 	} else {
+	// 		output_shape[output_i] = in_dim.clone();
+	// 		output_i += 1;
+	// 	}
+	// }
+
+	// output_shape.into()
 }
 
 #[cfg(test)]
 mod tests {
 	use super::reduce_prod;
-	use alumina_core::graph::Node;
+	use alumina_core::{graph::Node, shape::SCALAR};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 	use indexmap::indexset;
-	use ndarray::{arr2, arr3};
+	use ndarray::{arr2, arr3, arr0, arr1};
 
 	#[test]
 	fn forward_test() {
@@ -299,6 +328,59 @@ mod tests {
 		assert_eq!(expected1, output1.calc().unwrap());
 		assert_eq!(expected2, output2.calc().unwrap());
 	}
+
+	#[test]
+	fn forward_full_reduce_test() {
+		let input = Node::new(&[2, 3, 5])
+			.set_value(arr3(&[
+				[
+					[1.0, 2.0, 3.0, 4.0, 5.0],
+					[6.0, 7.0, 8.0, 9.0, 10.0],
+					[11.0, 12.0, 13.0, 14.0, 15.0],
+				],
+				[
+					[16.0, 17.0, 18.0, 19.0, 20.0],
+					[21.0, 22.0, 23.0, 24.0, 25.0],
+					[26.0, 27.0, 28.0, 29.0, 30.0],
+				],
+			]))
+			.set_name("input");
+
+		let output1 = reduce_prod(&input, &[0, 1, 2], false).unwrap().set_name("output2");
+
+		let expected1 = arr0(265252890000000000000000000000000.0)
+		.into_dyn();
+
+		assert_eq!(expected1, output1.calc().unwrap());
+	}
+
+	#[test]
+	fn forward_scalar_test() {
+		let input = Node::new(SCALAR)
+			.set_value(arr0(5.0))
+			.set_name("input");
+
+		let output1 = reduce_prod(&input, &[], false).unwrap().set_name("output2");
+
+		let expected1 = arr0(5.0)
+		.into_dyn();
+
+		assert_eq!(expected1, output1.calc().unwrap());
+	}
+
+	#[test]
+	fn forward_zero_test() {
+		let input = Node::from(arr1(&[]))
+			.set_name("input");
+
+		let output1 = reduce_prod(&input, &[], false).unwrap().set_name("output2");
+
+		let expected1 = arr0(1.0)
+		.into_dyn();
+
+		assert_eq!(expected1, output1.calc().unwrap());
+	}
+
 
 	#[test]
 	fn grad_numeric_test() {

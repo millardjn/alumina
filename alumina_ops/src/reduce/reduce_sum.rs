@@ -206,21 +206,26 @@ impl OpInstance for ReduceSumInstance {
 			ctx.set(&self.output, ctx.take(&self.input));
 		} else {
 			let input = ctx.get_input(&self.input);
-			let output = ctx.get_output(&self.output);
+			let output = ctx.get_output_standard(&self.output);
 
-			// reshape as though keep_dims is true
-			let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
-				.into_iter()
-				.map(NodeAxis::lower)
-				.collect::<SmallVec<[usize; 8]>>();
-			let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceSum should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
+			if self.axes.iter().all(|axis| input.shape()[*axis] != 0) {
 
-			Zip::from(&input)
-				.and_broadcast(output.cell_view())
-				.for_each(|&input, output| {
-					let new = output.get() + input;
-					output.set(new);
-				});
+				// reshape as though keep_dims is true
+				let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
+					.into_iter()
+					.map(NodeAxis::lower)
+					.collect::<SmallVec<[usize; 8]>>();
+				let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceSum should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
+
+				Zip::from(&input)
+					.and_broadcast(output.cell_view())
+					.for_each(|&input, output| {
+						let new = output.get() + input;
+						output.set(new);
+					});
+			}
+
+
 		}
 
 		Ok(())
@@ -234,7 +239,7 @@ fn regularise_axes(axes: &[isize], input_len: usize) -> Vec<usize> {
 	}
 
 	for &dim in axes {
-		assert!(dim < input_len as isize, " axes must be less than input.shape().len()");
+		assert!(dim < input_len as isize, " axes ({}) must be less than input.shape().len() ({})", dim, input_len);
 		assert!(
 			dim >= -(input_len as isize),
 			" axes must be greater or equal to -input.shape().len()"
