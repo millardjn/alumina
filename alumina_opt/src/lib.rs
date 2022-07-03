@@ -13,6 +13,7 @@ use std::{borrow::Borrow, iter::once};
 use unchecked_index as ui;
 
 pub mod adam;
+pub mod ewma;
 pub mod sgd;
 
 /// Calculates the L2 norm of the difference between two arrays
@@ -425,7 +426,7 @@ where
 			match step_result {
 				Err(e) => break Err(e),
 				Ok((_, Signal::Stop)) => break Ok(()),
-				_ => {}
+				_ => {},
 			}
 		};
 
