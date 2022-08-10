@@ -133,7 +133,7 @@ impl OpInstance for ShapeOfInstance {
 #[cfg(test)]
 mod tests {
 	use super::shape_of;
-	use alumina_core::graph::Node;
+	use alumina_core::{graph::Node, shape::SCALAR};
 	use alumina_test::relatively_close::RelClose;
 	use ndarray::{arr0, arr1};
 
@@ -147,5 +147,17 @@ mod tests {
 			.calc()
 			.unwrap()
 			.all_relatively_close(&arr1(&[5.0, 7.0, 13.0, 31.0]), ::std::f32::EPSILON));
+	}
+
+	#[test]
+	fn shape_of_scalar_test() {
+		let input = Node::new(SCALAR).set_name("input").set_value(arr0(0.0));
+
+		let output = shape_of(&input).unwrap();
+
+		assert!(output
+			.calc()
+			.unwrap()
+			.all_relatively_close(&arr1(&[]), ::std::f32::EPSILON));
 	}
 }
