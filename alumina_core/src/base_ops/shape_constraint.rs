@@ -97,13 +97,13 @@ impl ShapeConstraint {
 				}
 				vec[axis] = Some(Arc::new(move |dim| rule(dim).into()));
 				Rules::Individual(vec)
-			}
+			},
 			Rules::Joint(_) => {
 				#[allow(clippy::type_complexity)]
 				let mut vec: Vec<Option<Arc<dyn Fn(usize) -> NodeAxis + Sync + Send>>> = vec![None; axis + 1];
 				vec[axis] = Some(Arc::new(move |dim| rule(dim).into()));
 				Rules::Individual(vec)
-			}
+			},
 		};
 		self
 	}
@@ -203,7 +203,7 @@ impl OpInstance for ShapeConstraintInstance {
 						}
 					}
 					vec.into()
-				}
+				},
 				Rules::Joint(ref rule) => rule(input_shape.slice()),
 			}
 		};

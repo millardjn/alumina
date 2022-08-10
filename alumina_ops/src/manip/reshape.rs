@@ -224,7 +224,7 @@ mod tests {
 		match output.calc() {
 			Err(ExecError::Shape {
 				error: ShapesError::ShapePropError { op: err_op, .. },
-			}) if err_op == op => {}
+			}) if err_op == op => {},
 			_ => panic!("wrong error kind"),
 		}
 	}
@@ -239,7 +239,7 @@ mod tests {
 		match output.calc() {
 			Err(ExecError::Shape {
 				error: ShapesError::ShapePropError { op: err_op, .. },
-			}) if err_op == op => {}
+			}) if err_op == op => {},
 			_ => panic!("wrong error kind"),
 		}
 	}
@@ -254,7 +254,7 @@ mod tests {
 		match output.calc() {
 			Err(ExecError::Shape {
 				error: ShapesError::ShapePropError { op: err_op, .. },
-			}) if err_op == op => {}
+			}) if err_op == op => {},
 			_ => panic!("wrong error kind"),
 		}
 	}

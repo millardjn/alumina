@@ -28,7 +28,7 @@ where
 			NodeAxis::Known { val } => NodeAxis::known(val.saturating_add(f - 1) / f),
 			NodeAxis::Interval { lower, upper } => {
 				NodeAxis::interval(lower.saturating_add(f - 1) / f, upper.saturating_add(f - 1) / f)
-			}
+			},
 		})
 		.into();
 

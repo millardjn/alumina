@@ -1,13 +1,17 @@
 use std::any::Any;
 
 use alumina_core::{
-	errors::{OpBuildError, GradientError, ShapePropError, ExecutionError},
-	graph::{Node, Graph, NodeID, merge_graphs}, base_ops::{OpSpecification, OpInstance}, grad::GradientContext, shape_prop::ShapePropContext, exec::ExecutionContext
+	base_ops::{OpInstance, OpSpecification},
+	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
+	exec::ExecutionContext,
+	grad::GradientContext,
+	graph::{merge_graphs, Graph, Node, NodeID},
+	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexMap, IndexSet};
-use ndarray::{Zip, Dimension};
+use ndarray::{Dimension, Zip};
 
-use crate::{elementwise::{mul::mul, ln::ln, offset::offset, negative::negative, subtract::subtract}};
+use crate::elementwise::{ln::ln, mul::mul, negative::negative, offset::offset, subtract::subtract};
 
 /// Calculates the logistic function of the logits followed by BinaryCrossEntropy of that result with the
 /// supplied labels.
@@ -42,8 +46,6 @@ where
 
 	Ok(output)
 }
-
-
 
 /// Calculates the logistic function of the logits followed by BinaryCrossEntropy of that result with the
 /// supplied labels.
@@ -91,11 +93,7 @@ impl CrossEntropyWithLogits {
 		assert!(logits.shape().len() == labels.shape().len());
 		assert!(logits.shape().len() == output.shape().len());
 
-		CrossEntropyWithLogits {
-			logits,
-			labels,
-			output,
-		}
+		CrossEntropyWithLogits { logits, labels, output }
 	}
 }
 
@@ -195,7 +193,7 @@ impl OpInstance for CrossEntropyWithLogitsInstance {
 			.and(ctx.get_input(&self.logits))
 			.and(ctx.get_input(&self.labels))
 			.par_for_each(|output, &logit, &label| {
-				*output += logit.max(0.0) - logit*label + ((-logit.abs()).exp()).ln_1p();
+				*output += logit.max(0.0) - logit * label + ((-logit.abs()).exp()).ln_1p();
 			});
 
 		Ok(())
@@ -218,13 +216,7 @@ pub struct CrossEntropyWithLogitsBack {
 }
 
 impl CrossEntropyWithLogitsBack {
-	pub fn new<I1, I2, I3, O1, O2>(
-		logits: I1,
-		logits_grad: O1,
-		labels: I2,
-		labels_grad: O2,
-		output_grad: I3,
-	) -> Self
+	pub fn new<I1, I2, I3, O1, O2>(logits: I1, logits_grad: O1, labels: I2, labels_grad: O2, output_grad: I3) -> Self
 	where
 		I1: Into<Node>,
 		I2: Into<Node>,
@@ -361,14 +353,15 @@ impl OpInstance for CrossEntropyWithLogitsBackInstance {
 				.and(ctx.get_input(&self.output_grad))
 				.par_for_each(|logits_grad, logit, label, output_grad| {
 					//*logits_grad += output_grad * -((label-1.0) * logit.exp() + label)/(logit.exp() + 1.0);
-					*logits_grad += output_grad * -(label/(logit.exp() + 1.0) + (label-1.0)/((-logit).exp() + 1.0));
+					*logits_grad +=
+						output_grad * -(label / (logit.exp() + 1.0) + (label - 1.0) / ((-logit).exp() + 1.0));
 				});
 		} else if !ctx.is_required_output(&self.logits_grad) {
 			Zip::from(ctx.get_input(&self.logits))
 				.and(ctx.get_output(&self.labels_grad))
 				.and(ctx.get_input(&self.output_grad))
 				.par_for_each(|logit, label_grad, output_grad| {
-					*label_grad += output_grad *-logit;
+					*label_grad += output_grad * -logit;
 				});
 		} else {
 			// both
@@ -378,16 +371,15 @@ impl OpInstance for CrossEntropyWithLogitsBackInstance {
 				.and(ctx.get_input(&self.labels))
 				.and(ctx.get_input(&self.output_grad))
 				.par_for_each(|logits_grad, logit, label_grad, label, output_grad| {
-					*logits_grad += output_grad * -(label/(logit.exp() + 1.0) + (label-1.0)/((-logit).exp() + 1.0));
-					*label_grad += output_grad *-logit;					
+					*logits_grad +=
+						output_grad * -(label / (logit.exp() + 1.0) + (label - 1.0) / ((-logit).exp() + 1.0));
+					*label_grad += output_grad * -logit;
 				});
 		}
 
 		Ok(())
 	}
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -400,23 +392,28 @@ mod tests {
 	#[test]
 	fn forward_test() {
 		let logits = Node::new(&[8])
-			.set_value(arr1(&
-				[0.2, 0.4, 0.6, 0.8, -1.2, -1.4, -1.6, -1.8],
-			))
+			.set_value(arr1(&[0.2, 0.4, 0.6, 0.8, -1.2, -1.4, -1.6, -1.8]))
 			.set_name("logits");
 
 		let labels = Node::new(&[8])
-			.set_value(arr1(&
-				[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0],
-			))
+			.set_value(arr1(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0]))
 			.set_name("labels");
 
 		let hor_groups = cross_entropy_with_logits(&logits, &labels).unwrap();
 
-		assert!(hor_groups
-			.calc()
-			.unwrap()
-			.all_relatively_close(&arr1(&[0.798_138_86, 0.513_015_32, 1.037_488, 0.371_100_66, 0.263_282_48, 1.620_417_4, 1.783_900_7, 0.152_977_62 ]), 1e-5));
+		assert!(hor_groups.calc().unwrap().all_relatively_close(
+			&arr1(&[
+				0.798_138_86,
+				0.513_015_32,
+				1.037_488,
+				0.371_100_66,
+				0.263_282_48,
+				1.620_417_4,
+				1.783_900_7,
+				0.152_977_62
+			]),
+			1e-5
+		));
 	}
 
 	#[test]

@@ -60,7 +60,7 @@ where
 
 	for (i, &dim) in axes.iter().enumerate() {
 		match input.shape().slice()[dim] {
-			NodeAxis::Known { val: 1 } => {}
+			NodeAxis::Known { val: 1 } => {},
 			_ => panic!("Arg Error: non-unit axis ({}) removed at position ({})", dim, i),
 		}
 	}
@@ -147,7 +147,7 @@ impl RemoveDims {
 		);
 		for (i, &dim) in self.axes.iter().enumerate() {
 			match self.input.shape().slice()[dim] {
-				NodeAxis::Known { val: 1 } => {}
+				NodeAxis::Known { val: 1 } => {},
 				_ => panic!("Arg Error: non-unit axis ({}) removed at position ({})", dim, i),
 			}
 		}

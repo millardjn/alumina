@@ -280,7 +280,7 @@ impl NodeAxis {
 						dim2: other.clone(),
 					})
 				}
-			}
+			},
 			(NodeAxis::Known { val }, NodeAxis::Interval { upper, lower })
 			| (NodeAxis::Interval { upper, lower }, NodeAxis::Known { val }) => {
 				if val >= lower && val <= upper {
@@ -291,7 +291,7 @@ impl NodeAxis {
 						dim2: other.clone(),
 					})
 				}
-			}
+			},
 			(
 				NodeAxis::Interval {
 					upper: upper1,
@@ -305,7 +305,7 @@ impl NodeAxis {
 				let upper = *cmp::min(upper1, upper2);
 				let lower = *cmp::max(lower1, lower2);
 				Ok(NodeAxis::interval(lower, upper))
-			}
+			},
 		}
 	}
 }
@@ -317,7 +317,7 @@ impl Display for NodeAxis {
 			NodeAxis::Interval { lower, upper } if *lower == 0 && *upper == ::std::usize::MAX => fmt.pad("-1"),
 			NodeAxis::Interval { lower, upper } if *upper == ::std::usize::MAX => {
 				fmt.pad(&format!("({} — MAX)", lower))
-			}
+			},
 			NodeAxis::Interval { lower, upper } => fmt.pad(&format!("({} — {})", lower, upper)),
 		}
 	}
@@ -372,8 +372,8 @@ impl<T: Into<NodeAxis>, I: IntoIterator<Item = T>> From<I> for NodeShape {
 						"NodeAxis::Interval cannot be constructed with lower({}) > upper({})",
 						lower, upper
 					);
-				}
-				_ => {}
+				},
+				_ => {},
 			})
 			.collect();
 		NodeShape { dimensions }
@@ -411,7 +411,7 @@ impl NodeShape {
 	pub fn collapse_dimensions_to_minimum(&mut self) {
 		for i in 0..self.dimensions.len() {
 			match self.dimensions[i] {
-				NodeAxis::Known { .. } => {}
+				NodeAxis::Known { .. } => {},
 				NodeAxis::Interval { lower, .. } => self.dimensions[i] = NodeAxis::known(lower),
 			};
 		}
@@ -423,7 +423,7 @@ impl NodeShape {
 
 		for i in 0..shape.dimensions.len() {
 			match shape.dimensions[i] {
-				NodeAxis::Known { .. } => {}
+				NodeAxis::Known { .. } => {},
 				NodeAxis::Interval { lower, upper } if lower == upper => shape.dimensions[i] = NodeAxis::known(lower),
 				_ => shape.dimensions[i] = NodeAxis::known(1),
 			};
@@ -499,7 +499,7 @@ impl NodeShape {
 						index: i,
 						cause: x,
 					});
-				}
+				},
 			}
 		}
 		Ok(NodeShape { dimensions: vec })
@@ -532,7 +532,7 @@ impl NodeShape {
 						index: i,
 						cause: x,
 					});
-				}
+				},
 			}
 		}
 		vec.reverse();

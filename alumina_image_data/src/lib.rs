@@ -60,7 +60,7 @@ impl DataSet for ImageFolder {
 			Err(err) => {
 				eprintln!("Image load error '{}' {}", self.paths[i].to_string_lossy(), err);
 				ArcArray::zeros(IxDyn(&[1, 1, CHANNELS][..]))
-			}
+			},
 		};
 
 		vec![image]

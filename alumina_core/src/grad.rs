@@ -130,16 +130,16 @@ impl Grad {
 			match grad_values.get(y_id) {
 				None => {
 					context.grad_of(y_id).set_value(1.0f32.into_value());
-				}
+				},
 				Some(GradValue::Value(v)) => {
 					// Set Value if fixed value
 					context.grad_of(y_id).set_value(v);
-				}
+				},
 				Some(GradValue::Fn(f)) => {
 					Apply::new_boxed(context.grad_of(y_id), f.clone())
 						.build()
 						.expect("Failed to add apply op to graph during gradient construction");
-				}
+				},
 			};
 		}
 

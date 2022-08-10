@@ -59,7 +59,7 @@ impl<T> DataState<T> {
 		match self {
 			DataState::Unallocated { writers_remaining, .. } | DataState::Writable { writers_remaining, .. } => {
 				*writers_remaining
-			}
+			},
 			DataState::Readable { .. }
 			| DataState::Deallocated
 			| DataState::Input { .. }
@@ -164,13 +164,13 @@ impl ExecutionContext {
 					match value {
 						DataState::Unallocated { writers_remaining, .. }
 						| DataState::Writable { writers_remaining, .. }
-							if *writers_remaining > 0 => {} // Ok
+							if *writers_remaining > 0 => {}, // Ok
 						DataState::Deallocated => {
 							panic!("Alumina Bug: An output ({}) of op ({}) has been deallocated", node, op) // unreachable?
-						}
+						},
 						_ => {
 							return Err(ExecError::SubGraphNotExecutable { node: node.clone() });
-						}
+						},
 					}
 				}
 			}
@@ -193,7 +193,7 @@ impl ExecutionContext {
 								op: self.current_op().clone(),
 							});
 						}
-					}
+					},
 					DataState::Writable {
 						writers_remaining,
 						readers_remaining,
@@ -202,12 +202,12 @@ impl ExecutionContext {
 						if *readers_remaining == 0 || *writers_remaining > 0 {
 							return Err(ExecError::SubGraphNotExecutable { node: node.clone() });
 						}
-					}
+					},
 					DataState::Readable { readers_remaining, .. } => {
 						if *readers_remaining == 0 {
 							return Err(ExecError::SubGraphNotExecutable { node: node.clone() });
 						}
-					}
+					},
 
 					DataState::Deallocated => panic!(
 						"Alumina Bug: An input ({}) to op ({}) has been deallocated",
@@ -220,7 +220,7 @@ impl ExecutionContext {
 						if *readers_remaining == 0 {
 							return Err(ExecError::SubGraphNotExecutable { node: node.clone() });
 						}
-					}
+					},
 				}
 			} else {
 				return Err(ExecError::OpInputNotInSubgraph {
@@ -246,7 +246,7 @@ impl ExecutionContext {
 					| DataState::Readable { readers_remaining, .. }
 					| DataState::Input { readers_remaining, .. }
 					| DataState::BroadcastInput { readers_remaining, .. } => *readers_remaining -= 1,
-					DataState::Deallocated => {}
+					DataState::Deallocated => {},
 				}
 				if value.deallocatable() {
 					::std::mem::swap(value, &mut DataState::Deallocated);
@@ -261,7 +261,7 @@ impl ExecutionContext {
 						DataState::Readable { .. }
 						| DataState::Deallocated
 						| DataState::Input { .. }
-						| DataState::BroadcastInput { .. } => {}
+						| DataState::BroadcastInput { .. } => {},
 					}
 					if value.deallocatable() {
 						::std::mem::swap(value, &mut DataState::Deallocated);
@@ -285,7 +285,7 @@ impl ExecutionContext {
 					// guard with if because round-trip unnecessarily allocates
 					*data = data.as_standard_layout().to_shared()
 				}
-			}
+			},
 		}
 	}
 
@@ -480,16 +480,16 @@ impl ExecutionContext {
 				} else {
 					unreachable!()
 				}
-			}
+			},
 			&mut DataState::Writable { ref mut data, .. } => data.view_mut(),
 			&mut DataState::Readable { .. } => {
 				panic!("Alumina Bug: data already promoted to readable cannot be allocated as writable")
-			}
+			},
 			&mut DataState::Deallocated => panic!("Alumina Bug: valid input has been deallocated prematurely"),
 
 			&mut DataState::Input { .. } | &mut DataState::BroadcastInput { .. } => {
 				panic!("Alumina Bug: data already allocated as an input cannot be allocated as writable")
-			}
+			},
 		}
 	}
 
@@ -502,7 +502,7 @@ impl ExecutionContext {
 		match &mut value_map[node] {
 			&mut DataState::Unallocated { .. } => {
 				panic!("Alumina Bug: Attempting to directly allocate node as readable indicates that an InsufficientInputs error should have been thrown: node {}", node)
-			}
+			},
 			x @ &mut DataState::Writable { .. } => {
 				// upgrade to readable
 
@@ -533,11 +533,11 @@ impl ExecutionContext {
 				} else {
 					unreachable!()
 				}
-			}
+			},
 			&mut DataState::Readable { ref data, .. } => data.view(),
 			&mut DataState::Deallocated => {
 				panic!("Alumina Bug: valid input has been deallocated prematurely: {}", node)
-			}
+			},
 
 			&mut DataState::Input { ref data, .. } => data.view(),
 
@@ -573,7 +573,7 @@ impl ExecutionContext {
 				} else {
 					unreachable!()
 				}
-			}
+			},
 		}
 	}
 
@@ -765,10 +765,10 @@ fn form_output_map(
 		match value_map.swap_remove(&node.id()) {
 			Some(DataState::Writable { data, .. }) | Some(DataState::Readable { data, .. }) => {
 				map.insert(node, data);
-			}
+			},
 			Some(DataState::Input { data, .. }) => {
 				map.insert(node, data);
-			}
+			},
 			Some(DataState::BroadcastInput { data, .. }) => {
 				let arr = data
 					.broadcast(shape_map[&node.id()].slice())
@@ -776,10 +776,10 @@ fn form_output_map(
 					.into_owned()
 					.into_shared();
 				map.insert(node, arr);
-			}
+			},
 			Some(DataState::Unallocated { .. }) | None => {
 				return Err(ExecError::OutputNotComputable { node });
-			}
+			},
 			Some(DataState::Deallocated) => panic!("Alumina bug: output was deallocated: {}", node),
 		}
 	}
@@ -1071,10 +1071,10 @@ mod tests {
 			.ignore_node_values(true)
 			.execute()
 		{
-			Err(ExecError::OpInputNotInSubgraph { .. }) => {}
+			Err(ExecError::OpInputNotInSubgraph { .. }) => {},
 			Err(ExecError::Shape {
 				error: ShapesError::OpInputNotInSubgraph { .. },
-			}) => {}
+			}) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1094,7 +1094,7 @@ mod tests {
 		{
 			Err(ExecError::Subgraph {
 				error: ExecutionSubgraphError::Cycle { .. },
-			}) => {}
+			}) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1113,7 +1113,7 @@ mod tests {
 		{
 			Err(ExecError::Subgraph {
 				error: ExecutionSubgraphError::InsufficientInputs { .. },
-			}) => {}
+			}) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1134,7 +1134,7 @@ mod tests {
 			.ignore_node_values(true)
 			.execute()
 		{
-			Err(ExecError::OutputNotComputable { .. }) => {}
+			Err(ExecError::OutputNotComputable { .. }) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1151,7 +1151,7 @@ mod tests {
 			.ignore_node_values(true)
 			.execute()
 		{
-			Err(ExecError::Shape { .. }) => {}
+			Err(ExecError::Shape { .. }) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1171,7 +1171,7 @@ mod tests {
 			.ignore_node_values(true)
 			.execute()
 		{
-			Err(ExecError::OutputsNotInSubgraph { .. }) => {}
+			Err(ExecError::OutputsNotInSubgraph { .. }) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1195,8 +1195,8 @@ mod tests {
 		{
 			Err(ExecError::Shape {
 				error: ShapesError::SubGraphNotExecutable { .. },
-			}) => {}
-			Err(ExecError::SubGraphNotExecutable { .. }) => {}
+			}) => {},
+			Err(ExecError::SubGraphNotExecutable { .. }) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}
@@ -1219,8 +1219,8 @@ mod tests {
 		{
 			Err(ExecError::Shape {
 				error: ShapesError::SubGraphNotExecutable { .. },
-			}) => {}
-			Err(ExecError::SubGraphNotExecutable { .. }) => {}
+			}) => {},
+			Err(ExecError::SubGraphNotExecutable { .. }) => {},
 			Err(x) => panic!("{}", x),
 			Ok(_) => panic!("No Error"),
 		}

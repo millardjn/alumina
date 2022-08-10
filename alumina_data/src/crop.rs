@@ -130,7 +130,7 @@ fn range(cropping: Cropping, input_width: isize, output_width: isize) -> (Slice,
 					Slice::new(0, Some(width), 1),
 				)
 			}
-		}
+		},
 
 		Cropping::Random { .. } => {
 			if input_width < output_width {
@@ -148,6 +148,6 @@ fn range(cropping: Cropping, input_width: isize, output_width: isize) -> (Slice,
 					Slice::new(0, Some(width), 1),
 				)
 			}
-		}
+		},
 	}
 }

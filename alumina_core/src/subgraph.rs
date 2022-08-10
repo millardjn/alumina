@@ -3,9 +3,19 @@
 //! This is used to minimise work in execution and symbolic differentiation.
 
 use indexmap::{IndexMap, IndexSet};
-use std::{borrow::Borrow, cmp::{Reverse, max}, collections::{BinaryHeap, VecDeque}, fmt::{Debug, Display, Formatter}, hash::{Hash, Hasher}};
+use std::{
+	borrow::Borrow,
+	cmp::{max, Reverse},
+	collections::{BinaryHeap, VecDeque},
+	fmt::{Debug, Display, Formatter},
+	hash::{Hash, Hasher},
+};
 
-use crate::{errors::{CyclicGraphError, ExecutionSubgraphError}, graph::{Graph, Node, NodeTag, Op}, util::display::{IterDebug, IterDisplay}};
+use crate::{
+	errors::{CyclicGraphError, ExecutionSubgraphError},
+	graph::{Graph, Node, NodeTag, Op},
+	util::display::{IterDebug, IterDisplay},
+};
 
 /// A collection of `Node`s and `Op`s which may come from a single or multiple `Graph`s.
 ///
@@ -77,10 +87,18 @@ impl SubGraph {
 		}
 		impl From<Op> for OpEntry {
 			fn from(op: Op) -> Self {
-				OpEntry{
+				OpEntry {
 					priority1: u64::MAX - op.child_nodes().iter().fold(0, |m, n| max(m, n.id().id())),
-					priority2: op.parent_nodes().iter().filter(|n|!(n.parent_ops().len()==0 && n.tags().contains(&NodeTag::Parameter))).count() as isize - op.child_nodes().iter().filter(|n|!(n.parent_ops().len()==0 && n.tags().contains(&NodeTag::Parameter))).count() as isize,
-					op: Reverse(op)
+					priority2: op
+						.parent_nodes()
+						.iter()
+						.filter(|n| !(n.parent_ops().is_empty() && n.tags().contains(&NodeTag::Parameter)))
+						.count() as isize - op
+						.child_nodes()
+						.iter()
+						.filter(|n| !(n.parent_ops().is_empty() && n.tags().contains(&NodeTag::Parameter)))
+						.count() as isize,
+					op: Reverse(op),
 				}
 			}
 		}
@@ -99,7 +117,6 @@ impl SubGraph {
 		let mut op_order = IndexSet::with_capacity(self.ops.len());
 
 		loop {
-
 			// Prefer to process nodes if possible
 			if let Some(Reverse(node)) = node_queue.pop() {
 				if node_order.contains(&node) {
@@ -121,7 +138,7 @@ impl SubGraph {
 			}
 
 			// Only process a single op before reattempting more nodes
-			if let Some(OpEntry{op: Reverse(op), ..}) = op_queue.pop() {
+			if let Some(OpEntry { op: Reverse(op), .. }) = op_queue.pop() {
 				if op_order.contains(&op) {
 					panic!("should only be added by the last parent node?")
 				}
@@ -170,7 +187,6 @@ impl SubGraph {
 			ops: op_order,
 		})
 	}
-	
 
 	/// Returns the number of inputs to each `Op` and `Node`, taking only members of the `SubGraph` into account.
 	pub fn input_counts(&self) -> (IndexMap<&Node, usize>, IndexMap<&Op, usize>) {
@@ -223,7 +239,6 @@ impl SubGraph {
 
 impl Display for SubGraph {
 	fn fmt(&self, fmt: &mut Formatter) -> ::std::fmt::Result {
-
 		fmt.debug_struct("SubGraph")
 			.field(
 				"nodes",

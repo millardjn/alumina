@@ -544,7 +544,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 							*output += o1 + o2;
 						});
 				}
-			}
+			},
 			(true, false) => {
 				// one input and two outputs
 				if ctx.can_take(&self.input1) && ctx.can_set(&self.output1) {
@@ -577,7 +577,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 							*output2 += o2;
 						});
 				}
-			}
+			},
 			(false, true) => {
 				// two inputs and one output
 				if ctx.can_take(&self.input1) && ctx.can_set(&self.output1) {
@@ -607,7 +607,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 							*out1 += o1 + o2;
 						});
 				}
-			}
+			},
 			(false, false) => {
 				// two inputs and two outputs
 				if ctx.can_set(&self.output1)
@@ -679,7 +679,7 @@ impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
 							*out2 += o2;
 						});
 				}
-			}
+			},
 		}
 
 		Ok(())

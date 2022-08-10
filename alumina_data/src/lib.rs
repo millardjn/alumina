@@ -205,11 +205,11 @@ impl<S: DataSet> DataSet for ReorderComponents<S> {
 					if let Comp::Present(data) = x {
 						out.push(data);
 					}
-				}
+				},
 				&mut Comp::Moved(ind) => {
 					let data = out[ind].clone();
 					out.push(data);
-				}
+				},
 			}
 		}
 
@@ -688,7 +688,10 @@ pub trait DataStream {
 		StreamMapOne::new(self, func, component)
 	}
 
-	fn flatmap<F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>>(self, func: F) -> StreamFlatMap<Self, F, I>
+	fn flatmap<F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item = Vec<ArcArray<f32, IxDyn>>>>(
+		self,
+		func: F,
+	) -> StreamFlatMap<Self, F, I>
 	where
 		Self: Sized,
 	{
@@ -753,7 +756,7 @@ impl<S: DataStream + Send + 'static> Buffered<S> {
 				// keep lock while values are still being accepted by the buffer
 				let err = loop {
 					match tx.try_send(prev.take().unwrap_or_else(|| locked_stream.next())) {
-						Ok(()) => {}
+						Ok(()) => {},
 						Err(e) => break e,
 					}
 				};
@@ -761,7 +764,7 @@ impl<S: DataStream + Send + 'static> Buffered<S> {
 					TrySendError::Full(val) => prev = Some(val), // save the value and let the lock drop
 					TrySendError::Disconnected(_val) => {
 						return;
-					} // let the thread die
+					}, // let the thread die
 				}
 				thread::sleep(Duration::from_millis(10));
 			}
@@ -792,11 +795,11 @@ impl<S: DataStream + Send + 'static> Buffered<S> {
 					return lock
 						.into_inner()
 						.expect("Buffer internal thread has poisoned the mutex");
-				}
+				},
 				Err(stream) => {
 					thread::yield_now();
 					result = Arc::try_unwrap(stream);
-				}
+				},
 			}
 		}
 	}
@@ -1061,18 +1064,26 @@ impl<S: DataStream, F: FnMut(ArcArray<f32, IxDyn>) -> ArcArray<f32, IxDyn>> Data
 	}
 }
 
-
-
 /// Apply a function that takes a single element and returns an iterator over multiple output elements
-pub struct StreamFlatMap<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> {
+pub struct StreamFlatMap<
+	S: DataStream,
+	F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I,
+	I: IntoIterator<Item = Vec<ArcArray<f32, IxDyn>>>,
+> {
 	func: F,
 	stream: S,
 	iter: Option<I::IntoIter>,
 }
 
-impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> StreamFlatMap<S, F, I> {
+impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item = Vec<ArcArray<f32, IxDyn>>>>
+	StreamFlatMap<S, F, I>
+{
 	pub fn new(stream: S, func: F) -> Self {
-		StreamFlatMap { func, stream, iter: None }
+		StreamFlatMap {
+			func,
+			stream,
+			iter: None,
+		}
 	}
 
 	/// Borrows the wrapped datastream.
@@ -1087,8 +1098,8 @@ impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<It
 	}
 }
 
-impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item=Vec<ArcArray<f32, IxDyn>>>> DataStream
-	for StreamFlatMap<S, F, I>
+impl<S: DataStream, F: FnMut(Vec<ArcArray<f32, IxDyn>>) -> I, I: IntoIterator<Item = Vec<ArcArray<f32, IxDyn>>>>
+	DataStream for StreamFlatMap<S, F, I>
 {
 	fn next(&mut self) -> Vec<ArcArray<f32, IxDyn>> {
 		match self.iter.iter_mut().flatten().next() {

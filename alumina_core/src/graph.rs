@@ -261,14 +261,16 @@ impl Node {
 	/// let value_node2 = Node::new(&[2, 3]).set_value(arr2(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
 	/// ```
 	pub fn set_value<V: IntoNodeValue>(&self, new_value: V) -> Self {
-		
 		let mut new_value = new_value.into_value();
 		if let Ok(shape) = self.shape().to_data_shape() {
-			new_value = new_value.broadcast(shape).expect("Value not broadcast compatible with node shape").to_shared();
+			new_value = new_value
+				.broadcast(shape)
+				.expect("Value not broadcast compatible with node shape")
+				.to_shared();
 		} else {
 			// TODO: Check that shape is broadcast compatible with self
 		}
-		
+
 		let mut data = self.data.lock();
 		data.value = Some(new_value);
 
@@ -938,7 +940,7 @@ impl Clone for Graph {
 				return Graph {
 					link: self.link.clone(),
 				};
-			}
+			},
 		};
 
 		// get root by either being root, or cloning
@@ -947,7 +949,7 @@ impl Clone for Graph {
 				return Graph {
 					link: self.link.clone(),
 				};
-			}
+			},
 			GraphLink::MergedInto(ref next_graph) => next_graph.clone(),
 		};
 
@@ -1347,14 +1349,14 @@ impl Graph {
 							return different_root(&g1, gl1, &g2, gl2);
 						}
 					}
-				}
+				},
 				std::cmp::Ordering::Equal => {
 					let mut g1_link = g1.link.lock();
 					match &mut *g1_link {
 						x @ &mut GraphLink::Root(_) => return same_root(&g1, x),
 						&mut GraphLink::MergedInto(_) => continue,
 					}
-				}
+				},
 				std::cmp::Ordering::Greater => {
 					let mut g2_link = g2.link.lock();
 					if let gl2 @ &mut GraphLink::Root(_) = &mut *g2_link {
@@ -1363,7 +1365,7 @@ impl Graph {
 							return different_root(&g1, gl1, &g2, gl2);
 						}
 					}
-				}
+				},
 			}
 
 			// If locking g1 and g2 suceeded and they were both roots, then we already have returned.

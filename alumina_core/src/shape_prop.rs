@@ -86,7 +86,7 @@ fn input_update(
 				Ok(s) => shape = s,
 				Err(e) => {
 					input_errors.insert(node.clone(), e);
-				}
+				},
 			}
 		} else if use_node_values {
 			if let Some(s) = node.value_shape() {

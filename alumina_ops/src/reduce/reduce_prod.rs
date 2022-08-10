@@ -14,7 +14,6 @@ use alumina_core::{
 };
 use indexmap::{indexset, IndexMap, IndexSet};
 use ndarray::{Dimension, Zip};
-use smallvec::SmallVec;
 use std::any::Any;
 use std::cmp::max;
 
@@ -193,12 +192,9 @@ impl OpInstance for ReduceProdInstance {
 			let input = ctx.get_input(&self.input);
 			let mut output = ctx.get_output_standard(&self.output);
 
-
-
 			if self.axes.iter().any(|axis| input.shape()[*axis] == 0) {
 				output += 1.0;
 			} else {
-
 				// reshape as though keep_dims is true
 				let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
 					.into_iter()
@@ -206,7 +202,11 @@ impl OpInstance for ReduceProdInstance {
 					.collect::<Vec<usize>>();
 				let mut output = output.into_shape(output_shape.as_slice()).expect("Alumina Bug: ReduceProd should be guaranteed that the reshape is valid by shape_prop and that the output is contiguous");
 
-				let chunks: Vec<usize> = output_shape.iter().zip(input.shape()).map(|(o, i)| max(1, i / o)).collect();
+				let chunks: Vec<usize> = output_shape
+					.iter()
+					.zip(input.shape())
+					.map(|(o, i)| max(1, i / o))
+					.collect();
 
 				debug_assert!(input.shape().len() == chunks.len());
 				debug_assert!(input.shape().len() == output.shape().len());
@@ -219,8 +219,6 @@ impl OpInstance for ReduceProdInstance {
 						*output += input.iter().fold(1.0, |prod, v| prod * v);
 					});
 			}
-
-
 		}
 
 		Ok(())
@@ -290,7 +288,7 @@ mod tests {
 	use alumina_core::{graph::Node, shape::SCALAR};
 	use alumina_test::grad_numeric_test::GradNumericTest;
 	use indexmap::indexset;
-	use ndarray::{arr2, arr3, arr0, arr1};
+	use ndarray::{arr0, arr1, arr2, arr3};
 
 	#[test]
 	fn forward_test() {
@@ -348,39 +346,32 @@ mod tests {
 
 		let output1 = reduce_prod(&input, &[0, 1, 2], false).unwrap().set_name("output2");
 
-		let expected1 = arr0(265252890000000000000000000000000.0)
-		.into_dyn();
+		let expected1 = arr0(265252890000000000000000000000000.0).into_dyn();
 
 		assert_eq!(expected1, output1.calc().unwrap());
 	}
 
 	#[test]
 	fn forward_scalar_test() {
-		let input = Node::new(SCALAR)
-			.set_value(arr0(5.0))
-			.set_name("input");
+		let input = Node::new(SCALAR).set_value(arr0(5.0)).set_name("input");
 
 		let output1 = reduce_prod(&input, &[], false).unwrap().set_name("output2");
 
-		let expected1 = arr0(5.0)
-		.into_dyn();
+		let expected1 = arr0(5.0).into_dyn();
 
 		assert_eq!(expected1, output1.calc().unwrap());
 	}
 
 	#[test]
 	fn forward_zero_test() {
-		let input = Node::from(arr1(&[]))
-			.set_name("input");
+		let input = Node::from(arr1(&[])).set_name("input");
 
 		let output1 = reduce_prod(&input, &[], false).unwrap().set_name("output2");
 
-		let expected1 = arr0(1.0)
-		.into_dyn();
+		let expected1 = arr0(1.0).into_dyn();
 
 		assert_eq!(expected1, output1.calc().unwrap());
 	}
-
 
 	#[test]
 	fn grad_numeric_test() {

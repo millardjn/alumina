@@ -1,6 +1,6 @@
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-cpu=native"]
+rustflags = [
+    "-C", "target-cpu=native",
+    ]
 
-[profile.release]
-lto = "fat"
-codegen-units=1
+

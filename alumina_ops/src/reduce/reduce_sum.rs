@@ -209,7 +209,6 @@ impl OpInstance for ReduceSumInstance {
 			let output = ctx.get_output_standard(&self.output);
 
 			if self.axes.iter().all(|axis| input.shape()[*axis] != 0) {
-
 				// reshape as though keep_dims is true
 				let output_shape = calc_output_shape(&input.shape().into(), &self.axes, true)
 					.into_iter()
@@ -224,8 +223,6 @@ impl OpInstance for ReduceSumInstance {
 						output.set(new);
 					});
 			}
-
-
 		}
 
 		Ok(())
@@ -239,7 +236,12 @@ fn regularise_axes(axes: &[isize], input_len: usize) -> Vec<usize> {
 	}
 
 	for &dim in axes {
-		assert!(dim < input_len as isize, " axes ({}) must be less than input.shape().len() ({})", dim, input_len);
+		assert!(
+			dim < input_len as isize,
+			" axes ({}) must be less than input.shape().len() ({})",
+			dim,
+			input_len
+		);
 		assert!(
 			dim >= -(input_len as isize),
 			" axes must be greater or equal to -input.shape().len()"

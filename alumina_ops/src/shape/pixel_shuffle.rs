@@ -30,7 +30,7 @@ where
 			NodeAxis::Known { val } => (val.saturating_add(f - 1) / f).into(),
 			NodeAxis::Interval { lower, upper } => {
 				(lower.saturating_add(f - 1) / f, upper.saturating_add(f - 1) / f).into()
-			}
+			},
 		})
 		.chain(once(output_channels))
 		.into();
@@ -64,7 +64,7 @@ where
 			} else {
 				return Err(format!("The channel axis (last axis) of the input shape ({}) must be evenly divisible by the product of the factors ({:?})", input.shape(), factors).into());
 			}
-		}
+		},
 		NodeAxis::Interval { lower, upper } => {
 			let min = ((lower + expansion_factor - 1) / expansion_factor) * expansion_factor;
 			let max = (upper / expansion_factor) * expansion_factor;
@@ -74,7 +74,7 @@ where
 			} else {
 				NodeAxis::interval(min, max)
 			}
-		}
+		},
 	};
 	let output_shape = input.shape().slice()[0..input.shape().len() - 1]
 		.iter()
