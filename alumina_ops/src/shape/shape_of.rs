@@ -51,7 +51,7 @@ impl ShapeOf {
 impl OpSpecification for ShapeOf {
 	type InstanceType = ShapeOfInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ShapeOf"
 	}
 
@@ -88,7 +88,7 @@ pub struct ShapeOfInstance {
 }
 
 impl OpInstance for ShapeOfInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ShapeOf"
 	}
 

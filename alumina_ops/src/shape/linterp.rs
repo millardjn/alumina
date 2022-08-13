@@ -100,7 +100,7 @@ impl Linterp {
 impl OpSpecification for Linterp {
 	type InstanceType = LinterpInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Linterp"
 	}
 
@@ -219,7 +219,7 @@ impl LinterpInstance {
 }
 
 impl OpInstance for LinterpInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Linterp"
 	}
 
@@ -411,7 +411,7 @@ impl LinterpBack {
 impl OpSpecification for LinterpBack {
 	type InstanceType = LinterpBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"LinterpBack"
 	}
 
@@ -488,7 +488,7 @@ impl LinterpBackInstance {
 }
 
 impl OpInstance for LinterpBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"LinterpBack"
 	}
 

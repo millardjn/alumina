@@ -64,7 +64,7 @@ impl<F: NullaryDualFunc> NullaryElementwiseDual<F> {
 impl<F: NullaryDualFunc> OpSpecification for NullaryElementwiseDual<F> {
 	type InstanceType = NullaryElementwiseDualInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -104,7 +104,7 @@ pub struct NullaryElementwiseDualInstance<F: NullaryDualFunc> {
 }
 
 impl<F: NullaryDualFunc> OpInstance for NullaryElementwiseDualInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -207,7 +207,7 @@ impl<F: UnaryDualFunc> UnaryElementwiseDual<F> {
 impl<F: UnaryDualFunc> OpSpecification for UnaryElementwiseDual<F> {
 	type InstanceType = UnaryElementwiseDualInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -249,7 +249,7 @@ pub struct UnaryElementwiseDualInstance<F: UnaryDualFunc> {
 }
 
 impl<F: UnaryDualFunc> OpInstance for UnaryElementwiseDualInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -415,7 +415,7 @@ impl<F: BinaryDualFunc> BinaryElementwiseDual<F> {
 impl<F: BinaryDualFunc> OpSpecification for BinaryElementwiseDual<F> {
 	type InstanceType = BinaryElementwiseDualInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -461,7 +461,7 @@ pub struct BinaryElementwiseDualInstance<F: BinaryDualFunc> {
 }
 
 impl<F: BinaryDualFunc> OpInstance for BinaryElementwiseDualInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -745,7 +745,7 @@ impl<F: NaryDualFunc> NaryElementwiseDual<F> {
 impl<F: NaryDualFunc> OpSpecification for NaryElementwiseDual<F> {
 	type InstanceType = NaryElementwiseDualInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -793,7 +793,7 @@ pub struct NaryElementwiseDualInstance<F: NaryDualFunc> {
 }
 
 impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 

@@ -83,7 +83,7 @@ impl Apply {
 impl OpSpecification for Apply {
 	type InstanceType = ApplyInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Apply"
 	}
 
@@ -120,7 +120,7 @@ pub struct ApplyInstance {
 }
 
 impl OpInstance for ApplyInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Apply"
 	}
 

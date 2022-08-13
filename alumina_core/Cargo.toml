@@ -16,6 +16,7 @@ lru = "0.6"
 itertools = "0.10"
 sysinfo = "0.20"
 parking_lot = "0.11"
+as-any="0.3"
 
 # temp only
 #lazy_static = "1.4"

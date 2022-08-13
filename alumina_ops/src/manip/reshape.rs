@@ -66,7 +66,7 @@ impl Reshape {
 impl OpSpecification for Reshape {
 	type InstanceType = ReshapeInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Reshape"
 	}
 
@@ -103,7 +103,7 @@ pub struct ReshapeInstance {
 }
 
 impl OpInstance for ReshapeInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Reshape"
 	}
 

@@ -82,7 +82,7 @@ impl PermuteAxes {
 impl OpSpecification for PermuteAxes {
 	type InstanceType = PermuteAxesInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"PermuteAxes"
 	}
 
@@ -146,7 +146,7 @@ pub struct PermuteAxesInstance {
 }
 
 impl OpInstance for PermuteAxesInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"PermuteAxes"
 	}
 

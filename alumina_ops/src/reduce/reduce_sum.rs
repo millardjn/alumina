@@ -114,7 +114,7 @@ impl ReduceSum {
 impl OpSpecification for ReduceSum {
 	type InstanceType = ReduceSumInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ReduceSum"
 	}
 
@@ -157,7 +157,7 @@ pub struct ReduceSumInstance {
 }
 
 impl OpInstance for ReduceSumInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ReduceSum"
 	}
 

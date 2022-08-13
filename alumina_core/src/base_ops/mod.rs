@@ -13,6 +13,7 @@ use crate::{
 	graph::{merge_node_graphs, Graph, Node, Op},
 	shape_prop::ShapePropContext,
 };
+use as_any::AsAny;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use std::any::Any;
@@ -26,7 +27,7 @@ use std::sync::Arc;
 /// node3_name, node4_name)` e.g. `Dummy0(node1,node2=>node3,node4)` where i is incremented until a unique/unused name
 /// is found.
 pub fn standard_op_name<O: OpSpecification>(graph: &Graph, op: &O) -> String {
-	standard_op_name_inner(graph, op.type_name().to_string(), op.inputs(), op.outputs())
+	standard_op_name_inner(graph, op.op_type().to_string(), op.inputs(), op.outputs())
 }
 
 /// Split into inner to avoid monomorphising
@@ -66,7 +67,7 @@ fn standard_op_name_inner(
 pub trait OpSpecification: Any + Sized {
 	type InstanceType: OpInstance;
 
-	fn type_name(&self) -> &'static str;
+	fn op_type(&self) -> &'static str;
 
 	/// Returns a list of `Node`s this `Op` may need to read when executed
 	fn inputs(&self) -> IndexSet<Node>;
@@ -95,9 +96,9 @@ pub trait OpSpecification: Any + Sized {
 ///
 /// No `OpInstance` should retain any reference to its containing graph as this will prevent deallocation.
 /// This includes `Node`s, instead `InnerRef<NodeInner>` should be used to identify specific inputs and outputs.
-pub trait OpInstance: fmt::Debug + Any + Send + Sync {
+pub trait OpInstance: fmt::Debug + AsAny + Send + Sync + 'static {
 	///
-	fn type_name(&self) -> &'static str;
+	fn op_type(&self) -> &'static str;
 
 	// Create a new OpInstance with nodes switched out
 	fn as_specification(&self, graph: &Graph) -> Box<dyn Any>;

@@ -60,7 +60,7 @@ impl ArgMax {
 impl OpSpecification for ArgMax {
 	type InstanceType = ArgMaxInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ArgMax"
 	}
 
@@ -100,7 +100,7 @@ pub struct ArgMaxInstance {
 }
 
 impl OpInstance for ArgMaxInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ArgMax"
 	}
 

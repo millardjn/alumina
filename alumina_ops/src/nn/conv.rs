@@ -317,7 +317,7 @@ impl Conv {
 impl OpSpecification for Conv {
 	type InstanceType = ConvInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Conv"
 	}
 
@@ -386,7 +386,7 @@ pub struct ConvInstance {
 }
 
 impl OpInstance for ConvInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Conv"
 	}
 
@@ -692,7 +692,7 @@ impl ConvBack {
 impl OpSpecification for ConvBack {
 	type InstanceType = ConvBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ConvBackward"
 	}
 
@@ -789,7 +789,7 @@ pub struct ConvBackInstance {
 }
 
 impl OpInstance for ConvBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ConvBackward"
 	}
 

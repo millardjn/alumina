@@ -67,7 +67,7 @@ impl L1 {
 impl OpSpecification for L1 {
 	type InstanceType = L1Instance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"L1"
 	}
 
@@ -107,7 +107,7 @@ pub struct L1Instance {
 }
 
 impl OpInstance for L1Instance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"L1"
 	}
 
@@ -203,7 +203,7 @@ impl L1Back {
 impl OpSpecification for L1Back {
 	type InstanceType = L1BackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"L1Back"
 	}
 
@@ -244,7 +244,7 @@ pub struct L1BackInstance {
 }
 
 impl OpInstance for L1BackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"L1Back"
 	}
 

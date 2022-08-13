@@ -61,7 +61,7 @@ impl<F: NullaryFunc> NullaryElementwise<F> {
 impl<F: NullaryFunc> OpSpecification for NullaryElementwise<F> {
 	type InstanceType = NullaryElementwiseInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -98,7 +98,7 @@ pub struct NullaryElementwiseInstance<F: NullaryFunc> {
 }
 
 impl<F: NullaryFunc> OpInstance for NullaryElementwiseInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -173,7 +173,7 @@ impl<F: UnaryFunc> UnaryElementwise<F> {
 impl<F: UnaryFunc> OpSpecification for UnaryElementwise<F> {
 	type InstanceType = UnaryElementwiseInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -213,7 +213,7 @@ pub struct UnaryElementwiseInstance<F: UnaryFunc> {
 }
 
 impl<F: UnaryFunc> OpInstance for UnaryElementwiseInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -327,7 +327,7 @@ impl<F: BinaryFunc> BinaryElementwise<F> {
 impl<F: BinaryFunc> OpSpecification for BinaryElementwise<F> {
 	type InstanceType = BinaryElementwiseInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -370,7 +370,7 @@ pub struct BinaryElementwiseInstance<F: BinaryFunc> {
 }
 
 impl<F: BinaryFunc> OpInstance for BinaryElementwiseInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -520,7 +520,7 @@ impl<F: TernaryFunc> TernaryElementwise<F> {
 impl<F: TernaryFunc> OpSpecification for TernaryElementwise<F> {
 	type InstanceType = TernaryElementwiseInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -566,7 +566,7 @@ pub struct TernaryElementwiseInstance<F: TernaryFunc> {
 }
 
 impl<F: TernaryFunc> OpInstance for TernaryElementwiseInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -763,7 +763,7 @@ impl<F: NaryFunc> NaryElementwise<F> {
 impl<F: NaryFunc> OpSpecification for NaryElementwise<F> {
 	type InstanceType = NaryElementwiseInstance<F>;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 
@@ -808,7 +808,7 @@ pub struct NaryElementwiseInstance<F: NaryFunc> {
 }
 
 impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		self.f.type_name()
 	}
 

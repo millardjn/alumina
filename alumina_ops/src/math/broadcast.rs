@@ -181,7 +181,7 @@ impl Broadcast {
 impl OpSpecification for Broadcast {
 	type InstanceType = BroadcastInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Broadcast"
 	}
 
@@ -218,7 +218,7 @@ pub struct BroadcastInstance {
 }
 
 impl OpInstance for BroadcastInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Broadcast"
 	}
 

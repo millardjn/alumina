@@ -73,7 +73,7 @@ impl AvgPool {
 impl OpSpecification for AvgPool {
 	type InstanceType = AvgPoolInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"AvgPool"
 	}
 
@@ -133,7 +133,7 @@ pub struct AvgPoolInstance {
 }
 
 impl OpInstance for AvgPoolInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"AvgPool"
 	}
 
@@ -258,7 +258,7 @@ impl AvgPoolBack {
 impl OpSpecification for AvgPoolBack {
 	type InstanceType = AvgPoolBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"AvgPoolBack"
 	}
 
@@ -318,7 +318,7 @@ pub struct AvgPoolBackInstance {
 }
 
 impl OpInstance for AvgPoolBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"AvgPoolBack"
 	}
 

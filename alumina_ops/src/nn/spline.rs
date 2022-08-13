@@ -206,7 +206,7 @@ impl Spline {
 impl OpSpecification for Spline {
 	type InstanceType = SplineInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Spline"
 	}
 
@@ -269,7 +269,7 @@ pub struct SplineInstance {
 }
 
 impl OpInstance for SplineInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Spline"
 	}
 
@@ -410,7 +410,7 @@ impl SplineBack {
 impl OpSpecification for SplineBack {
 	type InstanceType = SplineBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SplineBack"
 	}
 
@@ -497,7 +497,7 @@ pub struct SplineBackInstance {
 }
 
 impl OpInstance for SplineBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SplineBack"
 	}
 

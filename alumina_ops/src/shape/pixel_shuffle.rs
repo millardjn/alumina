@@ -136,7 +136,7 @@ impl Collapse {
 impl OpSpecification for Collapse {
 	type InstanceType = CollapseInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Collapse"
 	}
 
@@ -195,7 +195,7 @@ impl CollapseInstance {
 }
 
 impl OpInstance for CollapseInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Collapse"
 	}
 
@@ -344,7 +344,7 @@ impl Expand {
 impl OpSpecification for Expand {
 	type InstanceType = ExpandInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Expand"
 	}
 
@@ -409,7 +409,7 @@ impl ExpandInstance {
 }
 
 impl OpInstance for ExpandInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Expand"
 	}
 

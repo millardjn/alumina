@@ -86,7 +86,7 @@ impl SoftmaxCrossEntropy {
 impl OpSpecification for SoftmaxCrossEntropy {
 	type InstanceType = SoftmaxCrossEntropyInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxCrossEntropy"
 	}
 
@@ -127,7 +127,7 @@ pub struct SoftmaxCrossEntropyInstance {
 }
 
 impl OpInstance for SoftmaxCrossEntropyInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxCrossEntropy"
 	}
 
@@ -271,7 +271,7 @@ impl SoftmaxCrossEntropyBack {
 impl OpSpecification for SoftmaxCrossEntropyBack {
 	type InstanceType = SoftmaxCrossEntropyBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxCrossEntropyBack"
 	}
 
@@ -318,7 +318,7 @@ pub struct SoftmaxCrossEntropyBackInstance {
 }
 
 impl OpInstance for SoftmaxCrossEntropyBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxCrossEntropyBack"
 	}
 

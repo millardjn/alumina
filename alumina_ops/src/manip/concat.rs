@@ -89,7 +89,7 @@ impl Concat {
 impl OpSpecification for Concat {
 	type InstanceType = ConcatInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Concat"
 	}
 
@@ -131,7 +131,7 @@ pub struct ConcatInstance {
 }
 
 impl OpInstance for ConcatInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Concat"
 	}
 
@@ -235,7 +235,7 @@ impl ConcatBack {
 impl OpSpecification for ConcatBack {
 	type InstanceType = ConcatBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ConcatBack"
 	}
 
@@ -281,7 +281,7 @@ pub struct ConcatBackInstance {
 }
 
 impl OpInstance for ConcatBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ConcatBack"
 	}
 

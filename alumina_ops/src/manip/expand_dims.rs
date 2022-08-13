@@ -152,7 +152,7 @@ impl ExpandDims {
 impl OpSpecification for ExpandDims {
 	type InstanceType = ExpandDimsInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ExpandDims"
 	}
 
@@ -210,7 +210,7 @@ pub struct ExpandDimsInstance {
 }
 
 impl OpInstance for ExpandDimsInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ExpandDims"
 	}
 

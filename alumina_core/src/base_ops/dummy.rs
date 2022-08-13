@@ -45,7 +45,7 @@ impl DummyOp {
 impl OpSpecification for DummyOp {
 	type InstanceType = DummyOpInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"DummyOp"
 	}
 
@@ -89,7 +89,7 @@ pub struct DummyOpInstance {
 }
 
 impl OpInstance for DummyOpInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"DummyOp"
 	}
 

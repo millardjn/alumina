@@ -61,7 +61,7 @@ impl Softmax {
 impl OpSpecification for Softmax {
 	type InstanceType = SoftmaxInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Softmax"
 	}
 
@@ -99,7 +99,7 @@ pub struct SoftmaxInstance {
 }
 
 impl OpInstance for SoftmaxInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Softmax"
 	}
 
@@ -194,7 +194,7 @@ impl SoftmaxBack {
 impl OpSpecification for SoftmaxBack {
 	type InstanceType = SoftmaxBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxBack"
 	}
 
@@ -235,7 +235,7 @@ pub struct SoftmaxBackInstance {
 }
 
 impl OpInstance for SoftmaxBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"SoftmaxBack"
 	}
 

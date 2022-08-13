@@ -125,7 +125,7 @@ impl ShapeConstraint {
 impl OpSpecification for ShapeConstraint {
 	type InstanceType = ShapeConstraintInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ShapeConstraint"
 	}
 
@@ -164,7 +164,7 @@ pub struct ShapeConstraintInstance {
 }
 
 impl OpInstance for ShapeConstraintInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ShapeConstraint"
 	}
 

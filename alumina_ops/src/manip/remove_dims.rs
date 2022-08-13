@@ -159,7 +159,7 @@ impl RemoveDims {
 impl OpSpecification for RemoveDims {
 	type InstanceType = RemoveDimsInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"RemoveDims"
 	}
 
@@ -197,7 +197,7 @@ pub struct RemoveDimsInstance {
 }
 
 impl OpInstance for RemoveDimsInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"RemoveDims"
 	}
 

@@ -65,7 +65,7 @@ impl MulDiv {
 impl OpSpecification for MulDiv {
 	type InstanceType = MulDivInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"MulDiv"
 	}
 
@@ -102,7 +102,7 @@ pub struct MulDivInstance {
 }
 
 impl OpInstance for MulDivInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"MulDiv"
 	}
 
@@ -223,7 +223,7 @@ impl MulDivBack {
 impl OpSpecification for MulDivBack {
 	type InstanceType = MulDivBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"MulDivBack"
 	}
 
@@ -263,7 +263,7 @@ pub struct MulDivBackInstance {
 }
 
 impl OpInstance for MulDivBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"MulDivBack"
 	}
 

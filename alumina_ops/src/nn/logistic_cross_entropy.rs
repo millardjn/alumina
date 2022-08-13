@@ -100,7 +100,7 @@ impl CrossEntropyWithLogits {
 impl OpSpecification for CrossEntropyWithLogits {
 	type InstanceType = CrossEntropyWithLogitsInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"CrossEntropyWithLogits"
 	}
 
@@ -138,7 +138,7 @@ pub struct CrossEntropyWithLogitsInstance {
 }
 
 impl OpInstance for CrossEntropyWithLogitsInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"CrossEntropyWithLogits"
 	}
 
@@ -247,7 +247,7 @@ impl CrossEntropyWithLogitsBack {
 impl OpSpecification for CrossEntropyWithLogitsBack {
 	type InstanceType = CrossEntropyWithLogitsBackInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"CrossEntropyWithLogitsBack"
 	}
 
@@ -291,7 +291,7 @@ pub struct CrossEntropyWithLogitsBackInstance {
 }
 
 impl OpInstance for CrossEntropyWithLogitsBackInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"CrossEntropyWithLogitsBack"
 	}
 

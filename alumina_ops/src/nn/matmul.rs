@@ -255,7 +255,7 @@ impl MatMul {
 impl OpSpecification for MatMul {
 	type InstanceType = MatMulInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"MatMul"
 	}
 
@@ -315,7 +315,7 @@ pub struct MatMulInstance {
 }
 
 impl OpInstance for MatMulInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ReduceSum"
 	}
 
@@ -463,7 +463,7 @@ impl OpInstance for MatMulInstance {
 				NodeAxis::Known { val } => {
 					outer_stride *= val;
 					outer_ind += 1;
-				}
+				},
 				_ => break,
 			}
 		}
@@ -473,7 +473,7 @@ impl OpInstance for MatMulInstance {
 				NodeAxis::Known { val } => {
 					inner_stride *= val;
 					inner_ind -= 1;
-				}
+				},
 				_ => break,
 			}
 		}

@@ -14,7 +14,7 @@ struct NoOp {}
 impl OpSpecification for NoOp {
 	type InstanceType = NoOpInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"NoOp"
 	}
 
@@ -40,7 +40,7 @@ impl OpSpecification for NoOp {
 pub struct NoOpInstance {}
 
 impl OpInstance for NoOpInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"NoOp"
 	}
 

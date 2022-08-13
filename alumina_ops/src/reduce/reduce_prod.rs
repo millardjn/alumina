@@ -91,7 +91,7 @@ impl ReduceProd {
 impl OpSpecification for ReduceProd {
 	type InstanceType = ReduceProdInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ReduceProd"
 	}
 
@@ -134,7 +134,7 @@ pub struct ReduceProdInstance {
 }
 
 impl OpInstance for ReduceProdInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"ReduceProd"
 	}
 

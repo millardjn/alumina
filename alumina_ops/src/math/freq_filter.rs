@@ -183,7 +183,7 @@ impl FreqFilter {
 impl OpSpecification for FreqFilter {
 	type InstanceType = FreqFilterInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"FreqFilter"
 	}
 
@@ -240,7 +240,7 @@ pub struct FreqFilterInstance {
 }
 
 impl OpInstance for FreqFilterInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"FreqFilter"
 	}
 

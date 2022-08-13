@@ -47,7 +47,7 @@ use std::{
 	fmt::{self, Debug, Display},
 	hash::{Hash, Hasher},
 	ops::Deref,
-	sync::{atomic::AtomicU64, atomic::Ordering, Arc},
+	sync::{atomic::AtomicU64, atomic::Ordering, Arc}, any::Any,
 };
 
 // TODO write explanation for all the ways of creating a Node
@@ -781,7 +781,7 @@ impl Op {
 
 	pub fn type_name(&self) -> &'static str {
 		let data = self.data.lock();
-		data.instance.type_name()
+		data.instance.op_type()
 	}
 
 	/// Returns a copy of the current `Node` tags.

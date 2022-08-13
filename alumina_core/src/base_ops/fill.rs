@@ -49,7 +49,7 @@ impl Fill {
 impl OpSpecification for Fill {
 	type InstanceType = FillInstance;
 
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Fill"
 	}
 
@@ -86,7 +86,7 @@ pub struct FillInstance {
 }
 
 impl OpInstance for FillInstance {
-	fn type_name(&self) -> &'static str {
+	fn op_type(&self) -> &'static str {
 		"Fill"
 	}
 
