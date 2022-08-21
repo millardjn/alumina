@@ -248,38 +248,21 @@ fn regularise_axes(axes: &[isize], input_len: usize) -> Vec<usize> {
 }
 
 fn calc_output_shape(input_shape: &NodeShape, axes: &[usize], keep_dims: bool) -> NodeShape {
-
-	input_shape.iter().enumerate().filter_map(|(i, axis)| {
-		if axes.contains(&i) {
-			if keep_dims {
-				Some(NodeAxis::known(1))
+	input_shape
+		.iter()
+		.enumerate()
+		.filter_map(|(i, axis_len)| {
+			if axes.contains(&i) {
+				if keep_dims {
+					Some(NodeAxis::known(1))
+				} else {
+					None
+				}
 			} else {
-				None
+				Some(axis_len.clone())
 			}
-		} else {
-			Some(axis.clone())
-		}
-	}).into()
-
-
-	// let output_len = input_shape.len() - if keep_dims { 0 } else { axes.len() };
-	// let mut output_shape: SmallVec<[NodeAxis; 8]> = (0..output_len).map(|_| NodeAxis::known(1)).collect();
-	// let mut axes_i = 0;
-	// let mut output_i = 0;
-
-	// for (i, in_dim) in input_shape.into_iter().enumerate() {
-	// 	if axes_i < axes.len() && i == axes[axes_i] {
-	// 		if keep_dims {
-	// 			output_i += 1;
-	// 		}
-	// 		axes_i += 1;
-	// 	} else {
-	// 		output_shape[output_i] = in_dim.clone();
-	// 		output_i += 1;
-	// 	}
-	// }
-
-	// output_shape.into()
+		})
+		.into()
 }
 
 #[cfg(test)]
