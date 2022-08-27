@@ -2,8 +2,8 @@ use crate::{
 	boolean::equal,
 	build_or_pretty_panic,
 	elementwise::{
-		abs, ceil, cos, div, elu, exp, floor, identity, leaky_relu, ln, logistic, max, min, mul, negative, reciprocal,
-		relu, robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh,
+		abs, ceil, cos, div, elu, exp, floor, identity, leaky_relu, ln, logistic, max, min, mul, negative, offset,
+		reciprocal, relu, robust, round, scale, sign, sin, sqr, sqrt, srgb, subtract, tanh,
 	},
 	grad::stop_grad,
 	manip::{expand_dims, permute_axes, remove_dims, reshape},
@@ -274,6 +274,16 @@ where
 	I: Into<Node>,
 {
 	build_or_pretty_panic(negative::negative(input), "Negative")
+}
+
+/// Returns the addition of the input and a fixed number.
+///
+/// The output node has the same shape as the input.
+pub fn offset<I>(input: I, val: f32) -> Node
+where
+	I: Into<Node>,
+{
+	build_or_pretty_panic(offset::offset(input, val), "Offset")
 }
 
 /// Returns the reciprocal of the input.
@@ -916,7 +926,14 @@ where
 pub fn freq_filter<I, F>(input: I, axes: &[usize], f: F) -> Node
 where
 	I: Into<Node>,
-	F: Fn(&[isize]) -> f32 + 'static + Sync + Send,
+	F: Fn(&[usize], &[isize]) -> f32 + 'static + Sync + Send,
 {
 	build_or_pretty_panic(freq_filter::freq_filter(input, axes, f), "ShapeOf")
+}
+
+pub fn freq_filter_with<I>(input: I, filter: freq_filter::Filter) -> Node
+where
+	I: Into<Node>,
+{
+	build_or_pretty_panic(freq_filter::freq_filter_with(input, filter), "ShapeOf")
 }

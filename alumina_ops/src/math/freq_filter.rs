@@ -23,7 +23,7 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 pub fn freq_filter<I, F>(input: I, axes: &[usize], f: F) -> Result<Node, OpBuildError>
 where
 	I: Into<Node>,
-	F: Fn(&[isize]) -> f32 + 'static + Sync + Send,
+	F: Fn(&[usize], &[isize]) -> f32 + 'static + Sync + Send,
 {
 	let input = input.into();
 
@@ -32,9 +32,27 @@ where
 	let output = input
 		.graph()
 		.new_node(output_shape)
-		.set_name_unique(&format!("fft({})", input));
+		.set_name_unique(&format!("freq_filter({})", input));
 
 	FreqFilter::new(input, output.clone(), Filter::new(axes, f)).build()?;
+
+	Ok(output)
+}
+
+pub fn freq_filter_with<I>(input: I, filter: Filter) -> Result<Node, OpBuildError>
+where
+	I: Into<Node>,
+{
+	let input = input.into();
+
+	let output_shape: NodeShape = input.shape();
+
+	let output = input
+		.graph()
+		.new_node(output_shape)
+		.set_name_unique(&format!("freq_filter({})", input));
+
+	FreqFilter::new(input, output.clone(), filter).build()?;
 
 	Ok(output)
 }
@@ -42,6 +60,7 @@ where
 #[derive(Clone)]
 pub struct Filter {
 	axes: Vec<usize>,
+	//f: Arc<dyn Fn(&[isize]) -> f32 + 'static + Sync + Send>,
 	#[allow(clippy::type_complexity)]
 	f: Arc<dyn Fn(ArrayViewD<f32>, &[usize]) -> ArrayD<f32> + 'static + Sync + Send>,
 }
@@ -56,13 +75,15 @@ impl Debug for Filter {
 }
 
 impl Filter {
-	pub fn new<F: Fn(&[isize]) -> f32 + 'static + Sync + Send>(axes: &[usize], f: F) -> Self {
+	pub fn new<F: Fn(&[usize], &[isize]) -> f32 + 'static + Sync + Send>(axes: &[usize], f: F) -> Self {
 		Self {
 			axes: axes.to_vec(),
 			f: Arc::new(move |array: ArrayViewD<f32>, axes: &[usize]| {
 				let mut planner = FftPlanner::new();
 
 				let mut c_array: ArrayD<Complex<f32>> = array.map(|&v| Complex::new(v, 0.0));
+
+				let dims: Vec<usize> = axes.iter().map(|&a| c_array.shape()[a]).collect();
 
 				// Apply ND-FFT
 				for &axis in axes {
@@ -107,7 +128,7 @@ impl Filter {
 							(unsafe { *i.slice().get_unchecked(a) } as isize + s / 2) % s - s / 2
 						})
 						.collect();
-					*v = v.scale(f(&i));
+					*v = v.scale(f(&dims, &i));
 				});
 
 				// Apply ND-IFFT and normalise
@@ -207,7 +228,7 @@ impl OpSpecification for FreqFilter {
 		for &axis in &self.filter.axes {
 			if axis >= self.input.shape().len() {
 				return Err(format!(
-					"Fft axis ({}) out of bounds for input shape size ({})",
+					"FreqFilter axis ({}) out of bounds for input shape size ({})",
 					axis,
 					self.input.shape().len(),
 				)
@@ -217,7 +238,7 @@ impl OpSpecification for FreqFilter {
 
 		if self.input.shape().len() != self.output.shape().len() {
 			return Err(format!(
-				"FreqFilter input shape ({}) must be the same length as Fft output shape ({})",
+				"FreqFilter input shape ({}) must be the same length as FreqFilter output shape ({})",
 				self.input.shape().len(),
 				self.output.shape().len()
 			)
@@ -307,7 +328,7 @@ mod tests {
 			]))
 			.set_name("input");
 
-		let output = freq_filter(input, &[0, 1], |index| if index == [0, 0] { 1.0 } else { 0.5 }).unwrap();
+		let output = freq_filter(input, &[0, 1], |_shape, index| if index == [0, 0] { 1.0 } else { 0.5 }).unwrap();
 
 		assert!(output.calc().unwrap().all_relatively_close(
 			&arr2(&[
@@ -348,7 +369,7 @@ mod tests {
 			]))
 			.set_name("input");
 
-		let output = freq_filter(input, &[1], |index| if index == [0] { 1.0 } else { 0.5 }).unwrap();
+		let output = freq_filter(input, &[1], |_shape, index| if index == [0] { 1.0 } else { 0.5 }).unwrap();
 
 		assert!(output.calc().unwrap().all_relatively_close(
 			&arr2(&[
@@ -383,7 +404,7 @@ mod tests {
 	fn grad_numeric_test() {
 		let input = Node::new(&[13, 43]).set_name("input");
 
-		let output = freq_filter(&input, &[0, 1], |index| if index == [0, 0] { 1.0 } else { 0.5 }).unwrap();
+		let output = freq_filter(&input, &[0, 1], |_shape, index| if index == [0, 0] { 1.0 } else { 0.5 }).unwrap();
 
 		GradNumericTest::new(&output, &indexset![&input]).run();
 	}
@@ -396,7 +417,7 @@ mod tests {
 		FreqFilter::new(
 			&input,
 			&output,
-			Filter::new(&[0, 1], |index| {
+			Filter::new(&[0, 1], |_shape, index| {
 				if index == [0, 0] {
 					1.0
 				} else {
