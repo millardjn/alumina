@@ -10,6 +10,7 @@ pub mod panicking;
 pub mod pool;
 pub mod reduce;
 pub mod regularisation;
+mod sgemm;
 pub mod shape;
 
 use alumina_core::errors::OpBuildError;

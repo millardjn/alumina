@@ -28,8 +28,16 @@ use std::{
 		Mutex,
 	},
 };
-use typenum::{bit::*, marker_traits::Unsigned, operator_aliases::Sub1, UInt, UTerm, U1, U2, U3};
+use typenum::{
+	bit::*,
+	consts::{U1, U2, U3},
+	marker_traits::Unsigned,
+	operator_aliases::Sub1,
+	UInt, UTerm,
+};
 use unchecked_index as ui;
+
+use crate::sgemm::sgemm;
 
 // Threadpool for offloading lowering/packing operations
 lazy_static! {
@@ -458,7 +466,7 @@ impl OpInstance for ConvInstance {
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
 		let input = ctx.get_input_standard(&self.input);
 		let filter = ctx.get_input_standard(&self.filter);
-		let output = ctx.get_output_standard(&self.output);
+		let mut output = ctx.get_output_standard(&self.output);
 
 		let n = input.shape()[0]; // TODO use ensure to guard against zero length shapes
 		let in_size: usize = input.shape()[1..].iter().product();
@@ -472,8 +480,36 @@ impl OpInstance for ConvInstance {
 		let filter_spatial = &filter.shape()[0..filter.ndim() - 2];
 		let output_spatial = output.shape()[1..output.ndim() - 1].to_vec();
 
-		let _in_spaxels: usize = input_spatial.iter().product();
+		let in_spaxels: usize = input_spatial.iter().product();
 		let out_spaxels: usize = output_spatial.iter().product();
+
+		// use mat mul if possible
+		if filter_spatial.iter().product::<usize>() == 1 && in_spaxels == out_spaxels {
+			let m = output_channels;
+			let n = n * out_spaxels;
+			let k = patch_size;
+			unsafe {
+				sgemm(
+					m,
+					k,
+					n,
+					1.0,
+					filter.as_ptr(),
+					// k as isize,
+					// 1, // A is params, row major
+					1,
+					m as isize, // A is params, col major
+					input.as_ptr(),
+					1,
+					k as isize, // B, input patches column major
+					1.0,
+					output.as_mut_ptr(),
+					1,
+					m as isize,
+				); // C output values column major
+			}
+			return Ok(());
+		}
 
 		// Checks
 		assert!(input.ndim() == output.ndim(), "Input len does not match output len");
@@ -504,8 +540,8 @@ impl OpInstance for ConvInstance {
 		let n_threads = *NUM_CPUS;
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
 		let thread_division = (out_spaxels * n + n_threads - 1) / n_threads;
-		let spaxels_per_batch = min(max(4, min(cache_limit, thread_division)), out_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
-		let n_batches = (out_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
+		let max_batch_spaxels = min(max(4, min(cache_limit, thread_division)), out_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let n_batches = (out_spaxels * n + max_batch_spaxels - 1) / max_batch_spaxels;
 		let batch_atomic = AtomicUsize::new(0);
 
 		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
@@ -518,10 +554,11 @@ impl OpInstance for ConvInstance {
 				let batch_atomic = &batch_atomic;
 
 				scope.execute(move || {
-					let mut patches_alloc = Vec::with_capacity(patch_size * spaxels_per_batch);
-					unsafe {
-						patches_alloc.set_len(patch_size * spaxels_per_batch);
-					}
+					// let mut patches_alloc = Vec::with_capacity(patch_size * max_batch_spaxels);
+					// unsafe {
+					// 	patches_alloc.set_len(patch_size * max_batch_spaxels);
+					// }
+					let mut patches_alloc = vec![0.0; patch_size * max_batch_spaxels];
 
 					loop {
 						let batch = batch_atomic.fetch_add(1, Ordering::SeqCst);
@@ -529,8 +566,8 @@ impl OpInstance for ConvInstance {
 							break;
 						}
 
-						let spaxel_ind = batch * spaxels_per_batch;
-						let batch_spaxels = min(out_spaxels * n - spaxel_ind, spaxels_per_batch);
+						let spaxel_ind = batch * max_batch_spaxels;
+						let batch_spaxels = min(out_spaxels * n - spaxel_ind, max_batch_spaxels);
 
 						let patches = &mut patches_alloc[..batch_spaxels * patch_size];
 						for (i, patch) in patches.chunks_mut(patch_size).enumerate() {
@@ -595,16 +632,16 @@ impl OpInstance for ConvInstance {
 							// output_ind, out_size);
 						}
 
-						let out_batch = &output[spaxel_ind * output_channels..][..batch_spaxels * output_channels];
-
-						let m = output_channels;
-						let n = batch_spaxels;
-						let k = patch_size;
-						debug_assert_eq!(filter.len(), k * m);
-						debug_assert!(patches.len() >= n * k);
-						debug_assert_eq!(out_batch.len(), n * m);
 						unsafe {
-							matrixmultiply_mt::sgemm_st(
+							// ptr guaranteed to at least m*n away from other threads mutating the output
+							let out_batch_ptr = output.as_ptr().add(spaxel_ind * output_channels) as *mut f32;
+
+							let m = output_channels;
+							let n = batch_spaxels;
+							let k = patch_size;
+							debug_assert_eq!(filter.len(), k * m);
+							debug_assert!(patches.len() >= n * k);
+							sgemm(
 								m,
 								k,
 								n,
@@ -618,7 +655,7 @@ impl OpInstance for ConvInstance {
 								1,
 								k as isize, // B, input patches column major
 								1.0,
-								out_batch.as_ptr() as *mut f32,
+								out_batch_ptr,
 								1,
 								m as isize,
 							); // C output values column major
@@ -927,10 +964,11 @@ impl OpInstance for ConvBackInstance {
 				let batch_atomic = &batch_atomic;
 
 				scope.execute(move || {
-					let mut patches_alloc = Vec::with_capacity(patch_size * spaxels_per_batch);
-					unsafe {
-						patches_alloc.set_len(patch_size * spaxels_per_batch);
-					}
+					// let mut patches_alloc = Vec::with_capacity(patch_size * spaxels_per_batch);
+					// unsafe {
+					// 	patches_alloc.set_len(patch_size * spaxels_per_batch);
+					// }
+					let mut patches_alloc = vec![0.0; patch_size * spaxels_per_batch];
 
 					let mut inverted_filter_grad_temp: ArrayD<f32> = if require_filter_gradients {
 						ArrayD::zeros(inverted_filter_shape)
@@ -1029,7 +1067,7 @@ impl OpInstance for ConvBackInstance {
 							debug_assert_eq!(ind_b.len(), n1 * m1);
 							unsafe {
 								// input derivatives
-								matrixmultiply_mt::sgemm_st(
+								sgemm(
 									m1,
 									k1,
 									n1,
@@ -1060,7 +1098,7 @@ impl OpInstance for ConvBackInstance {
 							debug_assert_eq!(inverted_filter_grad_slice.len(), n2 * m2);
 							unsafe {
 								// parameter derivatives
-								matrixmultiply_mt::sgemm_st(
+								sgemm(
 									m2,
 									k2,
 									n2,
@@ -1861,6 +1899,16 @@ mod tests {
 	}
 
 	#[test]
+	fn grad_numeric_matmul_fallthrough_test() {
+		let input = Node::new(&[2, 5, 7, 13]).set_name("input");
+		let filter = Node::new(&[1, 1, 13, 11]).set_name("filter").set_init(msra(1.0));
+
+		let output = conv_with(&input, &filter, Padding::Same).unwrap().set_name("output");
+
+		GradNumericTest::new(&output, &indexset![&input, &filter]).run();
+	}
+
+	#[test]
 	fn grad_numeric_same_test() {
 		let input = Node::new(&[2, 5, 7, 13]).set_name("input");
 		let filter = Node::new(&[3, 5, 13, 11]).set_name("filter").set_init(msra(1.0));
@@ -1949,7 +1997,6 @@ mod tests {
 			);
 		}
 
-		#[allow(clippy::float_cmp)]
 		debug_assert!(
 			!patches.iter().cloned().any(|x| x.is_nan() || {
 				#[allow(clippy::float_cmp)]

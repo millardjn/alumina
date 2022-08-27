@@ -90,16 +90,16 @@ where
 
 	let _op = Expand::new(input.clone(), output.clone(), factors).build()?;
 
-	let factors = factors.to_vec();
-	let _op = ShapeConstraint::new(input, output.clone())
-		.joint(move |axes| {
-			axes.iter()
-				.zip(&factors)
-				.map(|(axis, f)| (axis * f).into())
-				.chain(once(NodeAxis::unknown()))
-				.into()
-		})
-		.build()?;
+	// let factors = factors.to_vec();
+	// let _op = ShapeConstraint::new(input, output.clone())
+	// 	.joint(move |axes| {
+	// 		axes.iter()
+	// 			.zip(&factors)
+	// 			.map(|(axis, f)| (axis * f).into())
+	// 			.chain(once(NodeAxis::unknown()))
+	// 			.into()
+	// 	})
+	// 	.build()?;
 
 	Ok(output)
 }

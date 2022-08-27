@@ -36,6 +36,8 @@ use std::{
 	ops::Range,
 };
 
+use crate::sgemm::sgemm;
+
 pub fn linterp<I>(input: I, factors: &[usize]) -> Result<Node, OpBuildError>
 where
 	I: Into<Node>,
@@ -54,17 +56,17 @@ where
 		.new_node(output_shape)
 		.set_name_unique(&format!("linterp({})", input));
 
-	if input
-		.shape()
-		.iter()
-		.zip(factors)
-		.any(|(axis, &f)| f != 1 && !axis.is_known())
-	{
-		let factors = factors.to_vec();
-		let _op = ShapeConstraint::new(input.clone(), output.clone())
-			.joint(move |shape| shape.iter().zip(&factors).map(|(axis, f)| axis * f).into())
-			.build()?;
-	}
+	// if input
+	// 	.shape()
+	// 	.iter()
+	// 	.zip(factors)
+	// 	.any(|(axis, &f)| f != 1 && !axis.is_known())
+	// {
+	// 	let factors = factors.to_vec();
+	// 	let _op = ShapeConstraint::new(input.clone(), output.clone())
+	// 		.joint(move |shape| shape.iter().zip(&factors).map(|(axis, f)| axis * f).into())
+	// 		.build()?;
+	// }
 	let _op = Linterp::new(input, output.clone(), factors).build()?;
 
 	Ok(output)
@@ -321,15 +323,16 @@ impl OpInstance for LinterpInstance {
 		let m = factors_spatial.iter().product();
 		let n = n_channels * n_patches;
 
-		let mut hires_matrix = Vec::with_capacity(m * n);
-		unsafe {
-			hires_matrix.set_len(m * n);
-		}
-
-		let mut lores_matrix = Vec::with_capacity(k * n);
-		unsafe {
-			lores_matrix.set_len(k * n);
-		}
+		// let mut hires_matrix = Vec::with_capacity(m * n);
+		// unsafe {
+		// 	hires_matrix.set_len(m * n);
+		// }
+		// let mut lores_matrix = Vec::with_capacity(k * n);
+		// unsafe {
+		// 	lores_matrix.set_len(k * n);
+		// }
+		let mut hires_matrix = vec![0.0; m * n];
+		let mut lores_matrix = vec![0.0; k * n];
 
 		for b_ind in 0..batches {
 			let out_batch = &mut output[b_ind * out_size..][..out_size];
@@ -349,7 +352,7 @@ impl OpInstance for LinterpInstance {
 			}
 
 			unsafe {
-				matrixmultiply_mt::sgemm(
+				sgemm(
 					m,
 					k,
 					n,
@@ -578,15 +581,16 @@ impl OpInstance for LinterpBackInstance {
 		let m = 2usize.pow(factors_spatial.len() as u32);
 		let n = n_channels * n_patches;
 
-		let mut hires_matrix = Vec::with_capacity(k * n);
-		unsafe {
-			hires_matrix.set_len(k * n);
-		}
-
-		let mut lores_matrix = Vec::with_capacity(m * n);
-		unsafe {
-			lores_matrix.set_len(m * n);
-		}
+		// let mut hires_matrix = Vec::with_capacity(k * n);
+		// unsafe {
+		// 	hires_matrix.set_len(k * n);
+		// }
+		// let mut lores_matrix = Vec::with_capacity(m * n);
+		// unsafe {
+		// 	lores_matrix.set_len(m * n);
+		// }
+		let mut hires_matrix = vec![0.0; k * n];
+		let mut lores_matrix = vec![0.0; m * n];
 
 		for b_ind in 0..batches {
 			let out_grad_batch = &output_grad[b_ind * out_size..][..out_size];
@@ -608,7 +612,7 @@ impl OpInstance for LinterpBackInstance {
 			}
 
 			unsafe {
-				matrixmultiply_mt::sgemm(
+				sgemm(
 					m,
 					k,
 					n,

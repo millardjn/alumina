@@ -23,6 +23,11 @@ threadpool = "1.8"
 threadpool_scope = "0.1"
 lazy_static = "1.4"
 num_cpus = "1.13"
+cblas-sys = {version = "0.1", optional = true}
+
+
+[features]
+cblas = ["dep:cblas-sys"]
 
 [dev-dependencies]
 alumina_test = { path = "../alumina_test", version = "0.3" }

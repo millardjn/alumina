@@ -56,6 +56,9 @@ parking_lot = "0.11"
 [profile.release]
 
 
+[features]
+cblas = ["alumina_ops/cblas"]
+
 [dev-dependencies]
 criterion = "0.3"
 

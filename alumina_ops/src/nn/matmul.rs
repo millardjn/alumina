@@ -1,4 +1,4 @@
-use crate::math::broadcast::Broadcast;
+use crate::{math::broadcast::Broadcast, sgemm::sgemm};
 use alumina_core::{
 	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
@@ -526,15 +526,17 @@ impl OpInstance for MatMulInstance {
 			c_shape.slice_mut()[outer_ind] = NodeAxis::known(outer_val);
 			c_shape.slice_mut()[inner_ind - 1] = NodeAxis::known(inner_val);
 			ctx.merge_output_shape(&self.matrix_c, &c_shape)?;
-		} else {
-			return Err(format!(
-				"MatMul Op ({}) Error: \
-				 could not infer shape of output. \
-				 The output shape contains non-adjacent unknown dimensions. This creates ambiguity.",
-				ctx.current_op()
-			)
-			.into());
 		}
+		//  else {
+		// 	return Err(format!(
+		// 		"MatMul Op ({}) Error: \
+		// 		 could not infer shape of output. \
+		// 		 The output shape ({}) contains non-adjacent unknown dimensions. This creates ambiguity.",
+		// 		ctx.current_op(),
+		// 		c_shape,
+		// 	)
+		// 	.into());
+		// }
 
 		Ok(())
 	}
@@ -562,7 +564,7 @@ impl OpInstance for MatMulInstance {
 			let (rsb, csb) = if self.b_trans { (1, k) } else { (n, 1) };
 			let (rsc, csc) = if self.c_trans { (1, m) } else { (n, 1) };
 
-			matrixmultiply_mt::sgemm(
+			sgemm(
 				m,
 				k,
 				n,
