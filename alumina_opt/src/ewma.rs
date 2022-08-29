@@ -45,7 +45,7 @@ impl Ewma {
 			Zip::from(value)
 				.and(&node.value().expect("Emwa node did not have a value set"))
 				.for_each(|emwa, next| {
-					*emwa = *emwa*beta + (1.0 - beta) * next;
+					*emwa = *emwa * beta + (1.0 - beta) * next;
 				});
 		}
 		self.update_count += 1;
@@ -62,7 +62,7 @@ impl Ewma {
 						.expect("Custom emwa values did not contain all required nodes"),
 				)
 				.for_each(|emwa, next| {
-					*emwa = *emwa*beta + (1.0 - beta) * next;
+					*emwa = *emwa * beta + (1.0 - beta) * next;
 				});
 		}
 	}

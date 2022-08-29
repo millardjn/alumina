@@ -2,7 +2,7 @@
 name = "alumina_core"
 version = "0.3.0"
 authors = ["zza <millard.jn@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 
 [dependencies]
@@ -12,10 +12,10 @@ smallvec = "1.4"
 ndarray = { version = "0.15", features = ["rayon", "serde-1"] }
 rand = "0.8"
 rand_distr = "0.4"
-lru = "0.6"
+lru = "0.7"
 itertools = "0.10"
 sysinfo = "0.20"
-parking_lot = "0.11"
+parking_lot = "0.12"
 as-any="0.3"
 
 # temp only

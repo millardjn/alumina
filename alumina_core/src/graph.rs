@@ -42,12 +42,13 @@ use ndarray::{arr0, arr1, ArcArray, ArrayBase, ArrayD, Data, Dimension, IxDyn, O
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::{
+	any::Any,
 	borrow::Borrow,
 	collections::BTreeMap,
 	fmt::{self, Debug, Display},
 	hash::{Hash, Hasher},
 	ops::Deref,
-	sync::{atomic::AtomicU64, atomic::Ordering, Arc}, any::Any,
+	sync::{atomic::AtomicU64, atomic::Ordering, Arc},
 };
 
 // TODO write explanation for all the ways of creating a Node

@@ -45,12 +45,6 @@ lazy_static! {
 	static ref THREAD_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::new(*NUM_CPUS));
 }
 
-struct Ptr<T> {
-	p: *mut T,
-}
-unsafe impl<T> Sync for Ptr<T> {}
-unsafe impl<T> Send for Ptr<T> {}
-
 #[derive(Debug, Clone)]
 pub enum Padding {
 	Full,
@@ -495,8 +489,6 @@ impl OpInstance for ConvInstance {
 					n,
 					1.0,
 					filter.as_ptr(),
-					// k as isize,
-					// 1, // A is params, row major
 					1,
 					m as isize, // A is params, col major
 					input.as_ptr(),
@@ -554,10 +546,6 @@ impl OpInstance for ConvInstance {
 				let batch_atomic = &batch_atomic;
 
 				scope.execute(move || {
-					// let mut patches_alloc = Vec::with_capacity(patch_size * max_batch_spaxels);
-					// unsafe {
-					// 	patches_alloc.set_len(patch_size * max_batch_spaxels);
-					// }
 					let mut patches_alloc = vec![0.0; patch_size * max_batch_spaxels];
 
 					loop {
@@ -627,9 +615,6 @@ impl OpInstance for ConvInstance {
 									output_strides,
 								),
 							}
-							// pack_patch_recurse(patch, in_n, &kernel_shape, input_channels,
-							// &input.shape.spatial_dimensions, &output_shape.spatial_dimensions, kernel_shape.len()-1,
-							// output_ind, out_size);
 						}
 
 						unsafe {
@@ -940,9 +925,6 @@ impl OpInstance for ConvBackInstance {
 
 		let n_threads = *NUM_CPUS;
 		let mut inverted_filter_grads = vec![None; n_threads];
-		let ifg_ptr = Ptr {
-			p: inverted_filter_grads.as_mut_ptr(),
-		};
 
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
 		let thread_division = (in_spaxels * n + n_threads - 1) / n_threads;
@@ -951,7 +933,6 @@ impl OpInstance for ConvBackInstance {
 		let batch_atomic = AtomicUsize::new(0);
 
 		let n_blocks = filter_spatial.iter().product::<usize>();
-		let block_atomic = AtomicUsize::new(0);
 
 		let pool = THREAD_POOL.lock().expect("Could not lock conv threadpool");
 		scope_with(&pool, |scope| {
@@ -964,10 +945,6 @@ impl OpInstance for ConvBackInstance {
 				let batch_atomic = &batch_atomic;
 
 				scope.execute(move || {
-					// let mut patches_alloc = Vec::with_capacity(patch_size * spaxels_per_batch);
-					// unsafe {
-					// 	patches_alloc.set_len(patch_size * spaxels_per_batch);
-					// }
 					let mut patches_alloc = vec![0.0; patch_size * spaxels_per_batch];
 
 					let mut inverted_filter_grad_temp: ArrayD<f32> = if require_filter_gradients {
@@ -1124,26 +1101,31 @@ impl OpInstance for ConvBackInstance {
 					}
 				});
 			}
+		});
 
-			if let Some(mut filter_grad) = filter_grad {
+		if let Some(filter_grad) = filter_grad {
+			let ch2 = input_channels;
+			let ch1 = output_channels;
+			let block_size = ch1 * ch2;
+			debug_assert!(filter_grad.is_standard_layout());
+			debug_assert!(filter_grad.len() % (block_size) == 0);
+			let block_atomic = AtomicUsize::new(0);
+			let output = filter_grad.as_slice().unwrap(); // first inverted grad;
+
+			let (first_ifg, other_ifg) = inverted_filter_grads.as_slice().split_first().unwrap();
+			let first_ifg = first_ifg.as_ref().unwrap();
+
+			scope_with(&pool, |scope| {
 				scope.join_all();
 				// write and invert first block to output block
 
-				let ch2 = input_channels;
-				let ch1 = output_channels;
-				let block_size = ch1 * ch2;
-				debug_assert!(filter_grad.is_standard_layout());
-				debug_assert!(filter_grad.len() % (block_size) == 0);
-
 				for _ in 0..min(n_blocks, n_threads) {
 					let block_atomic = &block_atomic;
-					let ifg_ptr = &ifg_ptr;
-					let output = Ptr {
-						p: filter_grad.as_mut_ptr(),
-					}; // first inverted grad;
-					scope.execute(move || {
-						let ifg_ptr = ifg_ptr.p;
 
+					debug_assert!(first_ifg.is_standard_layout());
+					debug_assert!(first_ifg.len() % (block_size) == 0);
+
+					scope.execute(move || {
 						loop {
 							let block_num = block_atomic.fetch_add(1, Ordering::Relaxed);
 							if block_num >= n_blocks {
@@ -1153,22 +1135,19 @@ impl OpInstance for ConvBackInstance {
 							let output_offset = block_num * block_size;
 
 							unsafe {
-								let output = output.p.add(output_offset);
-
 								// add all blocks into first
-								debug_assert!((&*ifg_ptr).as_ref().unwrap().is_standard_layout());
-								debug_assert!((&*ifg_ptr).as_ref().unwrap().len() % (block_size) == 0);
-								let inverted_grad_sum =
-									(&mut *ifg_ptr).as_mut().unwrap().as_mut_ptr().add(input_offset);
-								for i in 1..n_threads {
-									let inverted_grad_i =
-										(&mut *ifg_ptr.add(i)).as_mut().unwrap().as_mut_ptr().add(input_offset);
-									debug_assert!((*ifg_ptr.add(i)).as_ref().unwrap().is_standard_layout());
+								let inverted_grad_sum = first_ifg.as_ptr().add(input_offset) as *mut f32;
+								for ifg in other_ifg {
+									let inverted_grad_i = ifg.as_ref().unwrap().as_ptr().add(input_offset);
+
+									debug_assert!(ifg.as_ref().unwrap().is_standard_layout());
 									for j in 0..block_size {
 										*inverted_grad_sum.add(j) += *inverted_grad_i.add(j);
 									}
 								}
 
+								// write into output with inversion
+								let output = output.as_ptr().add(output_offset) as *mut f32;
 								for c2 in 0..ch2 {
 									for c1 in 0..ch1 {
 										*output.add(c1 + c2 * ch1) = *inverted_grad_sum.add(c2 + c1 * ch2);
@@ -1178,9 +1157,8 @@ impl OpInstance for ConvBackInstance {
 						}
 					})
 				}
-			}
-		});
-
+			});
+		}
 		Ok(())
 	}
 }

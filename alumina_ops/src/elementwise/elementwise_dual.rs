@@ -21,7 +21,7 @@ use alumina_core::{
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexMap, IndexSet};
-use ndarray::{Dimension, Zip};
+use ndarray::{ArrayViewD, Dimension, Zip};
 use rayon::prelude::*;
 use std::any::Any;
 use std::fmt;
@@ -843,28 +843,16 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 
 		// No input shortcut
 		if self.inputs.is_empty() {
-			let mut output1 = ctx.get_output_standard(&self.output1);
-			let mut output2 = ctx.get_output_standard(&self.output2);
+			let output1 = ctx.get_output_standard(&self.output1);
+			let output2 = ctx.get_output_standard(&self.output2);
 
-			let len = output1.len();
-
-			struct Ptrs {
-				output1: *mut f32,
-				output2: *mut f32,
-			}
-			unsafe impl Sync for Ptrs {}
-
-			let ptrs = Ptrs {
-				output1: output1.as_slice_mut().unwrap().as_mut_ptr(),
-				output2: output2.as_slice_mut().unwrap().as_mut_ptr(),
-			};
-
-			(0..len).into_par_iter().for_each(|j| unsafe {
+			Zip::from(output1).and(output2).par_for_each(|o1, o2| {
 				let arr = [0.0; 0];
-				let (o1, o2) = self.f.calc(&arr[..]);
-				*ptrs.output1.add(j) += o1;
-				*ptrs.output2.add(j) += o2;
+				let (r1, r2) = self.f.calc(&arr[..]);
+				*o1 += r1;
+				*o2 += r2;
 			});
+
 			return Ok(());
 		}
 
@@ -885,61 +873,34 @@ impl<F: NaryDualFunc> OpInstance for NaryElementwiseDualInstance<F> {
 			let mut output2 = ctx.get_output_standard(&self.output2);
 
 			let len = output1.len();
+			let output1 = output1.as_slice_mut().unwrap();
+			let output2 = output2.as_slice_mut().unwrap();
 
-			let inputs: Vec<*mut f32> = (0..self.inputs.len())
+			let inputs: Vec<ArrayViewD<f32>> = (0..self.inputs.len())
 				.map(|j| {
-					let arr = ctx.get_input_standard(&self.inputs[j]);
-					let slice = arr.as_slice().unwrap();
-					debug_assert_eq!(len, slice.len());
-					slice.as_ptr() as *mut f32
+					ctx.get_input_standard(&self.inputs[j])
+					// let slice = arr.as_slice().unwrap();
+					// debug_assert_eq!(len, slice.len());
+					// slice
 				})
 				.collect();
 
-			struct Ptrs {
-				inputs: Vec<*mut f32>,
-				output1: *mut f32,
-				output2: *mut f32,
-			}
-			unsafe impl Sync for Ptrs {}
+			(0..len)
+				.into_par_iter()
+				.for_each_with(vec![0.0; inputs.len()], |arr, j| {
+					let output1 = output1.as_ptr() as *mut f32;
+					let output2 = output2.as_ptr() as *mut f32;
 
-			let ptrs = Ptrs {
-				inputs,
-				output1: output1.as_slice_mut().unwrap().as_mut_ptr(),
-				output2: output2.as_slice_mut().unwrap().as_mut_ptr(),
-			};
-
-			// get input slices into a vec
-
-			if ptrs.inputs.len() <= 8 {
-				// par_iter + unsafe + array
-				(0..len).into_par_iter().for_each(|j| {
 					unsafe {
-						let mut arr = [0.0; 8]; // hopefully this array gets optimised out
-						for k in 0..ptrs.inputs.len() {
-							*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
+						//let mut arr = [0.0; 8]; // hopefully this array gets optimised out
+						for k in 0..inputs.len() {
+							*arr.get_unchecked_mut(k) = *inputs.get_unchecked(k).as_ptr().add(j);
 						}
-						let (o1, o2) = self.f.calc(&arr[0..ptrs.inputs.len()]);
-						*ptrs.output1.add(j) += o1;
-						*ptrs.output2.add(j) += o2;
+						let (o1, o2) = self.f.calc(&arr[0..inputs.len()]);
+						*output1.add(j) += o1;
+						*output2.add(j) += o2;
 					}
 				});
-			} else if ptrs.inputs.len() <= 64 {
-				(0..len).into_par_iter().for_each(|j| {
-					unsafe {
-						let mut arr = [0.0; 64]; // hopefully this array gets optimised out
-						for k in 0..ptrs.inputs.len() {
-							*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
-						}
-						let (o1, o2) = self.f.calc(&arr[0..ptrs.inputs.len()]);
-						*ptrs.output1.add(j) += o1;
-						*ptrs.output2.add(j) += o2;
-					}
-				});
-			} else {
-				return Err("NaryElementwise does not currently support more than 64 inputs"
-					.to_string()
-					.into());
-			}
 		}
 
 		Ok(())

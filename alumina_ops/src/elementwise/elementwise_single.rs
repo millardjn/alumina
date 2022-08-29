@@ -22,7 +22,7 @@ use alumina_core::{
 };
 use indexmap::{indexset, IndexMap, IndexSet};
 
-use ndarray::{Dimension, Zip};
+use ndarray::{ArrayViewD, Dimension, Zip};
 use rayon::prelude::*;
 use std::any::Any;
 use std::fmt;
@@ -848,22 +848,11 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 	fn execute(&self, ctx: &ExecutionContext) -> Result<(), ExecutionError> {
 		// No input shortcut
 		if self.inputs.is_empty() {
-			let mut output = ctx.get_output_standard(&self.output);
+			let output = ctx.get_output_standard(&self.output);
 
-			let len = output.len();
-
-			struct Ptrs {
-				output: *mut f32,
-			}
-			unsafe impl Sync for Ptrs {}
-
-			let ptrs = Ptrs {
-				output: output.as_slice_mut().unwrap().as_mut_ptr(),
-			};
-
-			(0..len).into_par_iter().for_each(|j| unsafe {
+			Zip::from(output).par_for_each(|o| {
 				let arr = [0.0; 0];
-				*ptrs.output.add(j) += self.f.calc(&arr[..]);
+				*o += self.f.calc(&arr[..]);
 			});
 			return Ok(());
 		}
@@ -881,63 +870,33 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 
 		if ctx.can_set(&self.output) {
 			for (i, input) in self.inputs.iter().enumerate() {
-				if ctx.can_take(input) && self.inputs.iter().filter(|&n| n == input).count() == 1 {
+				if ctx.can_take(input) {
+					//NOTE NEEDED IF WE CHECK WHEN BUILDING INPUTS VEC: && self.inputs.iter().filter(|&n| n == input).count() == 1
 					// Inplace version
 
 					let input_arr = ctx.take(input);
 
 					let len = input_arr.len();
 
-					let inputs: Vec<*mut f32> = (0..self.inputs.len())
+					let inputs: Vec<ArrayViewD<f32>> = (0..self.inputs.len())
 						.map(|j| {
-							if i == j {
-								input_arr.as_slice().unwrap().as_ptr() as *mut f32
+							if self.inputs[j] == *input {
+								input_arr.view()
 							} else {
-								let arr = ctx.get_input_standard(&self.inputs[j]);
-								let slice = arr.as_slice().unwrap();
-								debug_assert_eq!(len, slice.len());
-								slice.as_ptr() as *mut f32
+								ctx.get_input_standard(&self.inputs[j])
 							}
 						})
 						.collect();
 
-					struct Ptrs {
-						inputs: Vec<*mut f32>,
-					}
-					unsafe impl Sync for Ptrs {}
-
-					let ptrs = Ptrs { inputs };
-
-					// get input slices into a vec
-
-					if self.inputs.len() <= 8 {
-						// par_iter + unsafe + array
-						(0..len).into_par_iter().for_each(|j| {
-							unsafe {
-								let mut arr = [0.0; 8]; // hopefully this array gets optimised out
-								for k in 0..ptrs.inputs.len() {
-									*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
-								}
-								*ptrs.inputs.get_unchecked(i).offset(j as isize) =
-									self.f.calc(&arr[0..ptrs.inputs.len()]);
+					(0..len)
+						.into_par_iter()
+						.for_each_with(vec![0.0; inputs.len()], |arr, j| unsafe {
+							for k in 0..inputs.len() {
+								*arr.get_unchecked_mut(k) = *inputs.get_unchecked(k).as_ptr().add(j);
 							}
+							*(inputs.get_unchecked(i).as_ptr().add(j) as *mut f32) = self.f.calc(&arr[0..inputs.len()]);
 						});
-					} else if self.inputs.len() <= 64 {
-						(0..len).into_par_iter().for_each(|j| {
-							unsafe {
-								let mut arr = [0.0; 64]; // hopefully this array gets optimised out
-								for k in 0..ptrs.inputs.len() {
-									*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
-								}
-								*ptrs.inputs.get_unchecked(i).offset(j as isize) =
-									self.f.calc(&arr[0..ptrs.inputs.len()]);
-							}
-						});
-					} else {
-						return Err("NaryElementwise does not currently support more than 64 inputs"
-							.to_string()
-							.into());
-					}
+
 					ctx.set(&self.output, input_arr);
 					return Ok(());
 				}
@@ -949,55 +908,53 @@ impl<F: NaryFunc> OpInstance for NaryElementwiseInstance<F> {
 			let mut output = ctx.get_output_standard(&self.output);
 
 			let len = output.len();
+			let output = output.as_slice_mut().unwrap();
 
-			let inputs: Vec<*mut f32> = (0..self.inputs.len())
-				.map(|j| {
-					let arr = ctx.get_input_standard(&self.inputs[j]);
-					let slice = arr.as_slice().unwrap();
-					debug_assert_eq!(len, slice.len());
-					slice.as_ptr() as *mut f32
-				})
+			let inputs: Vec<ArrayViewD<f32>> = (0..self.inputs.len())
+				.map(|j| ctx.get_input_standard(&self.inputs[j]))
 				.collect();
 
-			struct Ptrs {
-				inputs: Vec<*mut f32>,
-				output: *mut f32,
-			}
-			unsafe impl Sync for Ptrs {}
+			// struct Ptrs {
+			// 	inputs: Vec<*mut f32>,
+			// 	output: *mut f32,
+			// }
+			// unsafe impl Sync for Ptrs {}
 
-			let ptrs = Ptrs {
-				inputs,
-				output: output.as_slice_mut().unwrap().as_mut_ptr(),
-			};
+			// let ptrs = Ptrs {
+			// 	inputs,
+			// 	output: output.as_slice_mut().unwrap().as_mut_ptr(),
+			// };
 
 			// get input slices into a vec
 
-			if ptrs.inputs.len() <= 8 {
-				// par_iter + unsafe + array
-				(0..len).into_par_iter().for_each(|j| {
+			//if ptrs.inputs.len() <= 8 {
+			// par_iter + unsafe + array
+			(0..len)
+				.into_par_iter()
+				.for_each_with(vec![0.0; inputs.len()], |arr, j| {
+					let output = output.as_ptr() as *mut f32;
 					unsafe {
-						let mut arr = [0.0; 8]; // hopefully this array gets optimised out
-						for k in 0..ptrs.inputs.len() {
-							*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
+						for k in 0..inputs.len() {
+							*arr.get_unchecked_mut(k) = *inputs.get_unchecked(k).as_ptr().add(j);
 						}
-						*ptrs.output.add(j) += self.f.calc(&arr[0..ptrs.inputs.len()]);
+						*output.add(j) += self.f.calc(&arr[0..inputs.len()]);
 					}
 				});
-			} else if ptrs.inputs.len() <= 64 {
-				(0..len).into_par_iter().for_each(|j| {
-					unsafe {
-						let mut arr = [0.0; 64]; // hopefully this array gets optimised out
-						for k in 0..ptrs.inputs.len() {
-							*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
-						}
-						*ptrs.output.add(j) += self.f.calc(&arr[0..ptrs.inputs.len()]);
-					}
-				});
-			} else {
-				return Err("NaryElementwise does not currently support more than 64 inputs"
-					.to_string()
-					.into());
-			}
+			// } else if ptrs.inputs.len() <= 64 {
+			// 	(0..len).into_par_iter().for_each(|j| {
+			// 		unsafe {
+			// 			let mut arr = [0.0; 64]; // hopefully this array gets optimised out
+			// 			for k in 0..ptrs.inputs.len() {
+			// 				*arr.get_unchecked_mut(k) = *ptrs.inputs.get_unchecked(k).offset(j as isize);
+			// 			}
+			// 			*ptrs.output.add(j) += self.f.calc(&arr[0..ptrs.inputs.len()]);
+			// 		}
+			// 	});
+			// } else {
+			// 	return Err("NaryElementwise does not currently support more than 64 inputs"
+			// 		.to_string()
+			// 		.into());
+			// }
 		}
 
 		Ok(())
