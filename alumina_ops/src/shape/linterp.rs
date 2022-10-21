@@ -18,7 +18,7 @@
 // use indexmap::IndexSet;
 
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpInstance, OpSpecification},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,

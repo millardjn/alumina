@@ -42,7 +42,6 @@ use ndarray::{arr0, arr1, ArcArray, ArrayBase, ArrayD, Data, Dimension, IxDyn, O
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::{
-	any::Any,
 	borrow::Borrow,
 	collections::BTreeMap,
 	fmt::{self, Debug, Display},

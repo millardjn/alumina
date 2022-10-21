@@ -8,13 +8,13 @@ use crate::{
 use indexmap::{IndexMap, IndexSet};
 use lru::LruCache;
 use ndarray::{ArcArray, ArrayViewD, ArrayViewMutD, Dimension, IxDyn};
-use std::time::Instant;
 use std::{
 	borrow::Borrow,
 	cell::{RefCell, UnsafeCell},
 	hash::Hash,
 };
-use sysinfo::{ProcessorExt, RefreshKind, SystemExt};
+use std::{num::NonZeroUsize, time::Instant};
+use sysinfo::{CpuExt, CpuRefreshKind, RefreshKind, SystemExt};
 
 enum DataState<T> {
 	Unallocated {
@@ -852,7 +852,7 @@ impl<'a> ExecutionPlan<'a> {
 		let perf_records = &mut self.perf_records;
 		let subgraph = self.subgraph.as_ref();
 
-		let mut system = sysinfo::System::new_with_specifics(RefreshKind::new().with_cpu());
+		let mut system = sysinfo::System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
 
 		let new_subgraph;
 		let subgraph = if let Some(subgraph) = subgraph {
@@ -951,8 +951,8 @@ impl<'a> ExecutionPlan<'a> {
 							})?;
 							system.refresh_cpu();
 							record.invocation_count += 1;
-							record.cumulative_usage += system.processors().iter().map(|p| p.cpu_usage()).sum::<f32>()
-								/ system.processors().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
+							record.cumulative_usage +=
+								system.cpus().iter().map(|p| p.cpu_usage()).sum::<f32>() / system.cpus().len() as f32; //system.get_global_processor_info().get_cpu_usage() as f32;
 							record.cumulative_time += start.elapsed().as_micros() as f32;
 						} else {
 							op.instance().execute(&ctx).map_err(|e| ExecError::Op {
@@ -986,7 +986,7 @@ struct InputOutputCountCacheKey {
 
 thread_local! {
 	#[allow(clippy::type_complexity)]
-	static NODE_INPUT_OUTPUT_COUNT_CACHE: RefCell<LruCache<InputOutputCountCacheKey, (IndexMap<NodeID, usize>, IndexMap<NodeID, usize>)>> = RefCell::new(LruCache::new(32));
+	static NODE_INPUT_OUTPUT_COUNT_CACHE: RefCell<LruCache<InputOutputCountCacheKey, (IndexMap<NodeID, usize>, IndexMap<NodeID, usize>)>> = RefCell::new(LruCache::new(unsafe{NonZeroUsize::new_unchecked(32)}));
 }
 
 /// returns a tuple `(writers_remaining, readers_remaining)` of counts of inputs to a node and outputs to a node

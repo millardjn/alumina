@@ -40,10 +40,12 @@ pub(crate) unsafe fn sgemm(
 	rsc: isize,
 	csc: isize,
 ) {
-	
 	#[cfg(feature = "cblas")]
-	if let Ok(()) = try_sgemm_cblas(m, k, n, alpha, a, rsa, csa, b, rsb, csb, beta, c, rsc, csc) {
-		return;
+	{
+		if let Ok(()) = try_sgemm_cblas(m, k, n, alpha, a, rsa, csa, b, rsb, csb, beta, c, rsc, csc) {
+			return;
+		}
+		panic!();
 	}
 
 	matrixmultiply_mt::sgemm(m, k, n, alpha, a, rsa, csa, b, rsb, csb, beta, c, rsc, csc);

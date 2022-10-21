@@ -135,15 +135,15 @@ impl OpInstance for ReshapeInstance {
 		let output_shape = ctx.output_shape(&self.output);
 		let unknowns = output_shape.iter().filter(|e| !e.is_known()).count();
 		if unknowns > 1 {
-			return Err(format!(
+			Err(format!(
 				"Output Node '{}' had a shape ({}) with more than one unknown dimensions",
 				ctx.node(&self.output),
 				output_shape
 			)
-			.into());
+			.into())
 		} else if unknowns == 0 {
 			if output_shape.flat_size().as_known().unwrap() != input_len {
-				return Err(format!("Output node '{}' had a shape ({}) with a different number of elements to the input node '{}' shape ({:?})", ctx.node(&self.output), output_shape, ctx.node(&self.input), ctx.input_shape(&self.input).slice()).into());
+				Err(format!("Output node '{}' had a shape ({}) with a different number of elements to the input node '{}' shape ({:?})", ctx.node(&self.output), output_shape, ctx.node(&self.input), ctx.input_shape(&self.input).slice()).into())
 			} else {
 				Ok(())
 			}

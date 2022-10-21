@@ -19,7 +19,7 @@ use std::{
 /// ```
 pub const SCALAR: &[NodeAxis] = &[];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeAxis {
 	/// A fully constrained dimension
 	Known { val: usize },
@@ -324,7 +324,7 @@ impl Display for NodeAxis {
 }
 
 /// Represents the range of shapes a tensor can take on.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NodeShape {
 	dimensions: SmallVec<[NodeAxis; 4]>,
 }

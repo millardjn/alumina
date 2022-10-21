@@ -532,7 +532,7 @@ impl OpInstance for ConvInstance {
 		let n_threads = *NUM_CPUS;
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
 		let thread_division = (out_spaxels * n + n_threads - 1) / n_threads;
-		let max_batch_spaxels = min(max(4, min(cache_limit, thread_division)), out_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let max_batch_spaxels = min(max(4, min(cache_limit, thread_division)), out_spaxels * n); // number of spaxels to combine in one batch (the last batch can have fewer)
 		let n_batches = (out_spaxels * n + max_batch_spaxels - 1) / max_batch_spaxels;
 		let batch_atomic = AtomicUsize::new(0);
 
@@ -928,7 +928,7 @@ impl OpInstance for ConvBackInstance {
 
 		let cache_limit = self.lowering_memory / (patch_size * size_of::<f32>());
 		let thread_division = (in_spaxels * n + n_threads - 1) / n_threads;
-		let spaxels_per_batch = min(max(4, min(cache_limit, thread_division)), in_spaxels * n); // number of spaxels to combine in one sgemm (the last batch can have fewer)
+		let spaxels_per_batch = min(max(4, min(cache_limit, thread_division)), in_spaxels * n); // number of spaxels to combine in one batch (the last batch can have fewer)
 		let n_batches = (in_spaxels * n + spaxels_per_batch - 1) / spaxels_per_batch;
 		let batch_atomic = AtomicUsize::new(0);
 

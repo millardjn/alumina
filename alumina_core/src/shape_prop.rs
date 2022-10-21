@@ -11,7 +11,7 @@ use failure::ResultExt;
 use indexmap::{IndexMap, IndexSet};
 use lru::LruCache;
 use ndarray::{Dimension, IxDyn};
-use std::cell::RefCell;
+use std::{cell::RefCell, num::NonZeroUsize};
 
 /// Computes the shapes of the `Node`s in a `SubGraph`, using the `Op`s to propagate from the supplied inputs.
 pub fn shapes(
@@ -174,7 +174,7 @@ impl ShapeCacheKey {
 }
 
 thread_local! {
-	static NODE_SHAPE_CACHE: RefCell<LruCache<ShapeCacheKey, IndexMap<NodeID, IxDyn>>> = RefCell::new(LruCache::new(32));
+	static NODE_SHAPE_CACHE: RefCell<LruCache<ShapeCacheKey, IndexMap<NodeID, IxDyn>>> = RefCell::new(LruCache::new(unsafe{NonZeroUsize::new_unchecked(32)}));
 }
 
 /// Computes the shapes of the `Node`s in a `SubGraph`, using the `Op`s to propagate from the supplied inputs.

@@ -1,5 +1,5 @@
 use alumina_core::{
-	base_ops::{shape_constraint::ShapeConstraint, OpInstance, OpSpecification},
+	base_ops::{OpInstance, OpSpecification},
 	errors::{ExecutionError, GradientError, OpBuildError, ShapePropError},
 	exec::ExecutionContext,
 	grad::GradientContext,
@@ -88,7 +88,7 @@ where
 		.new_node(output_shape)
 		.set_name_unique(&format!("expand({})", input));
 
-	let _op = Expand::new(input.clone(), output.clone(), factors).build()?;
+	let _op = Expand::new(input, output.clone(), factors).build()?;
 
 	// let factors = factors.to_vec();
 	// let _op = ShapeConstraint::new(input, output.clone())

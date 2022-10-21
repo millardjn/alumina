@@ -12,9 +12,9 @@ smallvec = "1.4"
 ndarray = { version = "0.15", features = ["rayon", "serde-1"] }
 rand = "0.8"
 rand_distr = "0.4"
-lru = "0.7"
+lru = "0.8"
 itertools = "0.10"
-sysinfo = "0.20"
+sysinfo = "0.26"
 parking_lot = "0.12"
 as-any="0.3"
 
