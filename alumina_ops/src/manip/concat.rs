@@ -4,7 +4,7 @@ use alumina_core::{
 	exec::ExecutionContext,
 	grad::GradientContext,
 	graph::{merge_node_graphs, Graph, Node, NodeID},
-	shape::NodeShape,
+	shape::{NodeShape, NodeAxis},
 	shape_prop::ShapePropContext,
 };
 use indexmap::{indexset, IndexMap, IndexSet};
@@ -28,6 +28,7 @@ where
 		assert!(inputs.iter().all(|i| i.shape().len() == dims));
 
 		let mut shape = NodeShape::from(vec![-1; dims]);
+		shape.slice_mut()[axis] = NodeAxis::Known{val: 0};
 		for i in &inputs {
 			for (j, a) in i.shape().iter().enumerate() {
 				if j == axis {
